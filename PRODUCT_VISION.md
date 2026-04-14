@@ -216,7 +216,7 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 - Agent coordination system (AGENT_STATUS.md, CLAUDE.md)
 
 #### v1 in progress / next
-- [ ] Application pack quality upgrade: structured motivation output (why role / why company / why now / why candidate), local angle, pre-generated Norwegian language blocks
+- [ ] **Application pack quality upgrade (agentic):** Replace single-shot gpt-4.1-mini call with a multi-step agentic pipeline using a capable model (o3 / gpt-4.1). The agent iterates on the cover letter and CV highlights across multiple reasoning steps — drafting, self-critiquing against job requirements, checking for authentic voice, and refining language. Target: output that requires minimal editing before sending. Hardest part of the pipeline to get right; highest ROI for interview conversion.
 - [ ] Advantageous match scoring: explicit signal when job is in a non-obvious sector or broader than title suggests
 - [ ] Automated daily run (Windows Task Scheduler or Cowork scheduled task)
 - [ ] Fix buildIndex_() performance in Apps Script (raise MAX_ENTRIES_PER_RUN 50→200)
@@ -254,7 +254,7 @@ Key capabilities v3 would need:
 ## Now / Next / Later (operational)
 
 ### Now
-- [ ] Application pack: structured motivation output for Arendal kommune and future top matches
+- [ ] **Application pack — agentic rewrite:** Multi-step agent (o3 / gpt-4.1) for cover letter and CV highlights. Self-critique loop, authentic Norwegian language, output ready to send with minimal editing.
 - [ ] Automated daily run setup (Cowork scheduled task)
 - [ ] Fix Apps Script buildIndex_() performance
 
