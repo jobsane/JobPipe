@@ -1,285 +1,51 @@
-# Claude Agent Instructions: JobPipe / Agentic JobPilot
+# Claude Rules for This Repo
 
-## Read these files first — every session, no exceptions
+Mission: make the smallest safe change that solves the stated problem.
 
-Before writing any code or making any changes, read these three files in order:
+## Hard rules
 
-1. **`AGENT_STATUS.md`** — shared memory bus. Current state of all workstreams, what's been changed, open cross-agent requests.
-2. **`AUDIT.md`** — deep audit log. Open bugs, data quality issues, tech debt. Check your section; fix what you can.
-3. **`PRODUCT_VISION.md`** — product goals, success metrics, design principles, roadmap. Align your work with it.
+- Do not scan the whole repo unless explicitly asked.
+- Only inspect files listed in `specs/current-change.md`.
+- Do not refactor unrelated code.
+- Do not rename files or symbols unless explicitly requested.
+- Do not add dependencies unless approved.
+- Do not change architecture without documenting why.
+- Keep diffs small and reversible.
 
-After making changes: **update your sections in AGENT_STATUS.md and AUDIT.md**.
+## Change budget
 
----
+- Max 3 files changed unless justified
+- Max 120 lines touched unless justified
+- One logical change per commit
+- No feature and refactor in the same change
 
-## What this repo is
+## Output format
 
-An AI-powered job hunting pipeline that pulls jobs from a Google Sheet (sourced from NAV's pam-stilling-feed API), runs a staged agentic triage + scoring pipeline (OpenAI Agents SDK), writes per-job JSON artifacts, and produces a self-contained HTML dashboard.
+Return only:
+1. diagnosis
+2. patch summary
+3. risks
+4. validation steps
 
-**Design principles (from PRODUCT_VISION.md):**
-1. **Cheap before smart** — free filters (geo, regex) before any LLM call. Always.
-2. **Never miss a strong match** — safety overrides catch false negatives even when the LLM says SKIP.
-3. **Every decision is debuggable** — every stage writes a JSON artifact. No hidden logic.
-4. **Incremental, not monolithic** — process deltas, not the full feed.
-5. **Human in the loop** — the system recommends, Lars decides. No auto-apply.
+## Testing rules
 
----
+- Add or update a focused test when behavior changes
+- If no test is added, explain why
+- Prefer narrow validation over broad repo-wide churn
 
-## Architecture
+## Protected areas
 
-```
-NAV API (pam-stilling-feed)
-    ↓ Apps Script (trigger-based, ~hourly, 50 jobs/run)
-Google Sheet (JobFeed tab, ~35,850 rows × 59 cols)
-    ↓ pull_sheets_csv.py (pulls delta, writes jobs_delta.jsonl)
-jobs_delta.jsonl
-    ↓ run_feed.py / drain_queue.py
-    ├─ [FREE]  Geo postal filter    → SKIP if outside 0xxx/1xxx/3xxx/4xxx
-    ├─ [FREE]  Hard-no title regex  → SKIP on irrelevant titles
-    ├─ [FREE]  Semantic pre-filter  → cosine similarity vs profile (multilingual-MiniLM, threshold 0.45)
-    ├─ [NANO]  Triage               → SKIP / REVIEW / APPLY signal + noise_level score
-    ├─ [MINI]  Parse                → structured job requirements
-    ├─ [MINI]  Profile match        → fit_score 0-100 (4 dimensions: role/domain/seniority/skills)
-    ├─ [MINI]  Pivot                → pivot_score 0-100
-    ├─ [FREE]  Moderate             → final_decision (deterministic thresholds)
-    └─ [DEEP]  Application pack     → deepagents + FilesystemBackend, only for APPLY / APPLY_STRONGLY
-    # Reverse triage disabled — redundant given current triage accuracy. Re-enable in YAML if needed.
-    ↓
-out_runs/<run_id>/<job_id>/         per-job JSON artifacts
-    ↓ sync_ledger.py
-reports/ledger.sqlite               deduplicated, latest state per job
-    ↓ export_dashboard.py
-reports/dashboard.html              self-contained HTML, opens in browser
-```
+Be extra careful around:
+- pipeline stages
+- output structure
+- decision logic
+- config keys
+- report generation
+- Gmail integration
 
----
+## Escalate instead of guessing when
 
-## File ownership
-
-| Workstream | Owns |
-|---|---|
-| Pipeline chat | `jobpipe/stages/`, `jobpipe/core/`, `configs/`, `profile_pack.md` |
-| Dashboard chat | `reports/dashboard_template.html`, `reports/dashboard.html`, `jobpipe/cli/export_dashboard.py` |
-| API import chat | Apps Script code, `jobpipe/cli/pull_sheets_csv.py` |
-| Shared (all) | `jobpipe/cli/sync_ledger.py`, `AGENT_STATUS.md`, `AUDIT.md`, `PRODUCT_VISION.md`, `DASHBOARD_SPEC.md` |
-
-**Do not modify another workstream's owned files without noting it in AGENT_STATUS.md.**
-
----
-
-## Stage pipeline detail
-
-### Per-job artifact layout
-
-```
-out_runs/<run_id>/<job_id>/
-  00_input.json          normalized job snapshot (always written)
-  01_triage.json         AI triage result
-  02_reverse_triage.json only when triage=SKIP and NOT geo-skip or hard-no
-  03_parsed.json
-  04_profile_match.json
-  05_pivot.json
-  06_moderator.json
-  07_application_pack.json  only for APPLY / APPLY_STRONGLY
-
-out_runs/<run_id>/index.jsonl   run summary (one line per job)
-```
-
-### Stage factory interface
-
-```python
-def stage_factory(...) -> tuple[should_run_fn, run_fn]:
-    def should_run(ctx: JobContext) -> bool: ...
-    def run(ctx: JobContext, job_dir: Path) -> dict: ...
-    return should_run, run
-```
-
-`run_feed.py` wraps these into `Stage(name, should_run, run, out_filename, ...)` objects.
-
-### Decision tiers and thresholds (from `configs/pipeline.v1.yaml`)
-
-| Threshold | Value | Meaning |
-|---|---|---|
-| `review_min_fit` | 30 | Hard floor — SKIP regardless of pivot score |
-| `review_high_min_fit` | 58 | Separates REVIEW_LOW vs REVIEW_HIGH |
-| `apply_fit` | 67 | Minimum for APPLY |
-| `apply_strong_fit` | 78 | Minimum for APPLY_STRONGLY |
-| `pivot_boost_apply` | 78 | Pivot score needed to boost a borderline job to APPLY |
-| `reverse_triage_min_conf` | 0.60 | Confidence threshold to trigger reverse triage (disabled) |
-| `semantic_filter_threshold` | 0.45 | Cosine similarity floor before LLM triage (multilingual-MiniLM) |
-
-Final decisions: `SKIP`, `REVIEW_LOW`, `REVIEW_HIGH`, `APPLY`, `APPLY_STRONGLY`
-
----
-
-## Hard rules — never break these
-
-### 1. No LLM calls before hard filters
-Geo and title filtering happen in `triage.py` **before** any LLM call. This is the primary cost control. Do not move these checks or add LLM calls before them.
-
-### 2. Geo SKIPs must not enter reverse triage
-In `reverse_triage.should_run()`, return `False` if `triage_signals` contains `geo_postal_skip` or `geo_skip`. Geo blocks are hard and personal — not subject to reconsideration.
-
-### 3. Geo filter covers four postal code ranges
-Allowed: `0xxx`, `1xxx`, `3xxx`, `4xxx` (Oslo, Akershus, Vestfold/Telemark, Agder).
-Regex: `^([0134])(00[1-9]|0[1-9]\d|[1-9](0[1-9]|[1-9]\d))$`
-Remote/hybrid override: `(?i)(remote|fjern|hjemmekontor|hybrid)` — checked against specific work-arrangement fields + first 300 chars of description ONLY. Not the full description (causes false passes from "hybrid culture" mentions).
-If no postal code AND no county/municipal fallback matches → SKIP.
-
-### 4. Moderate stage is deterministic — no LLM
-`moderate.py` applies only the YAML thresholds. No OpenAI calls here. Final decisions must be reproducible from the moderator input alone.
-
-### 5. Every stage writes a JSON artifact
-Even for skipped stages, the decision must be traceable. If a stage errors, write an error payload rather than silently failing — or ensure the pipeline continues with that job marked as failed.
-
-### 6. Output schema is additive
-When modifying a stage, preserve existing output fields. Add new fields freely. Do not rename or remove fields without also updating `sync_ledger.py`, `export_dashboard.py`, and `DASHBOARD_SPEC.md`.
-
-### 7. YAML has no duplicate keys
-`configs/pipeline.v1.yaml` must not have duplicate top-level keys (Python's yaml loader silently drops them). Keep all regex patterns quoted. Keep the `stages:` list stable unless explicitly changing the pipeline.
-
----
-
-## CLI commands (standard / Windows PowerShell)
-
-### One-shot runner (recommended)
-```powershell
-.\go.ps1              # pull + process + sync + open dashboard
-.\go.ps1 -DryRun      # 2 jobs only, no browser open (test mode)
-.\go.ps1 -NoOpen      # full run, skip auto-opening browser
-```
-`go.ps1` always uses `.venv\Scripts\python.exe` — no system Python issues.
-
-### Manual steps (advanced)
-Always use `.venv\Scripts\python.exe` to ensure deepagents and all deps are available.
-
-#### Pull delta from Sheet
-```powershell
-.venv\Scripts\python.exe -m jobpipe.cli.pull_sheets_csv --out .\jobs_delta.jsonl --state .\jobs_state.json --only-changed
-```
-
-#### Run pipeline (bounded)
-```powershell
-$env:OPENAI_AGENTS_DISABLE_TRACING="1"
-.venv\Scripts\python.exe -m jobpipe.cli.run_feed --jobs .\jobs_delta.jsonl --profile .\profile_pack.md --config .\configs\pipeline.v1.yaml --out .\out_runs --max 100 --overwrite
-```
-
-#### Drain queue (pull + run until done)
-```powershell
-$env:OPENAI_AGENTS_DISABLE_TRACING="1"
-.venv\Scripts\python.exe -m jobpipe.cli.drain_queue --profile .\profile_pack.md --config .\configs\pipeline.v1.yaml --out .\out_runs --state .\jobs_state.json --batch-size 100 --overwrite
-```
-
-### Sync ledger + regenerate dashboard
-```powershell
-python -m jobpipe.cli.sync_ledger --out .\out_runs --sqlite .\reports\ledger.sqlite --csv .\reports\ledger_latest.csv
-python -m jobpipe.cli.export_dashboard
-start reports\dashboard.html
-```
-
-### Mark application status (manual)
-```powershell
-python -m jobpipe.cli.mark_status JOB_ID shortlisted        # reviewed, intend to apply
-python -m jobpipe.cli.mark_status JOB_ID applied            # application submitted
-python -m jobpipe.cli.mark_status JOB_ID interview          # interview received
-python -m jobpipe.cli.mark_status JOB_ID rejected --notes "Form letter"
-python -m jobpipe.cli.mark_status JOB_ID dismissed          # decided not to apply
-python -m jobpipe.cli.mark_status --list                    # show all tracked
-python -m jobpipe.cli.mark_status --list --filter-status applied
-```
-
-### Scan Gmail for application emails (auto-detect)
-```powershell
-# First-time setup (one-time OAuth consent):
-python -m jobpipe.cli.scan_gmail --setup
-
-# Regular use:
-python -m jobpipe.cli.scan_gmail --dry-run        # preview matches, no writes
-python -m jobpipe.cli.scan_gmail                  # scan last 90 days, write updates
-python -m jobpipe.cli.scan_gmail --days 30 -v     # verbose, last 30 days
-```
-Gmail credentials: `reports/gmail_credentials.json` (download from Google Cloud Console)
-Gmail token: `reports/gmail_token.json` (auto-created after --setup)
-Never overwrites manual entries. Only upgrades status (applied → interview → rejected).
-
-### Compile check (run before every commit)
-```powershell
-.venv\Scripts\python.exe compile_check.py
-```
-
-### Test with small batch first
-```powershell
-.\go.ps1 -DryRun
-```
-Always test with `-DryRun` (2 jobs) before a full run.
-
----
-
-## Working conventions
-
-### Making changes
-1. Read AGENT_STATUS.md + AUDIT.md + PRODUCT_VISION.md first.
-2. Check file ownership — confirm you're not stepping on another workstream.
-3. Make small, focused changes. Preserve output schemas.
-4. Run compile check after every change.
-5. Test with `--max 2` before `--max 100`.
-6. Update your section in AGENT_STATUS.md and AUDIT.md.
-
-### When proposing code changes
-- Provide exact file paths
-- Provide complete function blocks (copy/paste safe)
-- Explain how to test with a single command
-- Note any schema changes that affect downstream consumers (ledger, dashboard)
-
-### Ledger and deduplication
-`ledger.sqlite` has two tables:
-- `ledger` — latest state per `job_id` (upserted on each sync)
-- `events` — run history (one row per job per run)
-
-`drain_queue.py` skips jobs already in the ledger by default. Use `--ledger-sqlite .\reports\ledger.sqlite` to specify a non-default path.
-
-### Data freshness
-Pipeline runs are currently manual. After each run:
-1. `sync_ledger` to update `ledger.sqlite`
-2. `export_dashboard` to rebuild `dashboard.html`
-3. Check AGENT_STATUS.md for any cross-workstream requests that this run's data might unblock.
-
----
-
-## Key data files
-
-| File | Purpose |
-|---|---|
-| `configs/pipeline.v1.yaml` | Pipeline config — models, stages, thresholds, regex |
-| `profile_pack.md` | Candidate profile — truth source for triage and matching |
-| `jobs_delta.jsonl` | Input to pipeline — pulled from Google Sheet |
-| `jobs_state.json` | Change tracking state for delta pull |
-| `reports/ledger.sqlite` | Deduplicated job ledger (tables: `ledger`, `events`) |
-| `reports/ledger_latest.csv` | CSV export of ledger for quick inspection |
-| `reports/dashboard_template.html` | Dashboard HTML template (use `/*__DASHBOARD_DATA__*/` placeholder) |
-| `reports/dashboard.html` | Built dashboard — self-contained, embeds data inline |
-| `reports/application_state.json` | Application tracking sidecar — manual + Gmail-detected statuses |
-| `reports/gmail_credentials.json` | Gmail OAuth2 client credentials (download from Google Cloud Console) |
-| `reports/gmail_token.json` | Gmail OAuth2 token — auto-created by `scan_gmail --setup` |
-
----
-
-## Current known issues (see AUDIT.md for full list)
-
-- Geo classification in the dashboard may miscount — some jobs flagged as "geo-blocked" are actually moderator SKIPs at fit<30 with missing stage files. Needs explicit `skip_reason` signal.
-- `triage_signals` empty for some older ledger jobs — sync_ledger didn't read `01_triage.json` during those runs.
-- `scan_gmail.py` requires Gmail API credentials setup before first use — see CLI commands above.
-- Semantic filter multilingual model (paraphrase-multilingual-MiniLM-L12-v2) needs calibration — threshold currently 0.45 (conservative). Calibrate after running on 50+ jobs: check `sim:X.XX` tags in `01_triage.json`, find separation point, raise toward 0.55-0.60.
-- `go.ps1 --dry-run` (double-dash) is silently ignored by PowerShell — use `.\go.ps1 -DryRun` instead.
-
----
-
-## Agent coordination protocol
-
-Three Cowork agents work on this project in parallel. To avoid conflicts:
-
-1. Read AGENT_STATUS.md before every session.
-2. Check "Cross-agent requests" — act on any requests addressed to your workstream.
-3. After changes: update your workstream section and add any new cross-agent requests.
-4. Add new audit findings to your section in AUDIT.md.
-5. All significant decisions should be consistent with PRODUCT_VISION.md.
+- business rules are unclear
+- a change affects pipeline semantics
+- a change affects model cost
+- a change widens scope beyond the original request
