@@ -311,26 +311,73 @@ def _load_generated_documents_from_db(
     return grouped
 
 
-def build_payload(
-    sqlite_path: Path,
-    out_dir: Path,
-    state_path: Optional[Path] = None,
-    primary_db_path_: Optional[Path] = None,
-    candidate_id: str = _DEFAULT_CANDIDATE_ID,
-) -> Dict[str, Any]:
-    app_state = _load_app_state_merged(
-        state_path=state_path,
-        db_path=primary_db_path_ or _PRIMARY_DB_PATH,
-        candidate_id=candidate_id,
-    )
-    generated_docs = _load_generated_documents_from_db(
-        primary_db_path_ or _PRIMARY_DB_PATH,
-        candidate_id,
-    )
-    thresholds = _load_thresholds()
-    conn = sqlite3.connect(str(sqlite_path))
+def _load_jobs_and_events_from_primary_db(
+    db_path: Path,
+    candidate_id: str,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Load dashboard job/event rows from the primary DB.
 
-    jobs_raw = _rows_as_dicts(conn, """
+    Returns empty lists when the DB is missing or unreadable. The dashboard can
+    then fall back to the legacy ledger.sqlite path.
+    """
+    if not db_path.exists():
+        return [], []
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        jobs = [
+            dict(r) for r in conn.execute(
+                """
+            SELECT job_id, title, employer, work_city, work_county, work_postalCode,
+                   applicationDue, source_url, application_url,
+                   triage_decision, triage_confidence, triage_explanation, triage_signals,
+                   reverse_decision, reverse_confidence, reverse_rationale,
+                   fit_score, pivot_score,
+                   final_decision, final_confidence, recommendation_reason,
+                   cv_focus, feedback_flags, description_snip,
+                   skip_reason,
+                   run_id, run_seen_at, updated_at,
+                   raw_match_json, raw_pivot_json, raw_moderator_json
+            FROM job_evaluations
+            WHERE candidate_id = ?
+            ORDER BY
+                CASE final_decision
+                    WHEN 'APPLY_STRONGLY' THEN 0
+                    WHEN 'APPLY' THEN 1
+                    WHEN 'REVIEW_HIGH' THEN 2
+                    WHEN 'REVIEW_LOW' THEN 3
+                    ELSE 4
+                END,
+                CASE WHEN fit_score IS NULL THEN 1 ELSE 0 END,
+                fit_score DESC
+                """,
+                [candidate_id],
+            )
+        ]
+        events = [
+            dict(r) for r in conn.execute(
+                """
+            SELECT run_id, job_id, run_mtime, seen_at,
+                   final_decision, triage_decision, triage_confidence,
+                   fit_score, pivot_score
+            FROM job_run_events
+            WHERE candidate_id = ?
+            ORDER BY run_mtime
+                """,
+                [candidate_id],
+            )
+        ]
+        conn.close()
+    except Exception:
+        return [], []
+
+    return jobs, events
+
+
+def _load_jobs_and_events_from_ledger(sqlite_path: Path) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    conn = sqlite3.connect(str(sqlite_path))
+    jobs = _rows_as_dicts(conn, """
         SELECT job_id, title, employer, work_city, work_county, work_postalCode,
                applicationDue, source_url, application_url,
                triage_decision, triage_confidence, triage_explanation, triage_signals,
@@ -352,6 +399,42 @@ def build_payload(
             END,
             fit_score DESC NULLS LAST
     """)
+    events = _rows_as_dicts(conn, """
+        SELECT run_id, job_id, run_mtime, seen_at,
+               final_decision, triage_decision, triage_confidence,
+               fit_score, pivot_score
+        FROM events
+        ORDER BY run_mtime
+    """)
+    conn.close()
+    return jobs, events
+
+
+def build_payload(
+    sqlite_path: Path,
+    out_dir: Path,
+    state_path: Optional[Path] = None,
+    primary_db_path_: Optional[Path] = None,
+    candidate_id: str = _DEFAULT_CANDIDATE_ID,
+) -> Dict[str, Any]:
+    app_state = _load_app_state_merged(
+        state_path=state_path,
+        db_path=primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id=candidate_id,
+    )
+    generated_docs = _load_generated_documents_from_db(
+        primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id,
+    )
+    thresholds = _load_thresholds()
+    jobs_raw, events = _load_jobs_and_events_from_primary_db(
+        primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id,
+    )
+    if not jobs_raw:
+        jobs_raw, events = _load_jobs_and_events_from_ledger(sqlite_path)
+    elif not events and sqlite_path.exists():
+        _, events = _load_jobs_and_events_from_ledger(sqlite_path)
 
     jobs = []
     for row in jobs_raw:
@@ -386,16 +469,6 @@ def build_payload(
         row["generated_documents"] = generated_docs.get(row.get("job_id", ""), [])
 
         jobs.append(row)
-
-    events = _rows_as_dicts(conn, """
-        SELECT run_id, job_id, run_mtime, seen_at,
-               final_decision, triage_decision, triage_confidence,
-               fit_score, pivot_score
-        FROM events
-        ORDER BY run_mtime
-    """)
-
-    conn.close()
 
     return {
         "jobs": jobs,
