@@ -3,13 +3,27 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from jobpipe.core.io import now_iso, clean, pick, to_float, to_int
+from jobpipe.core.io import load_env_file, now_iso, clean, pick, to_float, to_int
+
+load_env_file(".env")
+
+from jobpipe.core.paths import primary_db_path
+from jobpipe.core.primary_db import (
+    connect_primary_db,
+    ensure_candidate,
+    upsert_job_evaluation,
+    upsert_job_run_event,
+)
+
+
+DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 
 def _parse_date_maybe(s: str) -> str:
@@ -339,6 +353,94 @@ def insert_event(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
     conn.execute(f"INSERT OR IGNORE INTO events ({', '.join(names)}) VALUES ({placeholders});", [row.get(n) for n in names])
 
 
+def mirror_to_primary_db(
+    db_path: Path,
+    candidate_id: str,
+    latest_rows: List[Dict[str, Any]],
+    event_rows: List[Dict[str, Any]],
+) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = connect_primary_db(db_path)
+    try:
+        ensure_candidate(conn, candidate_id=candidate_id)
+        mirrored_at = now_iso()
+
+        for row in latest_rows:
+            upsert_job_evaluation(
+                conn,
+                {
+                    "candidate_id": candidate_id,
+                    "job_id": clean(row.get("job_id")),
+                    "run_id": clean(row.get("run_id")),
+                    "run_mtime": row.get("run_mtime") or 0,
+                    "run_seen_at": clean(row.get("run_seen_at")),
+                    "title": clean(row.get("title")),
+                    "employer": clean(row.get("employer")),
+                    "sector": clean(row.get("sector")),
+                    "work_city": clean(row.get("work_city")),
+                    "work_county": clean(row.get("work_county")),
+                    "work_postalCode": clean(row.get("work_postalCode")),
+                    "applicationDue": clean(row.get("applicationDue")),
+                    "source_url": clean(row.get("source_url")),
+                    "application_url": clean(row.get("application_url")),
+                    "triage_decision": clean(row.get("triage_decision")),
+                    "triage_confidence": row.get("triage_confidence"),
+                    "triage_explanation": clean(row.get("triage_explanation")),
+                    "triage_signals": clean(row.get("triage_signals")),
+                    "reverse_decision": clean(row.get("reverse_decision")),
+                    "reverse_confidence": row.get("reverse_confidence"),
+                    "reverse_rationale": clean(row.get("reverse_rationale")),
+                    "fit_score": row.get("fit_score"),
+                    "pivot_score": row.get("pivot_score"),
+                    "final_decision": clean(row.get("final_decision")),
+                    "final_confidence": row.get("final_confidence"),
+                    "recommendation_reason": clean(row.get("recommendation_reason")),
+                    "cv_focus": clean(row.get("cv_focus")),
+                    "feedback_flags": clean(row.get("feedback_flags")),
+                    "description_snip": clean(row.get("description_snip")),
+                    "skip_reason": clean(row.get("skip_reason")),
+                    "raw_index_json": clean(row.get("raw_index_json")),
+                    "raw_match_json": clean(row.get("raw_match_json")),
+                    "raw_pivot_json": clean(row.get("raw_pivot_json")),
+                    "raw_moderator_json": clean(row.get("raw_moderator_json")),
+                    "closed_at": clean(row.get("closed_at")),
+                    "updated_at": clean(row.get("updated_at")) or mirrored_at,
+                },
+            )
+
+        for row in event_rows:
+            upsert_job_run_event(
+                conn,
+                {
+                    "candidate_id": candidate_id,
+                    "run_id": clean(row.get("run_id")),
+                    "job_id": clean(row.get("job_id")),
+                    "run_mtime": row.get("run_mtime") or 0,
+                    "seen_at": clean(row.get("seen_at")),
+                    "final_decision": clean(row.get("final_decision")),
+                    "final_confidence": row.get("final_confidence"),
+                    "triage_decision": clean(row.get("triage_decision")),
+                    "triage_confidence": row.get("triage_confidence"),
+                    "fit_score": row.get("fit_score"),
+                    "pivot_score": row.get("pivot_score"),
+                    "applicationDue": clean(row.get("applicationDue")),
+                    "title": clean(row.get("title")),
+                    "employer": clean(row.get("employer")),
+                    "work_city": clean(row.get("work_city")),
+                    "work_county": clean(row.get("work_county")),
+                    "work_postalCode": clean(row.get("work_postalCode")),
+                    "source_url": clean(row.get("source_url")),
+                    "application_url": clean(row.get("application_url")),
+                    "raw_index_json": clean(row.get("raw_index_json")),
+                    "updated_at": mirrored_at,
+                },
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def row_is_newer(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     am, bm = a.get("run_mtime") or 0, b.get("run_mtime") or 0
     if am != bm:
@@ -366,6 +468,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
     ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/ledger_latest.csv)")
     ap.add_argument("--sqlite", default="", help="SQLite output path (default: <reports>/ledger.sqlite)")
+    ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe SQLite DB for mirrored evaluation state")
+    ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB mirroring (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
     ap.add_argument("--desc-max-chars", type=int, default=4000, help="Max chars for description_snip if enabled (default: 4000)")
     # Detailed report options (replaces report_runs.py)
@@ -386,12 +490,13 @@ def main(argv: Optional[List[str]] = None) -> None:
     conn = init_db(sqlite_path)
 
     latest_by_job: Dict[str, Dict[str, Any]] = {}
+    event_rows: List[Dict[str, Any]] = []
     events_scanned = 0
 
     for ev in iter_events(out_dir):
         enriched = merge_job_details(ev, include_description=args.include_description, desc_max_chars=args.desc_max_chars)
 
-        insert_event(conn, {
+        event_row = {
             "run_id": enriched.get("run_id"),
             "job_id": enriched.get("job_id"),
             "run_mtime": enriched.get("run_mtime"),
@@ -411,7 +516,9 @@ def main(argv: Optional[List[str]] = None) -> None:
             "source_url": enriched.get("source_url"),
             "application_url": enriched.get("application_url"),
             "raw_index_json": enriched.get("raw_index_json"),
-        })
+        }
+        insert_event(conn, event_row)
+        event_rows.append(event_row)
         events_scanned += 1
 
         prev = latest_by_job.get(ev.job_id)
@@ -437,12 +544,16 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "WHERE job_id = ? AND (closed_at IS NULL OR closed_at = '')",
                 [closed_at, now_iso(), job_id],
             )
+            if job_id in latest_by_job:
+                latest_by_job[job_id]["closed_at"] = closed_at
+                latest_by_job[job_id]["updated_at"] = now_iso()
             expired_count += 1
 
     conn.commit()
     conn.close()
 
     rows = list(latest_by_job.values())
+    mirror_to_primary_db(Path(args.db), args.candidate_id, rows, event_rows)
     rows.sort(key=lambda r: (r.get("applicationDue") or "9999-99-99", -(r.get("final_confidence") or 0), r.get("title") or ""))
     write_csv(csv_path, rows)
 

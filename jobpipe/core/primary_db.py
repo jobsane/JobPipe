@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 def _json_text(value: Any) -> str:
@@ -133,6 +133,77 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
             ON suggestion_leads(candidate_id, platform, external_id);
         CREATE INDEX IF NOT EXISTS idx_suggestion_leads_candidate_status
             ON suggestion_leads(candidate_id, status, platform, updated_at);
+
+        CREATE TABLE IF NOT EXISTS job_evaluations (
+            candidate_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            run_id TEXT NOT NULL DEFAULT '',
+            run_mtime REAL NOT NULL DEFAULT 0,
+            run_seen_at TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            employer TEXT NOT NULL DEFAULT '',
+            sector TEXT NOT NULL DEFAULT '',
+            work_city TEXT NOT NULL DEFAULT '',
+            work_county TEXT NOT NULL DEFAULT '',
+            work_postalCode TEXT NOT NULL DEFAULT '',
+            applicationDue TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            triage_decision TEXT NOT NULL DEFAULT '',
+            triage_confidence REAL,
+            triage_explanation TEXT NOT NULL DEFAULT '',
+            triage_signals TEXT NOT NULL DEFAULT '',
+            reverse_decision TEXT NOT NULL DEFAULT '',
+            reverse_confidence REAL,
+            reverse_rationale TEXT NOT NULL DEFAULT '',
+            fit_score INTEGER,
+            pivot_score INTEGER,
+            final_decision TEXT NOT NULL DEFAULT '',
+            final_confidence REAL,
+            recommendation_reason TEXT NOT NULL DEFAULT '',
+            cv_focus TEXT NOT NULL DEFAULT '',
+            feedback_flags TEXT NOT NULL DEFAULT '',
+            description_snip TEXT NOT NULL DEFAULT '',
+            skip_reason TEXT NOT NULL DEFAULT '',
+            raw_index_json TEXT NOT NULL DEFAULT '',
+            raw_match_json TEXT NOT NULL DEFAULT '',
+            raw_pivot_json TEXT NOT NULL DEFAULT '',
+            raw_moderator_json TEXT NOT NULL DEFAULT '',
+            closed_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, job_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_evaluations_candidate_decision
+            ON job_evaluations(candidate_id, final_decision, applicationDue);
+
+        CREATE TABLE IF NOT EXISTS job_run_events (
+            candidate_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            run_mtime REAL NOT NULL DEFAULT 0,
+            seen_at TEXT NOT NULL DEFAULT '',
+            final_decision TEXT NOT NULL DEFAULT '',
+            final_confidence REAL,
+            triage_decision TEXT NOT NULL DEFAULT '',
+            triage_confidence REAL,
+            fit_score INTEGER,
+            pivot_score INTEGER,
+            applicationDue TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            employer TEXT NOT NULL DEFAULT '',
+            work_city TEXT NOT NULL DEFAULT '',
+            work_county TEXT NOT NULL DEFAULT '',
+            work_postalCode TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            raw_index_json TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, run_id, job_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_run_events_candidate_job
+            ON job_run_events(candidate_id, job_id, run_mtime);
         """
     )
 
@@ -337,3 +408,11 @@ def mark_suggestion_lead_status(
         """,
         [status, fetched_at, last_error, updated_at, suggestion_id],
     )
+
+
+def upsert_job_evaluation(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    _upsert(conn, "job_evaluations", row, ["candidate_id", "job_id"])
+
+
+def upsert_job_run_event(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    _upsert(conn, "job_run_events", row, ["candidate_id", "run_id", "job_id"])

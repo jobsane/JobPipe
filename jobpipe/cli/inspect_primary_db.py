@@ -82,6 +82,8 @@ def _summary(conn: sqlite3.Connection, candidate_id: str) -> dict[str, Any]:
             "application_summary": _count(conn, "application_summary"),
             "generated_documents": _count(conn, "generated_documents"),
             "suggestion_leads": _count(conn, "suggestion_leads"),
+            "job_evaluations": _count(conn, "job_evaluations"),
+            "job_run_events": _count(conn, "job_run_events"),
         },
         "candidate": candidate,
         "active_profile": active_profile,
@@ -218,6 +220,37 @@ def _suggestions_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -
     return rows
 
 
+def _evaluations_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    return _rows(
+        conn,
+        """
+        SELECT candidate_id, job_id, run_id, run_seen_at, title, employer,
+               final_decision, final_confidence, fit_score, pivot_score,
+               triage_decision, applicationDue, closed_at, updated_at
+        FROM job_evaluations
+        WHERE candidate_id = ?
+        ORDER BY updated_at DESC, applicationDue ASC, job_id ASC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+
+
+def _job_events_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    return _rows(
+        conn,
+        """
+        SELECT candidate_id, run_id, job_id, seen_at, title, employer,
+               final_decision, final_confidence, triage_decision, fit_score, pivot_score
+        FROM job_run_events
+        WHERE candidate_id = ?
+        ORDER BY run_mtime DESC, seen_at DESC, job_id ASC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+
+
 def _print_summary(data: dict[str, Any], db_path: Path) -> None:
     print("=== JobPipe Primary DB ===")
     print(f"DB: {db_path.resolve()}")
@@ -231,7 +264,9 @@ def _print_summary(data: dict[str, Any], db_path: Path) -> None:
         f"app_events={counts.get('application_events', 0)}, "
         f"app_summary={counts.get('application_summary', 0)}, "
         f"documents={counts.get('generated_documents', 0)}, "
-        f"suggestions={counts.get('suggestion_leads', 0)}"
+        f"suggestions={counts.get('suggestion_leads', 0)}, "
+        f"evaluations={counts.get('job_evaluations', 0)}, "
+        f"job_events={counts.get('job_run_events', 0)}"
     )
 
     candidate = data.get("candidate")
@@ -301,7 +336,7 @@ def main() -> None:
     ap.add_argument(
         "--show",
         action="append",
-        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions"],
+        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions", "evaluations", "job_events"],
         help="Which view(s) to show. Default: summary",
     )
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
@@ -328,6 +363,10 @@ def main() -> None:
                 payload["documents"] = _documents_view(conn, args.candidate_id, args.limit)
             elif view == "suggestions":
                 payload["suggestions"] = _suggestions_view(conn, args.candidate_id, args.limit)
+            elif view == "evaluations":
+                payload["evaluations"] = _evaluations_view(conn, args.candidate_id, args.limit)
+            elif view == "job_events":
+                payload["job_events"] = _job_events_view(conn, args.candidate_id, args.limit)
     finally:
         conn.close()
 
@@ -350,6 +389,10 @@ def main() -> None:
             _print_rows("Generated Documents", payload.get("documents", []))
         elif view == "suggestions":
             _print_rows("Suggestion Leads", payload.get("suggestions", []))
+        elif view == "evaluations":
+            _print_rows("Job Evaluations", payload.get("evaluations", []))
+        elif view == "job_events":
+            _print_rows("Job Run Events", payload.get("job_events", []))
         if view != views[-1]:
             print("")
 
