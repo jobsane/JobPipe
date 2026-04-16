@@ -135,6 +135,14 @@ a.apply-link:hover { text-decoration:underline; }
 .detail-section ul { padding-left:18px; font-size:13px; }
 .detail-section li { margin-bottom:4px; }
 .detail-section p { font-size:13px; color:var(--text); }
+.doc-list { list-style:none; padding-left:0; margin:0; display:grid; gap:10px; }
+.doc-item { border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:var(--surface); }
+.doc-head { display:flex; justify-content:space-between; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.doc-meta { font-size:11px; color:var(--text-dim); }
+.doc-preview { font-size:12px; color:var(--text); margin-top:6px; }
+.doc-path { margin-top:6px; font-size:12px; }
+.doc-link { color:var(--blue); text-decoration:none; }
+.doc-link:hover { text-decoration:underline; }
 @media(max-width:800px) { .detail-grid { grid-template-columns:1fr; } }
 
 /* Due date coloring */
@@ -630,6 +638,53 @@ function renderStatusButtons(j) {
   </div>`;
 }
 
+const DOC_KIND_LABELS = {
+  application_pack_json: 'Application pack (JSON)',
+  cv_highlights_docx: 'CV highlights (DOCX)',
+};
+
+function toFileHref(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  const normalized = raw.replace(/\\/g, '/');
+  if (/^[A-Za-z]:\//.test(normalized)) return 'file:///' + encodeURI(normalized);
+  if (normalized.startsWith('/')) return 'file://' + encodeURI(normalized);
+  return encodeURI(normalized);
+}
+
+function renderGeneratedDocuments(j) {
+  const docs = Array.isArray(j.generated_documents) ? j.generated_documents : [];
+  if (!docs.length) return '';
+
+  const items = docs.map(doc => {
+    const label = DOC_KIND_LABELS[doc.kind] || doc.kind || 'Document';
+    const href = toFileHref(doc.storage_path || '');
+    const updated = (doc.updated_at || doc.created_at || '').slice(0, 10);
+    const meta = [doc.status || '', updated].filter(Boolean).join(' · ');
+    const preview = doc.preview_text
+      ? `<div class="doc-preview">${esc(doc.preview_text)}</div>`
+      : '';
+    const filename = esc((doc.storage_path || '').split(/[\\/]/).pop() || doc.storage_path || '');
+    const link = href
+      ? `<a class="doc-link" href="${href}" target="_blank" onclick="event.stopPropagation()">${filename || 'Open file'}</a>`
+      : `<span>${filename || '-'}</span>`;
+
+    return `<li class="doc-item">
+      <div class="doc-head">
+        <strong>${esc(label)}</strong>
+        ${meta ? `<span class="doc-meta">${esc(meta)}</span>` : ''}
+      </div>
+      ${preview}
+      <div class="doc-path">${link}</div>
+    </li>`;
+  }).join('');
+
+  return `<div class="detail-section" style="grid-column:1/-1">
+    <h4>Generated documents</h4>
+    <ul class="doc-list">${items}</ul>
+  </div>`;
+}
+
 function parseTags(raw) {
   if (!raw) return [];
   try { const a = JSON.parse(raw); if (Array.isArray(a)) return a; } catch(e) {}
@@ -671,6 +726,7 @@ function renderDetail(j) {
     ${d.hard_blockers.length ? '<div class="detail-section"><h4 style="color:var(--red)">Hard blockers</h4><ul>'+d.hard_blockers.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>' : ''}
     ${tagHtml ? '<div class="detail-section"><h4>Triage signals</h4><p>'+tagHtml+'</p></div>' : ''}
     ${j.triage_explanation ? '<div class="detail-section"><h4>Triage reasoning</h4><p>'+esc(j.triage_explanation)+'</p></div>' : ''}
+    ${renderGeneratedDocuments(j)}
     ${renderStatusButtons(j)}
   </div>`;
 }

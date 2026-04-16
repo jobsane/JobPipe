@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
-from jobpipe.cli.export_dashboard import _load_app_state_merged
+from jobpipe.cli.export_dashboard import _load_app_state_merged, build_payload
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
     insert_application_event,
+    insert_generated_document,
     upsert_application_summary,
 )
 
@@ -92,3 +94,150 @@ def test_load_app_state_merged_prefers_db_and_falls_back_to_json(tmp_path):
     assert merged["job-json"]["status"] == "shortlisted"
     assert merged["job-json"]["source"] == "manual"
     assert merged["job-json"]["notes"] == "json fallback"
+
+
+def test_build_payload_includes_generated_documents_from_primary_db(tmp_path):
+    ledger_path = tmp_path / "ledger.sqlite"
+    out_runs = tmp_path / "out_runs"
+    db_path = tmp_path / "jobpipe.sqlite"
+
+    out_runs.mkdir()
+
+    ledger = sqlite3.connect(str(ledger_path))
+    ledger.execute(
+        """
+        CREATE TABLE ledger (
+            job_id TEXT,
+            title TEXT,
+            employer TEXT,
+            work_city TEXT,
+            work_county TEXT,
+            work_postalCode TEXT,
+            applicationDue TEXT,
+            source_url TEXT,
+            application_url TEXT,
+            triage_decision TEXT,
+            triage_confidence REAL,
+            triage_explanation TEXT,
+            triage_signals TEXT,
+            reverse_decision TEXT,
+            reverse_confidence REAL,
+            reverse_rationale TEXT,
+            fit_score INTEGER,
+            pivot_score INTEGER,
+            final_decision TEXT,
+            final_confidence REAL,
+            recommendation_reason TEXT,
+            cv_focus TEXT,
+            feedback_flags TEXT,
+            description_snip TEXT,
+            skip_reason TEXT,
+            run_id TEXT,
+            run_seen_at TEXT,
+            updated_at TEXT,
+            raw_match_json TEXT,
+            raw_pivot_json TEXT,
+            raw_moderator_json TEXT
+        )
+        """
+    )
+    ledger.execute(
+        """
+        CREATE TABLE events (
+            run_id TEXT,
+            job_id TEXT,
+            run_mtime TEXT,
+            seen_at TEXT,
+            final_decision TEXT,
+            triage_decision TEXT,
+            triage_confidence REAL,
+            fit_score INTEGER,
+            pivot_score INTEGER
+        )
+        """
+    )
+    ledger.execute(
+        """
+        INSERT INTO ledger (
+            job_id, title, employer, work_city, work_county, work_postalCode,
+            applicationDue, source_url, application_url,
+            triage_decision, triage_confidence, triage_explanation, triage_signals,
+            reverse_decision, reverse_confidence, reverse_rationale,
+            fit_score, pivot_score,
+            final_decision, final_confidence, recommendation_reason,
+            cv_focus, feedback_flags, description_snip,
+            skip_reason, run_id, run_seen_at, updated_at,
+            raw_match_json, raw_pivot_json, raw_moderator_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            "job-doc",
+            "Senior Product Manager",
+            "Example AS",
+            "Oslo",
+            "Oslo",
+            "0001",
+            "",
+            "https://example.test/job-doc",
+            "",
+            "APPLY",
+            0.92,
+            "Looks strong.",
+            json.dumps(["safety:ok"], ensure_ascii=False),
+            "",
+            None,
+            "",
+            82,
+            41,
+            "APPLY",
+            0.88,
+            "Strong fit.",
+            "Lead with SaaS and platform experience.",
+            "",
+            "",
+            "",
+            "run-1",
+            "2026-04-16T10:00:00Z",
+            "2026-04-16T10:05:00Z",
+            json.dumps({"overlaps": ["PM leadership"], "gaps": [], "hard_blockers": [], "notes": ""}, ensure_ascii=False),
+            json.dumps({"pivot_type": "", "potential_risk": "", "why_it_matters": []}, ensure_ascii=False),
+            json.dumps({"cv_focus": ["Platform"], "feedback_flags": []}, ensure_ascii=False),
+        ],
+    )
+    ledger.commit()
+    ledger.close()
+
+    conn = connect_primary_db(db_path)
+    ensure_candidate(conn, candidate_id="candidate-a")
+    insert_generated_document(
+        conn,
+        {
+            "document_id": "doc_1",
+            "candidate_id": "candidate-a",
+            "job_id": "job-doc",
+            "evaluation_id": "run-1:job-doc",
+            "kind": "cv_highlights_docx",
+            "producer": "jobpipe_pipeline",
+            "status": "draft",
+            "storage_path": str(tmp_path / "07_cv_highlights.docx"),
+            "preview_text": "Strong B2B SaaS and platform experience.",
+            "document_json": {"cv_highlights": ["Leadership"]},
+            "created_at": "2026-04-16T10:10:00Z",
+            "updated_at": "2026-04-16T10:15:00Z",
+        },
+    )
+    conn.commit()
+    conn.close()
+
+    payload = build_payload(
+        ledger_path,
+        out_runs,
+        primary_db_path_=db_path,
+        candidate_id="candidate-a",
+    )
+
+    job = next(j for j in payload["jobs"] if j["job_id"] == "job-doc")
+    assert len(job["generated_documents"]) == 1
+    assert job["generated_documents"][0]["kind"] == "cv_highlights_docx"
+    assert job["generated_documents"][0]["status"] == "draft"
+    assert job["generated_documents"][0]["preview_text"] == "Strong B2B SaaS and platform experience."

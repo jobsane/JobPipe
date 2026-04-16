@@ -265,6 +265,52 @@ def _load_app_state_merged(
     return merged
 
 
+def _load_generated_documents_from_db(
+    db_path: Path,
+    candidate_id: str,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Load generated document metadata grouped by job_id."""
+    if not db_path.exists():
+        return {}
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = [
+            dict(r) for r in conn.execute(
+                """
+                SELECT job_id, kind, producer, status, storage_path, preview_text,
+                       created_at, updated_at
+                FROM generated_documents
+                WHERE candidate_id = ?
+                ORDER BY updated_at DESC, created_at DESC
+                """,
+                [candidate_id],
+            )
+        ]
+        conn.close()
+    except Exception:
+        return {}
+
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        job_id = str(row.get("job_id") or "").strip()
+        if not job_id:
+            continue
+        grouped.setdefault(job_id, []).append(
+            {
+                "kind": str(row.get("kind") or "").strip(),
+                "producer": str(row.get("producer") or "").strip(),
+                "status": str(row.get("status") or "").strip(),
+                "storage_path": str(row.get("storage_path") or "").strip(),
+                "preview_text": str(row.get("preview_text") or "").strip(),
+                "created_at": str(row.get("created_at") or "").strip(),
+                "updated_at": str(row.get("updated_at") or "").strip(),
+            }
+        )
+    return grouped
+
+
 def build_payload(
     sqlite_path: Path,
     out_dir: Path,
@@ -276,6 +322,10 @@ def build_payload(
         state_path=state_path,
         db_path=primary_db_path_ or _PRIMARY_DB_PATH,
         candidate_id=candidate_id,
+    )
+    generated_docs = _load_generated_documents_from_db(
+        primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id,
     )
     thresholds = _load_thresholds()
     conn = sqlite3.connect(str(sqlite_path))
@@ -333,6 +383,7 @@ def build_payload(
         row["app_updated_at"] = app_entry.get("updated_at", "")
         row["app_source"] = app_entry.get("source", "")
         row["app_notes"] = app_entry.get("notes", "")
+        row["generated_documents"] = generated_docs.get(row.get("job_id", ""), [])
 
         jobs.append(row)
 
