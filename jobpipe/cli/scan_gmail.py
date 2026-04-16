@@ -51,7 +51,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from jobpipe.cli.mark_status import add_stage
-from jobpipe.core.evaluation_state import load_job_catalog, load_processed_job_ids
+from jobpipe.core.job_catalog import ingest_catalog_job, load_source_record_index
+from jobpipe.core.evaluation_state import load_job_catalog
 from jobpipe.core.io import load_env_file
 from jobpipe.core.paths import (
     application_state_path,
@@ -101,6 +102,50 @@ def _suggestion_key(platform: str, external_id: str) -> str:
 def _suggestion_id(candidate_id: str, platform: str, external_id: str) -> str:
     raw = f"{candidate_id}|{platform}|{external_id}"
     return "suggestion_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _catalog_placeholder_job(platform: str, external_id: str, job_url: str, email_subject: str, suggested_at: str) -> Dict[str, Any]:
+    job_id = f"{platform}_{external_id}"
+    return {
+        "job_id": job_id,
+        "title": "",
+        "normalized_title": "",
+        "employer_name": "",
+        "description_html": "",
+        "sourceurl": job_url,
+        "link": job_url,
+        "applicationUrl": "",
+        "applicationDue": "",
+        "work_city": "",
+        "work_county": "",
+        "work_postalCode": "",
+        "sector": "",
+        "status": "ACTIVE",
+        "suggested_by_platform": True,
+        "email_subject": email_subject,
+        "suggested_at": suggested_at,
+        "external_id": external_id,
+        "finnkode": external_id if platform == "finn" else "",
+        "linkedin_job_id": external_id if platform == "linkedin" else "",
+    }
+
+
+def _status_source_refs(raw: Dict[str, Any]) -> list[tuple[str, str]]:
+    payload = raw.get("payload", {}) if isinstance(raw, dict) else {}
+    urls = _extract_job_urls_from_payload(payload)
+    refs: list[tuple[str, str]] = []
+    for item in _extract_suggestion_jobs(urls):
+        platform = str(item.get("platform") or "").strip()
+        external_id = _suggestion_external_id(item)
+        if platform and external_id:
+            refs.append((platform, external_id))
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for ref in refs:
+        if ref not in seen:
+            seen.add(ref)
+            deduped.append(ref)
+    return deduped
 
 
 def _load_existing_suggestion_keys(
@@ -732,29 +777,52 @@ def _match_jobs(
     title: str,
     job_catalog: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Find known jobs by employer name and/or job title.
-
-    Scoring:
-      employer=3 + title=2  → perfect (6)
-      employer=3            → strong employer match (3)
-      employer=1 + title=1  → weak both (2) — only accepted if title is long enough
-      title only            → never accepted alone (too noisy)
-    """
+    """Return a single high-confidence fuzzy match, or [] if ambiguous."""
     matches = []
     for job in job_catalog:
         escore = _employer_score(employer, job.get("employer") or "")
         tscore = _title_score(title, job.get("title") or "") if title else 0
-        total = escore * 2 + tscore  # weight employer more heavily
+        total = escore * 2 + tscore
 
-        # Require at least a meaningful employer signal
-        if escore >= 1:
-            matches.append((total, job))
-        # Title-only match: only if title is very specific (long) and score is high
-        elif tscore >= 2 and len(_normalize(title).split()) >= 4:
-            matches.append((tscore, job))
+        if escore >= 2:
+            matches.append((total, escore, tscore, job))
+        elif escore >= 1 and tscore >= 2:
+            matches.append((total, escore, tscore, job))
 
-    matches.sort(key=lambda x: (x[0], x[1].get("fit_score") or 0), reverse=True)
-    return [j for _, j in matches]
+    matches.sort(key=lambda x: (x[0], x[1], x[2], x[3].get("fit_score") or 0), reverse=True)
+    if not matches:
+        return []
+
+    top = matches[0]
+    if top[0] < 4:
+        return []
+    if len(matches) > 1 and matches[1][0] == top[0]:
+        return []
+    return [top[3]]
+
+
+def _match_jobs_by_source_refs(
+    source_refs: List[tuple[str, str]],
+    source_index: Dict[tuple[str, str], Dict[str, Any]],
+    job_catalog: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    resolved: list[Dict[str, Any]] = []
+    seen_job_ids: set[str] = set()
+
+    for ref in source_refs:
+        row = source_index.get(ref)
+        job_id = str((row or {}).get("job_id") or "").strip()
+        if not job_id or job_id in seen_job_ids:
+            continue
+        for job in job_catalog:
+            if str(job.get("job_id") or "").strip() == job_id:
+                resolved.append(job)
+                seen_job_ids.add(job_id)
+                break
+
+    if len(resolved) == 1:
+        return resolved
+    return []
 
 
 # --- State helpers ---
@@ -885,15 +953,16 @@ def scan(
 
     print(f"Found {len(msg_ids)} candidate emails across all queries.")
 
-    # Load job catalog for employer matching from the primary DB.
+    # Load job catalog for matching from the primary DB.
     job_catalog = load_job_catalog(
         primary_db_path=db_path,
         candidate_id=candidate_id,
     )
+    source_index = load_source_record_index(db_path) if db_path.exists() else {}
     if job_catalog:
-        print(f"Loaded {len(job_catalog)} jobs from evaluation state for employer matching.")
+        print(f"Loaded {len(job_catalog)} jobs from the primary DB for Gmail matching.")
     else:
-        print("Warning: no evaluation state found in the primary DB. Employer matching disabled.")
+        print("Warning: no job catalog found in the primary DB. Gmail matching disabled.")
 
     state = _load_state(state_path)
     apps = state.setdefault("applications", {})
@@ -949,15 +1018,17 @@ def scan(
             parsed["subject"], parsed["snippet"], parsed["sender"], parsed["body"]
         )
         title = _extract_title(parsed["subject"], parsed["body"])
-
-        matched = _match_jobs(employer, title, job_catalog)
+        source_refs = _status_source_refs(raw)
+        matched = _match_jobs_by_source_refs(source_refs, source_index, job_catalog)
+        if not matched:
+            matched = _match_jobs(employer, title, job_catalog)
 
         if not matched:
             unmatched += 1
             if verbose:
                 print(
                     f"    No known-job match: [{status}] '{parsed['subject'][:50]}'"
-                    f"  employer='{employer}'  title='{title}'"
+                    f"  employer='{employer}'  title='{title}' refs={source_refs!r}"
                 )
             continue
 
@@ -1073,18 +1144,7 @@ def scan_suggestions(
 
     print(f"Found {len(msg_ids)} candidate suggestion emails.")
 
-    # Build processed-job lookup: finnkode/linkedin_id → job_id (for cross-referencing)
-    known_finnkodes: Dict[str, str] = {}
-    known_linkedin_ids: Dict[str, str] = {}
-    processed_ids = load_processed_job_ids(
-        primary_db_path=db_path,
-        candidate_id=candidate_id,
-    )
-    for job_id in processed_ids:
-        if job_id.startswith("finn_"):
-            known_finnkodes[job_id[5:]] = job_id
-        elif job_id.startswith("linkedin_"):
-            known_linkedin_ids[job_id[9:]] = job_id
+    source_index = load_source_record_index(db_path) if db_path.exists() else {}
 
     # Load existing queue to avoid duplicates across runs.
     # Prefer the primary DB, but still include the legacy JSONL sidecar as a bridge.
@@ -1095,6 +1155,13 @@ def scan_suggestions(
     already_known = 0
     new_queued: List[Dict[str, Any]] = []
     emails_with_jobs = 0
+    catalog_conn = None
+    if not dry_run:
+        try:
+            catalog_conn = connect_primary_db(db_path)
+            ensure_candidate(catalog_conn, candidate_id=candidate_id)
+        except Exception:
+            catalog_conn = None
 
     for i, msg_id in enumerate(msg_ids):
         if verbose:
@@ -1167,21 +1234,47 @@ def scan_suggestions(
             platform = job["platform"]
             if platform == "finn":
                 finn_total += 1
-                known_job_id = known_finnkodes.get(job.get("finnkode", ""))
             else:
                 linkedin_total += 1
-                known_job_id = known_linkedin_ids.get(job.get("linkedin_job_id", ""))
 
             external_id = _suggestion_external_id(job)
             dedup_key = _suggestion_key(platform, external_id)
 
-            if known_job_id:
-                already_known += 1
-                if verbose:
-                    print(f"    [{platform_label}] Already known: {known_job_id}")
+            if not external_id:
                 continue
 
-            if not external_id:
+            source_ref = (platform, external_id)
+            known_source = source_index.get(source_ref)
+
+            if not known_source and catalog_conn is not None:
+                seen_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                placeholder = _catalog_placeholder_job(
+                    platform=platform,
+                    external_id=external_id,
+                    job_url=str(job.get("job_url") or "").strip(),
+                    email_subject=subject[:120],
+                    suggested_at=email_date,
+                )
+                try:
+                    ingest_result = ingest_catalog_job(
+                        catalog_conn,
+                        placeholder,
+                        source_name=platform,
+                        seen_at=seen_at,
+                    )
+                    known_source = {
+                        "job_id": ingest_result["job_id"],
+                        "needs_enrichment": bool(ingest_result["needs_enrichment"]),
+                    }
+                    source_index[source_ref] = known_source
+                except Exception as e:
+                    if verbose:
+                        print(f"    [{platform_label}] Catalog ingest failed: {e}", file=sys.stderr)
+
+            if known_source and not bool(known_source.get("needs_enrichment")):
+                already_known += 1
+                if verbose:
+                    print(f"    [{platform_label}] Already covered in catalog: {known_source.get('job_id', '')}")
                 continue
 
             if dedup_key in existing_queue_keys:
@@ -1191,7 +1284,13 @@ def scan_suggestions(
 
             # New, not-yet-processed suggestion — add to queue
             existing_queue_keys.add(dedup_key)
-            entry = {**job, "suggested_at": email_date, "email_subject": subject[:120]}
+            entry = {
+                **job,
+                "suggested_at": email_date,
+                "email_subject": subject[:120],
+            }
+            if known_source and known_source.get("job_id"):
+                entry["job_id_hint"] = str(known_source["job_id"])
             new_queued.append(entry)
             print(
                 f"  [+] {platform_label:<9} {job.get('job_url', '')[:70]}"
@@ -1236,11 +1335,25 @@ def scan_suggestions(
         except Exception as e:
             if verbose:
                 print(f"Warning: primary DB suggestion write failed: {e}", file=sys.stderr)
+        finally:
+            if catalog_conn is not None:
+                try:
+                    catalog_conn.commit()
+                    catalog_conn.close()
+                except Exception:
+                    pass
+                catalog_conn = None
 
         suggested_path.parent.mkdir(parents=True, exist_ok=True)
         with open(suggested_path, "a", encoding="utf-8") as f:
             for entry in new_queued:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    elif catalog_conn is not None:
+        try:
+            catalog_conn.commit()
+            catalog_conn.close()
+        except Exception:
+            pass
 
     prefix = "[DRY RUN] " if dry_run else ""
     print(

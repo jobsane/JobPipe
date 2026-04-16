@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from jobpipe.core.job_catalog import canonical_job_row, job_source_record_row
+import json
+
+from jobpipe.core.job_catalog import canonical_job_row, ingest_catalog_job, job_source_record_row
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
@@ -43,6 +45,7 @@ def test_canonical_job_helpers_build_expected_rows():
     assert source_record["source_name"] == "nav_sheet"
     assert source_record["source_job_key"] == "nav-123"
     assert source_record["is_active"] == 1
+    assert canonical["dedupe_key"] == "product manager|example as|oslo|0001|2026-05-01"
 
 
 def test_job_catalog_tables_and_pipeline_runs_roundtrip(tmp_path):
@@ -153,3 +156,68 @@ def test_job_catalog_tables_and_pipeline_runs_roundtrip(tmp_path):
     assert run_row[1] == "2026-04-17T10:05:00Z"
     assert run_row[2] == 2
     assert run_row[3] == 0
+
+
+def test_ingest_catalog_job_prefers_nav_but_enriches_from_finn(tmp_path):
+    db_path = tmp_path / "jobpipe.sqlite"
+    conn = connect_primary_db(db_path)
+    try:
+        nav_job = {
+            "uuid": "nav-123",
+            "job_id": "nav-123",
+            "title": "Senior Product Manager",
+            "normalized_title": "Senior Product Manager",
+            "employer_name": "Example AS",
+            "description_html": "",
+            "sourceurl": "https://nav.example/job/nav-123",
+            "applicationUrl": "",
+            "applicationDue": "2026-05-01",
+            "work_city": "Oslo",
+            "work_postalCode": "0001",
+            "status": "ACTIVE",
+        }
+        finn_job = {
+            "job_id": "finn_555",
+            "finnkode": "555",
+            "title": "Senior Product Manager",
+            "normalized_title": "Senior Product Manager",
+            "employer_name": "Example AS",
+            "description_html": "<p>Lead product strategy across the full portfolio.</p>",
+            "sourceurl": "https://www.finn.no/job/fulltime/ad.html?finnkode=555",
+            "applicationUrl": "https://apply.example/finn-555",
+            "applicationDue": "2026-05-01",
+            "work_city": "Oslo",
+            "work_postalCode": "0001",
+            "status": "ACTIVE",
+        }
+
+        nav_result = ingest_catalog_job(conn, nav_job, source_name="nav_sheet", seen_at="2026-04-17T10:00:00Z")
+        finn_result = ingest_catalog_job(conn, finn_job, source_name="finn", seen_at="2026-04-17T11:00:00Z")
+        conn.commit()
+
+        row = conn.execute(
+            """
+            SELECT job_id, source_url, application_url, description_text, job_metadata_json
+            FROM jobs
+            WHERE job_id = ?
+            """,
+            [nav_result["job_id"]],
+        ).fetchone()
+        source_rows = conn.execute(
+            "SELECT source_name, source_job_key, job_id FROM job_source_records ORDER BY source_name",
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert nav_result["job_id"] == finn_result["job_id"]
+    assert row is not None
+    assert row[0] == "nav-123"
+    assert row[1] == "https://nav.example/job/nav-123"
+    assert row[2] == "https://apply.example/finn-555"
+    assert "Lead product strategy" in row[3]
+    metadata = json.loads(row[4])
+    assert metadata["_canonical_source_name"] == "nav_sheet"
+    assert {tuple(item[:2]) for item in source_rows} == {
+        ("finn", "555"),
+        ("nav_sheet", "nav-123"),
+    }

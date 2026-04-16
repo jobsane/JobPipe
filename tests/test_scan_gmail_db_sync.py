@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from jobpipe.cli.scan_gmail import _persist_gmail_status
+from jobpipe.cli.scan_gmail import _match_jobs, _match_jobs_by_source_refs, _persist_gmail_status
 
 
 def _load_json(path: Path) -> dict:
@@ -74,3 +74,24 @@ def test_persist_gmail_status_dry_run_only_updates_cache(tmp_path):
     assert apps["job-123"]["status"] == "rejected"
     assert not state_path.exists()
     assert not db_path.exists()
+
+
+def test_match_jobs_requires_unique_high_confidence_match():
+    catalog = [
+        {"job_id": "job-1", "employer": "Example AS", "title": "Senior Product Manager", "fit_score": 90},
+        {"job_id": "job-2", "employer": "Example Consulting", "title": "Designer", "fit_score": 70},
+    ]
+    matched = _match_jobs("Example AS", "Senior Product Manager", catalog)
+    assert [row["job_id"] for row in matched] == ["job-1"]
+
+
+def test_match_jobs_by_source_refs_prefers_exact_identifier_match():
+    catalog = [
+        {"job_id": "job-1", "employer": "Example AS", "title": "Senior Product Manager", "fit_score": 90},
+        {"job_id": "job-2", "employer": "Example AS", "title": "Senior Product Manager", "fit_score": 70},
+    ]
+    source_index = {
+        ("finn", "123"): {"job_id": "job-2"},
+    }
+    matched = _match_jobs_by_source_refs([("finn", "123")], source_index, catalog)
+    assert [row["job_id"] for row in matched] == ["job-2"]

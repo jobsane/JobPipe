@@ -23,17 +23,48 @@ def load_job_catalog(
     primary_db_path: Optional[Path],
     candidate_id: str,
 ) -> List[Dict[str, Any]]:
-    """Load the latest job catalog from the primary DB."""
+    """Load the latest job catalog from the primary DB.
+
+    Prefer canonical jobs, enriched with evaluation data when present.
+    Fall back to evaluation-only rows for older DB state.
+    """
     if primary_db_path and primary_db_path.exists():
         try:
             rows = _rows_as_dicts(
                 primary_db_path,
                 """
-                SELECT job_id, title, employer, work_city, final_decision
-                FROM job_evaluations
-                WHERE candidate_id = ?
+                SELECT
+                    j.job_id,
+                    COALESCE(e.title, j.title) AS title,
+                    COALESCE(e.employer, j.employer) AS employer,
+                    COALESCE(e.work_city, j.work_city) AS work_city,
+                    COALESCE(e.applicationDue, j.applicationDue) AS applicationDue,
+                    COALESCE(e.source_url, j.source_url) AS source_url,
+                    COALESCE(e.application_url, j.application_url) AS application_url,
+                    COALESCE(e.final_decision, '') AS final_decision
+                FROM jobs j
+                LEFT JOIN job_evaluations e
+                  ON e.candidate_id = ? AND e.job_id = j.job_id
+                WHERE COALESCE(j.closed_at, '') = ''
+
+                UNION ALL
+
+                SELECT
+                    e.job_id,
+                    e.title,
+                    e.employer,
+                    e.work_city,
+                    e.applicationDue,
+                    e.source_url,
+                    e.application_url,
+                    e.final_decision
+                FROM job_evaluations e
+                WHERE e.candidate_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM jobs j WHERE j.job_id = e.job_id
+                  )
                 """,
-                [candidate_id],
+                [candidate_id, candidate_id],
             )
             if rows:
                 return rows

@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.job_catalog import ingest_catalog_job, load_source_record_index
 from jobpipe.core.io import load_env_file
 from jobpipe.core.paths import primary_db_path, suggested_jobs_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, list_suggestion_leads, mark_suggestion_lead_status
@@ -487,18 +487,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(0)
 
-    # Filter to FINN jobs that haven't been fetched yet and aren't already known
-    processed_ids = load_processed_job_ids(
-        primary_db_path=db_path,
-        candidate_id=args.candidate_id,
-    )
+    source_index = load_source_record_index(db_path) if db_path.exists() else {}
     finn_pending = [
         j for j in queue
         if j.get("platform") == "finn"
         and (j.get("status", "queued") == "queued")
         and not j.get("fetched_at")
-        and f"finn_{j.get('finnkode', '')}" not in processed_ids
         and j.get("finnkode")
+        and (
+            (("finn", str(j.get("finnkode") or "").strip()) not in source_index)
+            or bool(source_index[("finn", str(j.get("finnkode") or "").strip())].get("needs_enrichment"))
+        )
     ]
     linkedin_pending = [
         j for j in queue
@@ -584,13 +583,20 @@ def main(argv: Optional[List[str]] = None) -> None:
                 f.write(json.dumps(job, ensure_ascii=False) + "\n")
         print(f"\n[OK] Appended {len(fetched)} jobs to {out_path}")
 
-    # --- Mark fetched/failed in the primary DB ---
-    if (fetched_suggestion_ids or failed_suggestion_ids) and db_path:
+    # --- Mark fetched/failed in the primary DB and enrich canonical jobs ---
+    if (fetched_suggestion_ids or failed_suggestion_ids or fetched) and db_path:
         try:
             conn = connect_primary_db(db_path)
             try:
                 ensure_candidate(conn, candidate_id=args.candidate_id)
                 now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                for job in fetched:
+                    ingest_catalog_job(
+                        conn,
+                        job,
+                        source_name="finn",
+                        seen_at=now_iso,
+                    )
                 for suggestion_id in fetched_suggestion_ids:
                     mark_suggestion_lead_status(
                         conn,

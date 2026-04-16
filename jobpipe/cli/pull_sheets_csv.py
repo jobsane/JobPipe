@@ -17,13 +17,11 @@ from jobpipe.core.io import now_iso, stable_job_id, load_env_file
 
 load_env_file(".env")
 
-from jobpipe.core.job_catalog import canonical_job_row, job_source_record_row
+from jobpipe.core.job_catalog import ingest_catalog_job
 from jobpipe.core.paths import primary_db_path
 from jobpipe.core.primary_db import (
     connect_primary_db,
     mark_source_records_inactive,
-    upsert_job,
-    upsert_job_source_record,
 )
 
 
@@ -369,8 +367,12 @@ def main():
         conn = connect_primary_db(args.db)
         try:
             for job in catalog_best.values():
-                upsert_job(conn, canonical_job_row(job, mirrored_at))
-                upsert_job_source_record(conn, job_source_record_row(job, args.source_name, mirrored_at))
+                ingest_catalog_job(
+                    conn,
+                    job,
+                    source_name=args.source_name,
+                    seen_at=mirrored_at,
+                )
             if inactive_ids:
                 mark_source_records_inactive(conn, args.source_name, inactive_ids, seen_at=mirrored_at)
             conn.commit()
