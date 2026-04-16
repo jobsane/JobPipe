@@ -12,9 +12,10 @@
 For any meaningful code change:
 
 1. Run the most relevant targeted test
-2. Run a smoke test on a small fixture dataset
-3. Confirm output format is unchanged unless intentionally updated
-4. Confirm the dashboard or key artifacts still generate as expected
+2. Run `python compile_check.py`
+3. Run a smoke test on a small fixture dataset
+4. Confirm output format is unchanged unless intentionally updated
+5. Confirm the dashboard or key artifacts still generate as expected
 
 ## Practical rule
 
@@ -42,3 +43,4 @@ Changes that affect these areas need extra care:
 - artifact generation
 - Gmail status handling
 - config-driven behavior
+- DB schema or primary-state reads/writes

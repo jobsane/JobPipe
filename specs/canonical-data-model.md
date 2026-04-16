@@ -34,7 +34,7 @@ Today JobPipe stores meaningfully different kinds of data in different formats:
 | Suggested jobs | JSONL queue | `suggested_jobs.jsonl` |
 | Semantic cache | NPY file | `profile_embedding.npy` |
 | Raw pipeline artifacts | JSON per stage per job | `out_runs/<run_id>/<job_id>/` |
-| Latest evaluation state | SQLite + CSV | `jobpipe.sqlite` (`job_evaluations`, `job_run_events`), `reports/ledger_latest.csv` |
+| Latest evaluation state | SQLite + CSV | `jobpipe.sqlite` (`job_evaluations`, `job_run_events`), `reports/evaluations_latest.csv` |
 | Dashboard export | Static HTML/JSON | `reports/dashboard.*` |
 | Secrets and credentials | `.env` + Gmail JSON | local files |
 
@@ -83,7 +83,7 @@ JOBPIPE_DATA_DIR/
   exports/
     dashboard.html
     dashboard_data.json
-    ledger_latest.csv
+    evaluations_latest.csv
   cache/
     profile_embedding.npy
   secrets/
@@ -571,7 +571,7 @@ The most practical next implementation sequence is:
    - `generated_documents`
 3. Write a bootstrap/import CLI that imports current local files into that schema.
 4. Keep `profile_pack.md` and `application_state.json` as compatibility exports during the transition.
-5. Keep `reports/ledger_latest.csv` only as a derived reporting export, not a second source of truth.
+5. Keep `reports/evaluations_latest.csv` only as a derived reporting export, not a second source of truth.
 
 ---
 

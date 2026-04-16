@@ -1,38 +1,90 @@
-# Architecture Notes
+# Architecture
 
-This is a lightweight overview of how Jobpipe is organized.
+## Overview
 
-## High-level shape
+JobPipe is a local-first, candidate-scoped pipeline.
 
-Jobpipe follows a staged workflow:
+The current system has four main layers:
 
-1. pull or receive job data
-2. normalize input
-3. apply cheap filtering
-4. run deeper evaluation where justified
-5. moderate into final decisions
-6. sync data into tracking outputs
-7. generate reports and dashboard output
+1. source intake
+2. staged evaluation
+3. primary state storage
+4. derived exports and documents
 
-## Key ideas
+## Runtime flow
 
-- cheap filtering before expensive model calls
-- deterministic moderation after model-assisted evaluation
-- traceable artifact generation
-- practical outputs over opaque automation
+```text
+source feeds / suggestion intake
+    -> pull_sheets_csv / pull_finn_* / scan_gmail / pull_suggested
+    -> run_feed
+    -> out_runs/<run_id>/<job_id>/*.json
+    -> sync_evaluations
+    -> primary DB (jobpipe.sqlite)
+    -> export_dashboard
+    -> reports/dashboard.html + dashboard_data.json + evaluations_latest.csv
+```
 
-## Useful files
+## Primary state model
 
-| File | Purpose |
+The primary DB is the canonical state layer.
+
+It holds:
+
+- candidates
+- candidate profiles
+- application events and summaries
+- generated document metadata
+- suggestion leads
+- latest job evaluations
+- per-run job events
+
+Legacy `ledger.sqlite` is removed from the runtime architecture.
+
+## Filesystem artifacts
+
+Artifacts still matter because JobPipe is intentionally traceable.
+
+The main artifact families are:
+
+- `out_runs/<run_id>/<job_id>/...` for pipeline stage outputs
+- exported dashboard files under `reports/`
+- generated application documents under the documents root
+
+The DB stores structured state and document metadata. The filesystem stores heavier and more inspectable outputs.
+
+## Runtime roots
+
+JobPipe now supports a clean external data root via `JOBPIPE_DATA_DIR`.
+
+If that variable is set, runtime data can live outside the repo:
+
+- DB
+- candidate profile files
+- resume JSON
+- Gmail credentials and token
+- suggestion queue bridge
+- embedding cache
+- generated documents
+
+Code stays in the repo. Candidate data and runtime history do not have to.
+
+## Main components
+
+| Area | Purpose |
 |---|---|
-| `go.ps1` | One-shot runner |
-| `configs/pipeline.v1.yaml` | Models, thresholds, regex patterns |
-| `profile_pack.example.md` | Candidate profile template |
-| `jobpipe/stages/` | Pipeline stage implementations |
-| `jobpipe/cli/` | CLI entry points |
-| `apps_script/` | Google Apps Script for NAV feed ingestion |
-| `reports/` | Generated outputs such as ledger and dashboard |
+| `go.ps1` | One-shot runner for the normal workflow |
+| `jobpipe/cli/` | Operational entry points |
+| `jobpipe/stages/` | Evaluation stages |
+| `jobpipe/core/` | shared IO, paths, schema, runner, DB helpers |
+| `configs/pipeline.v1.yaml` | model choices, thresholds, regex rules |
+| `reports/` | exported dashboard and reporting outputs |
+| `apps_script/` | upstream NAV feed ingestion support |
+| `specs/` | design and migration specs |
 
-## Scope note
+## Architectural rules
 
-This is a solo-built project. The architecture is meant to stay understandable and practical, not perform complexity for its own sake.
+1. Cheap filters before expensive models.
+2. Candidate-specific state belongs in the primary DB or external data root.
+3. Artifacts are retained for debugging and trust.
+4. Derived exports are not the source of truth.
+5. New architecture work should reinforce the current local-first model instead of bypassing it.

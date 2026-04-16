@@ -5,13 +5,13 @@ TWO MODES:
 1. Status scan (default) — scan for application status emails:
    Classifies emails from Jobbnorge, EasyCruit, Teamtailor, WebCruiter etc.
    as: applied, interview, or rejected.
-   Matches emails to ledger jobs by employer name fuzzy matching.
-   Never overwrites manual entries in application_state.json.
+   Matches emails to known jobs by employer name fuzzy matching.
+   Never overwrites manual entries in the application state store.
 
 2. Suggestions scan (--scan-suggestions) — scan for platform job recommendations:
    Finds FINN "Ledige stillinger" and LinkedIn "New jobs for you" alert emails.
    Extracts job URLs and stores unprocessed jobs in the primary DB suggestion queue,
-   mirroring them to reports/suggested_jobs.jsonl as a compatibility bridge so
+   mirroring them to suggested_jobs.jsonl as a compatibility bridge so
    pull_suggested.py can fetch their full content for the pipeline.
    Platform-suggested jobs carry suggested_by_platform=true — the triage stage
    treats this as a calibration signal (lets LLM decide instead of semantic filter).
@@ -20,7 +20,7 @@ First-time setup — you need Gmail API credentials:
     1. Go to https://console.cloud.google.com/
     2. Create/select a project, enable the Gmail API
     3. Create OAuth2 credentials (Desktop app type)
-    4. Download credentials.json → save to ./reports/gmail_credentials.json
+    4. Download credentials.json → save it to the configured Gmail credentials path
     5. Run: python -m jobpipe.cli.scan_gmail --setup
        (opens browser for one-time OAuth consent)
 
@@ -670,7 +670,7 @@ def _extract_title(subject: str, body: str) -> str:
     return ""
 
 
-# --- Ledger matching ---
+# --- Job catalog matching ---
 
 def _normalize(s: str) -> str:
     """Lowercase, strip punctuation, collapse whitespace."""
@@ -710,7 +710,7 @@ def _employer_score(a: str, b: str) -> int:
 
 
 def _title_score(email_title: str, job_title: str) -> int:
-    """Return a match score 0-2 between email-extracted title and ledger job title."""
+    """Return a match score 0-2 between email-extracted title and known job title."""
     na = _normalize(email_title)
     nb = _normalize(job_title)
     if not na or not nb:
@@ -730,9 +730,9 @@ def _title_score(email_title: str, job_title: str) -> int:
 def _match_jobs(
     employer: str,
     title: str,
-    ledger: List[Dict[str, Any]],
+    job_catalog: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Find ledger jobs by employer name and/or job title.
+    """Find known jobs by employer name and/or job title.
 
     Scoring:
       employer=3 + title=2  → perfect (6)
@@ -741,7 +741,7 @@ def _match_jobs(
       title only            → never accepted alone (too noisy)
     """
     matches = []
-    for job in ledger:
+    for job in job_catalog:
         escore = _employer_score(employer, job.get("employer") or "")
         tscore = _title_score(title, job.get("title") or "") if title else 0
         total = escore * 2 + tscore  # weight employer more heavily
@@ -885,15 +885,15 @@ def scan(
 
     print(f"Found {len(msg_ids)} candidate emails across all queries.")
 
-    # Load job catalog for matching from the primary DB first, with ledger fallback.
-    ledger = load_job_catalog(
+    # Load job catalog for employer matching from the primary DB.
+    job_catalog = load_job_catalog(
         primary_db_path=db_path,
         candidate_id=candidate_id,
     )
-    if ledger:
-        print(f"Loaded {len(ledger)} jobs from evaluation state for employer matching.")
+    if job_catalog:
+        print(f"Loaded {len(job_catalog)} jobs from evaluation state for employer matching.")
     else:
-        print(f"Warning: no evaluation state found in primary DB or ledger fallback. Employer matching disabled.")
+        print("Warning: no evaluation state found in the primary DB. Employer matching disabled.")
 
     state = _load_state(state_path)
     apps = state.setdefault("applications", {})
@@ -950,13 +950,13 @@ def scan(
         )
         title = _extract_title(parsed["subject"], parsed["body"])
 
-        matched = _match_jobs(employer, title, ledger)
+        matched = _match_jobs(employer, title, job_catalog)
 
         if not matched:
             unmatched += 1
             if verbose:
                 print(
-                    f"    No ledger match: [{status}] '{parsed['subject'][:50]}'"
+                    f"    No known-job match: [{status}] '{parsed['subject'][:50]}'"
                     f"  employer='{employer}'  title='{title}'"
                 )
             continue
@@ -1033,7 +1033,7 @@ def scan_suggestions(
     """Scan Gmail for FINN/LinkedIn job suggestion emails.
 
     Extracts job URLs from platform recommendation emails, cross-references with
-    the ledger, and queues new/unprocessed suggestions to reports/suggested_jobs.jsonl.
+    known jobs, and queues new/unprocessed suggestions to suggested_jobs.jsonl.
 
     Calibration value: platform-suggested jobs are ground-truth positives from
     the platform's own recommendation algorithm. Jobs in the queue carry
@@ -1074,17 +1074,17 @@ def scan_suggestions(
     print(f"Found {len(msg_ids)} candidate suggestion emails.")
 
     # Build processed-job lookup: finnkode/linkedin_id → job_id (for cross-referencing)
-    ledger_finnkodes: Dict[str, str] = {}
-    ledger_linkedin_ids: Dict[str, str] = {}
+    known_finnkodes: Dict[str, str] = {}
+    known_linkedin_ids: Dict[str, str] = {}
     processed_ids = load_processed_job_ids(
         primary_db_path=db_path,
         candidate_id=candidate_id,
     )
     for job_id in processed_ids:
         if job_id.startswith("finn_"):
-            ledger_finnkodes[job_id[5:]] = job_id
+            known_finnkodes[job_id[5:]] = job_id
         elif job_id.startswith("linkedin_"):
-            ledger_linkedin_ids[job_id[9:]] = job_id
+            known_linkedin_ids[job_id[9:]] = job_id
 
     # Load existing queue to avoid duplicates across runs.
     # Prefer the primary DB, but still include the legacy JSONL sidecar as a bridge.
@@ -1092,7 +1092,7 @@ def scan_suggestions(
 
     finn_total = 0
     linkedin_total = 0
-    already_in_ledger = 0
+    already_known = 0
     new_queued: List[Dict[str, Any]] = []
     emails_with_jobs = 0
 
@@ -1167,18 +1167,18 @@ def scan_suggestions(
             platform = job["platform"]
             if platform == "finn":
                 finn_total += 1
-                ledger_jid = ledger_finnkodes.get(job.get("finnkode", ""))
+                known_job_id = known_finnkodes.get(job.get("finnkode", ""))
             else:
                 linkedin_total += 1
-                ledger_jid = ledger_linkedin_ids.get(job.get("linkedin_job_id", ""))
+                known_job_id = known_linkedin_ids.get(job.get("linkedin_job_id", ""))
 
             external_id = _suggestion_external_id(job)
             dedup_key = _suggestion_key(platform, external_id)
 
-            if ledger_jid:
-                already_in_ledger += 1
+            if known_job_id:
+                already_known += 1
                 if verbose:
-                    print(f"    [{platform_label}] In ledger: {ledger_jid}")
+                    print(f"    [{platform_label}] Already known: {known_job_id}")
                 continue
 
             if not external_id:
@@ -1248,7 +1248,7 @@ def scan_suggestions(
         f"  Emails with job URLs:   {emails_with_jobs}\n"
         f"  FINN jobs found:        {finn_total}\n"
         f"  LinkedIn jobs found:    {linkedin_total}\n"
-        f"  Already known:          {already_in_ledger}\n"
+        f"  Already known:          {already_known}\n"
         f"  New / queued:           {len(new_queued)}\n"
     )
     if new_queued and not dry_run:
@@ -1297,12 +1297,12 @@ def setup_oauth(creds_path: Path, token_path: Path) -> None:
 
 def main(argv: Optional[List[str]] = None) -> None:
     ap = argparse.ArgumentParser(
-        description="Scan Gmail for job application emails and update application_state.json.",
+        description="Scan Gmail for job application emails and update JobPipe application state.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     ap.add_argument("--days", type=int, default=90, help="Days back to scan (default: 90)")
-    ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to application_state.json")
+    ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to the application state compatibility file")
     ap.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to primary jobpipe.sqlite")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB writes (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--token", default=str(DEFAULT_TOKEN_PATH), help="OAuth token path (gmail_token.json)")
@@ -1321,7 +1321,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--suggested",
         default=str(DEFAULT_SUGGESTED_PATH),
-        help="Path for suggested_jobs.jsonl output (used with --scan-suggestions)",
+        help="Path for the suggested_jobs.jsonl compatibility bridge (used with --scan-suggestions)",
     )
 
     args = ap.parse_args(argv)

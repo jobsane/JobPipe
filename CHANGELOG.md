@@ -3,11 +3,12 @@
 ## Unreleased
 
 ### Added
-- Product and documentation structure for public-facing clarity
+- primary DB architecture docs and runtime documentation
+- dashboard and Apps Script docs under `docs/`
 
 ### Changed
-- Reframed Jobpipe as a practical job search operating system
-- Simplified README to improve first-time understanding
+- normalized runtime naming around evaluation sync
+- consolidated product and technical docs around the DB-first local-first model
 
 ### Fixed
 - 

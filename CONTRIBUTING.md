@@ -59,4 +59,8 @@ The best way to contribute right now is through:
 - documentation fixes
 - usability feedback
 
+## Documentation rule
+
+If a change affects behavior, terminology, or architecture, update the relevant docs in the same change. The repo should not carry competing explanations of the same system.
+
 Thanks for helping make Jobpipe clearer, safer, and more useful.

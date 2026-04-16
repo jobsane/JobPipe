@@ -1,113 +1,50 @@
-# Jobpipe
+# JobPipe
 
-*Reduce noise. Prioritize better. Follow up with structure.*
+*A local-first job search operating system.*
 
-Jobpipe is a practical job search operating system for people who are tired of messy, repetitive, low-signal job hunting.
+JobPipe ingests job leads, filters noise cheaply, scores the jobs worth attention, tracks application state, and exports a dashboard the candidate can actually use.
 
-It helps turn a chaotic process into a structured workflow: find jobs, filter out the noise, focus on the listings that actually matter, and keep track of what happened next.
+It is currently built as a single-user, local-first Python system. The codebase is structured so it can grow into a broader product later, but the current goal is operational clarity and decision quality, not SaaS surface area.
 
-This started as a personal tool, but it is being shaped into something broader: a trustworthy workflow for job seekers who want better structure, clearer decisions, and less wasted effort.
+## What it does
 
----
+JobPipe handles five linked problems:
 
-## Why this exists
+1. intake from job feeds and suggestion sources
+2. cheap filtering before expensive model calls
+3. candidate-specific scoring and moderation
+4. application-state tracking and follow-up
+5. export of a dashboard plus application-support artifacts
 
-Modern job searching is noisy.
+The core promise is simple: spend attention and model cost only on jobs that still look plausible after the cheapest filters have done their work.
 
-You open too many tabs. You scan too many weak matches. You lose time on jobs that were never a fit. You forget where you applied, what happened next, or why you decided something was worth pursuing in the first place.
+## Current architecture
 
-Jobpipe exists to reduce that friction.
+JobPipe now runs on a primary SQLite database plus filesystem artifacts:
 
-The goal is not to make job search feel flashy or fully automated. The goal is to make it **clearer, calmer, and more structured**.
+- `jobpipe.sqlite` stores candidate state, evaluations, application events, generated document metadata, and suggestion leads
+- `out_runs/<run_id>/<job_id>/` keeps per-job stage artifacts for traceability
+- `reports/dashboard.html` and `reports/dashboard_data.json` are derived exports
+- `reports/evaluations_latest.csv` is a derived reporting export
 
----
+The normal runtime flow is:
 
-## What Jobpipe does
+```text
+job intake -> staged evaluation -> sync_evaluations -> primary DB -> export_dashboard
+```
 
-Jobpipe helps with three parts of the process:
-
-### 1. Triage
-It gathers jobs from relevant sources and filters out obvious noise before deeper evaluation.
-
-### 2. Prioritization
-It helps identify which jobs deserve real attention, using staged evaluation instead of treating every listing the same.
-
-### 3. Follow-up
-It keeps decisions, outcomes, and status visible so the process does not disappear into notes, browser tabs, and inbox clutter.
-
----
-
-## What Jobpipe is
-
-- a practical workflow for job discovery, triage, and follow-up
-- a product-minded solo project rooted in a real user problem
-- a decision-support tool, not just a scraper or dashboard
-- a structured way to reduce manual noise in the job search process
-
-## What Jobpipe is not
-
-- not a full ATS replacement
-- not a mass auto-apply bot
-- not a generic resume builder
-- not a polished SaaS product
-- not an attempt to replace human judgment with AI
-
----
-
-## Product principles
-
-Jobpipe is built around a few simple rules:
-
-- **Cheap filters before expensive AI calls**
-- **Traceable decisions over black-box magic**
-- **Practical usefulness over feature bloat**
-- **Human judgment stays in the loop**
-- **A clearer workflow matters more than clever automation**
-
----
-
-## How it works
-
-Jobpipe follows a staged workflow designed to reduce noise before spending money or attention on deeper evaluation.
-
-### 1. Collect jobs
-Job listings are pulled from relevant sources and stored in a structured input format.
-
-### 2. Filter early
-Before any LLM call happens, Jobpipe applies a set of low-cost filters:
-- geographic filtering
-- title-based exclusion rules
-- semantic pre-filtering against the candidate profile
-
-This removes a large share of irrelevant listings at effectively zero cost.
-
-### 3. Triage and score
-Jobs that pass the early filters go through deeper evaluation:
-- AI-assisted triage
-- structured parsing of requirements
-- profile matching
-- pivot scoring
-- deterministic moderation into final decision tiers
-
-### 4. Generate useful outputs
-For stronger matches, Jobpipe produces structured outputs such as:
-- decision data
-- scoring breakdowns
-- dashboard-ready reports
-- application support materials
-
-### 5. Track follow-up
-Where enabled, Gmail integration helps detect confirmations, interviews, and rejections so application follow-up stays visible over time.
-
-**Core principle:** cheap filters run before expensive AI calls, so cost and effort are concentrated on jobs that are more likely to matter.
-
-**Traceability:** every reviewed job leaves a structured artifact trail, so decisions can be inspected instead of treated like black-box output.
-
----
+Legacy `ledger.sqlite` is removed from the runtime model. The primary DB is now the canonical state layer.
 
 ## Quick start
 
-**Requirements:** Python 3.11+, OpenAI API key, and optional Google access for feed and Gmail features.
+Requirements:
+
+- Python 3.11+
+- OpenAI API key
+- published CSV URL for the source sheet
+- optional Gmail API credentials for Gmail scanning
+
+Setup:
 
 ```powershell
 python -m venv .venv
@@ -116,62 +53,73 @@ copy .env.example .env
 copy profile_pack.example.md profile_pack.md
 ```
 
-Then update:
-- `.env` with your API and source settings
-- `profile_pack.md` with your own role targets, geography, and profile details
+Recommended for real use: keep candidate data outside the repo.
 
-Run the pipeline:
+```powershell
+set JOBPIPE_DATA_DIR=C:\Users\yourname\JobpipeData
+```
+
+Then configure:
+
+- `.env` with `OPENAI_API_KEY` and `JOBPIPE_CSV_URL`
+- `profile_pack.md` with the candidate search profile
+- optional `resume.json` and Gmail credentials under `JOBPIPE_DATA_DIR`
+
+Smoke test:
+
+```powershell
+.\go.ps1 -DryRun
+```
+
+Normal run:
 
 ```powershell
 .\go.ps1
 ```
 
-Useful options:
+## Documentation map
 
-```powershell
-.\go.ps1 -DryRun
-.\go.ps1 -NoOpen
-```
+Start here, depending on what you need:
 
-For detailed setup and optional Gmail integration, see:
-- [docs/configuration.md](docs/configuration.md)
-- [docs/decision-model.md](docs/decision-model.md)
-- [docs/artifacts.md](docs/artifacts.md)
-- [docs/profile-pack.md](docs/profile-pack.md)
-- [docs/cli.md](docs/cli.md)
-- [docs/architecture.md](docs/architecture.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [PRODUCT_VISION.md](PRODUCT_VISION.md): product thesis, scope, and guiding principles
+- [ROADMAP.md](ROADMAP.md): current execution priorities and sequencing
+- [docs/architecture.md](docs/architecture.md): codebase and runtime architecture
+- [docs/configuration.md](docs/configuration.md): env vars, candidate data, and runtime layout
+- [docs/cli.md](docs/cli.md): operational command reference
+- [docs/decision-model.md](docs/decision-model.md): evaluation stages and thresholds
+- [docs/artifacts.md](docs/artifacts.md): runtime outputs and traceability model
+- [docs/dashboard.md](docs/dashboard.md): dashboard data model and UI intent
+- [docs/profile-pack.md](docs/profile-pack.md): candidate profile guidance
+- [docs/apps-script.md](docs/apps-script.md): Google Apps Script operational notes
+- [TESTING.md](TESTING.md): validation expectations
+- [CONTRIBUTING.md](CONTRIBUTING.md): contribution rules
 
----
+## Scope boundaries
 
-## Current status
+JobPipe is:
 
-Jobpipe is an actively evolving solo-built project.
+- a decision-support system for job search
+- local-first and traceability-focused
+- opinionated about cheap filters before deeper AI evaluation
+- structured around one candidate today, with explicit candidate IDs for future growth
 
-It is already useful as a real workflow tool, but it is still growing in clarity, scope, and usability.
+JobPipe is not:
 
-The current priority is to make it:
-- easier to understand
-- easier to trust
-- easier to run
-- easier to improve without losing structure
+- an ATS replacement
+- a mass auto-apply bot
+- a resume-builder product
+- a multi-tenant platform today
 
----
+## Status
 
-## Roadmap
+The repository is in active consolidation.
 
-See [ROADMAP.md](ROADMAP.md).
+Current priorities are:
 
----
-
-## Contributing
-
-This project is currently solo-led, but feedback, ideas, and contributions are welcome.
-
-Start here:
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
+- keep the DB-first architecture coherent
+- improve application-pack quality
+- harden source intake and follow-up tracking
+- keep the documentation and runtime model aligned
 
 ## License
 

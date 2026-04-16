@@ -1,30 +1,75 @@
-# CLI Usage
+# CLI Reference
 
-This document collects common command-line entry points and examples.
+## Main workflow
 
-## Main run
+Normal run:
 
 ```powershell
 .\go.ps1
 ```
 
-Useful options:
+Useful variants:
 
 ```powershell
 .\go.ps1 -DryRun
 .\go.ps1 -NoOpen
+.\go.ps1 -WithSuggestions
 ```
 
-## Gmail setup and scan
+## Source intake and batch processing
 
-Optional Gmail support:
+Pull from the published sheet export:
 
 ```powershell
-python -m jobpipe.cli.scan_gmail --setup
-python -m jobpipe.cli.scan_gmail
+python -m jobpipe.cli.pull_sheets_csv --csv-url "<published-csv-url>"
 ```
 
-## Manual application status updates
+Drain the queue and run the pipeline in batches:
+
+```powershell
+python -m jobpipe.cli.drain_queue --csv-url "<published-csv-url>" --candidate-id default
+```
+
+FINN helpers:
+
+```powershell
+python -m jobpipe.cli.pull_finn_search --config .\configs\pipeline.v1.yaml
+python -m jobpipe.cli.pull_finn_ext
+python -m jobpipe.cli.pull_suggested --dry-run
+```
+
+## Evaluation sync and dashboard export
+
+Mirror latest evaluations into the primary DB and export a reporting CSV:
+
+```powershell
+python -m jobpipe.cli.sync_evaluations --out .\out_runs --candidate-id default
+```
+
+Rebuild the dashboard:
+
+```powershell
+python -m jobpipe.cli.export_dashboard --candidate-id default
+```
+
+## Candidate state and inspection
+
+Bootstrap current candidate files into the primary DB:
+
+```powershell
+python -m jobpipe.cli.bootstrap_state_db
+```
+
+Inspect DB state:
+
+```powershell
+python -m jobpipe.cli.inspect_primary_db --show summary --show applications --show suggestions
+python -m jobpipe.cli.inspect_primary_db --show events --limit 20 --json
+```
+
+## Application tracking
+
+Manual status updates:
 
 ```powershell
 python -m jobpipe.cli.mark_status JOB_ID shortlisted
@@ -35,11 +80,30 @@ python -m jobpipe.cli.mark_status JOB_ID dismissed
 python -m jobpipe.cli.mark_status --list
 ```
 
+## Gmail integration
+
+One-time setup:
+
+```powershell
+python -m jobpipe.cli.scan_gmail --setup
+```
+
+Status scan:
+
+```powershell
+python -m jobpipe.cli.scan_gmail
+python -m jobpipe.cli.scan_gmail --dry-run --verbose
+```
+
+Suggestion scan:
+
+```powershell
+python -m jobpipe.cli.scan_gmail --scan-suggestions
+python -m jobpipe.cli.scan_gmail --scan-suggestions --dry-run
+```
+
 ## Notes
 
-Use the CLI when you want more direct control than the one-shot runner provides.
-
-For broader workflow structure, see:
-- `README.md`
-- `docs/configuration.md`
-- `docs/decision-model.md`
+- The primary DB is the canonical runtime state layer.
+- `JOBPIPE_CANDIDATE_ID` defaults to `default` if not set.
+- For the normal workflow, `go.ps1` is the intended entry point. Use the lower-level CLIs when debugging or operating a specific slice.

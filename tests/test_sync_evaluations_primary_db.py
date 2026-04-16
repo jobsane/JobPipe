@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from jobpipe.cli.sync_ledger import mirror_to_primary_db
+from jobpipe.cli.sync_evaluations import mirror_to_primary_db
 from jobpipe.core.primary_db import connect_primary_db
 
 

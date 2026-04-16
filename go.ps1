@@ -126,16 +126,16 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 2. Sync ledger
+# 2. Sync evaluations
 Write-Host ""
-Write-Host "[2/3] sync_ledger..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.sync_ledger `
+Write-Host "[2/3] sync_evaluations..." -ForegroundColor Yellow
+& $py -m jobpipe.cli.sync_evaluations `
     --out .\out_runs `
-    --csv .\reports\ledger_latest.csv `
+    --csv .\reports\evaluations_latest.csv `
     --candidate-id $candidateId
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "sync_ledger failed (exit $LASTEXITCODE)"
+    Write-Error "sync_evaluations failed (exit $LASTEXITCODE)"
     exit $LASTEXITCODE
 }
 

@@ -204,7 +204,7 @@ def test_build_payload_includes_generated_documents_from_primary_db(tmp_path):
     assert job["generated_documents"][0]["preview_text"] == "Strong B2B SaaS and platform experience."
 
 
-def test_build_payload_reads_jobs_and_events_from_primary_db_before_ledger(tmp_path):
+def test_build_payload_reads_jobs_and_events_from_primary_db(tmp_path):
     out_runs = tmp_path / "out_runs"
     db_path = tmp_path / "jobpipe.sqlite"
 

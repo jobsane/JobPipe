@@ -399,7 +399,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state and report CSVs from out_runs/*/index.jsonl and per-job stage artifacts.")
     ap.add_argument("--out", default="./out_runs", help="Path to out_runs (default: ./out_runs)")
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
-    ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/ledger_latest.csv)")
+    ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/evaluations_latest.csv)")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe SQLite DB for mirrored evaluation state")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB mirroring (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
@@ -407,7 +407,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Detailed report options (replaces report_runs.py)
     # Expiry support: mark jobs as closed when they transition ACTIVE→INACTIVE in the sheet
     ap.add_argument("--expired-file", default="", help="JSONL file with expired job events (from pull_sheets_csv.py --expired-out). "
-                     "Jobs listed here will have their closed_at timestamp set in the ledger.")
+                     "Jobs listed here will have their closed_at timestamp set in the latest evaluation rows.")
     ap.add_argument("--detailed-report", action="store_true", help="Also write a detailed JSON+CSV report (replaces report_runs.py).")
     ap.add_argument("--decisions", default="", help="Comma-separated final_decision filter for detailed report (e.g. APPLY,REVIEW_HIGH). Empty = all.")
     ap.add_argument("--only-non-expired", action="store_true", help="Filter out jobs with applicationDue < today in detailed report.")
@@ -416,7 +416,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     out_dir = Path(args.out)
     reports_dir = Path(args.reports)
-    csv_path = Path(args.csv) if args.csv else (reports_dir / "ledger_latest.csv")
+    csv_path = Path(args.csv) if args.csv else (reports_dir / "evaluations_latest.csv")
 
     latest_by_job: Dict[str, Dict[str, Any]] = {}
     event_rows: List[Dict[str, Any]] = []

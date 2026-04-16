@@ -58,13 +58,13 @@ def update_agent_status(project_root: Path, db_path: Path, candidate_id: str, to
         return
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    ledger_line = _evaluation_summary(db_path, candidate_id)
+    evaluation_line = _evaluation_summary(db_path, candidate_id)
 
     run_block = (
         "\n\n---\n\n"
         "## Last pipeline run\n\n"
         f"**{now}** - {total_rows} jobs processed in {loops} loop(s)  \n"
-        + (f"Evaluation totals: {ledger_line}  \n" if ledger_line else "")
+        + (f"Evaluation totals: {evaluation_line}  \n" if evaluation_line else "")
     )
 
     try:
@@ -123,10 +123,10 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB (default: on).")
     ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable processed-job filtering.")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary jobpipe.sqlite path for processed-job filtering")
-    ap.add_argument("--sync-ledger-before", action="store_true", default=True, help="Sync ledger from out_runs before pulling (default: on).")
-    ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
-    ap.add_argument("--sync-ledger-after", action="store_true", default=True, help="Sync ledger from out_runs after processing (default: on).")
-    ap.add_argument("--no-sync-ledger-after", dest="sync_ledger_after", action="store_false", help="Disable ledger sync after run.")
+    ap.add_argument("--sync-evaluations-before", action="store_true", default=True, help="Sync evaluation state from out_runs before pulling (default: on).")
+    ap.add_argument("--no-sync-evaluations-before", dest="sync_evaluations_before", action="store_false", help="Disable evaluation sync before pull.")
+    ap.add_argument("--sync-evaluations-after", action="store_true", default=True, help="Sync evaluation state from out_runs after processing (default: on).")
+    ap.add_argument("--no-sync-evaluations-after", dest="sync_evaluations_after", action="store_false", help="Disable evaluation sync after run.")
 
     args = ap.parse_args(argv)
 
@@ -157,8 +157,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     tmp_dir.mkdir(exist_ok=True)
 
     # Optional: keep evaluation state up to date before we decide what's "processed"
-    if args.sync_ledger_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
+    if args.sync_evaluations_before:
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_evaluations", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
@@ -268,8 +268,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             time.sleep(args.sleep)
 
     # Update evaluation state at the end (so the next run won't reprocess even after reset-state)
-    if args.sync_ledger_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
+    if args.sync_evaluations_after and total_rows_processed > 0:
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_evaluations", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)

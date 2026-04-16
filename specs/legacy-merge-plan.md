@@ -37,12 +37,12 @@ Reason:
 These can be reconsidered as small manual ports if they still solve a real problem:
 
 - `run_detailed_report.cmd`
-  - Thin wrapper around `python -m jobpipe.cli.sync_ledger --detailed-report --only-non-expired`
+  - Thin wrapper around `python -m jobpipe.cli.sync_evaluations --detailed-report --only-non-expired`
   - Useful only as a convenience script
 
 - `run_reports.ps1`
   - Useful if a CSV/JSON shortlist export is still needed outside the dashboard
-  - Should be reviewed and probably rebuilt around current ledger/export behavior rather than copied as-is
+  - Should be reviewed and probably rebuilt around current evaluation/export behavior rather than copied as-is
 
 - `docs/next-steps.md`
   - Only if rewritten to be repo-safe

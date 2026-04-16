@@ -1,5 +1,5 @@
 """
-Tests for the skip_reason derivation logic in sync_ledger.py.
+Tests for the skip_reason derivation logic in sync_evaluations.py.
 
 This verifies that the dashboard geo-classification fix works correctly —
 jobs are categorised by their actual stop-reason, not guessed from partial signals.
@@ -10,7 +10,7 @@ import pytest
 
 
 def _derive_skip_reason(triage_signals, triage_decision, final_decision, fit_score):
-    """Mirrors the skip_reason logic from sync_ledger.merge_job_details."""
+    """Mirrors the skip_reason logic from sync_evaluations.merge_job_details."""
     _sig_set = set(triage_signals) if triage_signals else set()
     _fit = fit_score if isinstance(fit_score, int) else None
     _final = final_decision or ""

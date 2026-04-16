@@ -6,7 +6,7 @@ reports/gmail_token.json
 reports/application_state.json
 
 # Generated/large data files - too big and regenerable
-reports/ledger_latest.csv
+reports/evaluations_latest.csv
 reports/dashboard.html
 reports/dashboard_data.json
 reports/shortlist_*.csv

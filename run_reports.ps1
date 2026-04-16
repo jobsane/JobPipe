@@ -17,7 +17,7 @@ if (-not (Test-Path $py)) {
 }
 
 $argsList = @(
-    "-m", "jobpipe.cli.sync_ledger",
+    "-m", "jobpipe.cli.sync_evaluations",
     "--out", $OutRuns,
     "--reports", $Reports,
     "--detailed-report"
@@ -60,7 +60,7 @@ Write-Host ""
 & $py @argsList
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "sync_ledger detailed report failed (exit $LASTEXITCODE)"
+    Write-Error "sync_evaluations detailed report failed (exit $LASTEXITCODE)"
     exit $LASTEXITCODE
 }
 
