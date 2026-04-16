@@ -1,8 +1,10 @@
 """Fetch full job content for platform-suggested jobs queued by scan_gmail --scan-suggestions.
 
-Reads reports/suggested_jobs.jsonl, fetches each job's full content from FINN.no
-(using BeautifulSoup4 to parse JSON-LD structured data), normalizes to pipeline
-JSONL format, and appends to jobs_delta.jsonl with suggested_by_platform=true.
+Reads queued suggestion leads from the primary JobPipe DB (with
+reports/suggested_jobs.jsonl as a fallback bridge), fetches each job's full
+content from FINN.no (using BeautifulSoup4 to parse JSON-LD structured data),
+normalizes to pipeline JSONL format, and appends to jobs_delta.jsonl with
+suggested_by_platform=true.
 
 The pipeline triage stage treats suggested_by_platform=true as a calibration signal:
   - Semantic filter will not kill platform-suggested jobs (let the LLM decide)
@@ -27,6 +29,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import random
 import re
 import sqlite3
@@ -38,7 +41,11 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.paths import suggested_jobs_path
+from jobpipe.core.io import load_env_file
+from jobpipe.core.paths import primary_db_path, suggested_jobs_path
+from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, list_suggestion_leads, mark_suggestion_lead_status
+
+load_env_file(".env")
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -60,8 +67,10 @@ except Exception:
     _OSLO_TZ = timezone(timedelta(hours=1))
 
 DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
+DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
 DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
+DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 _DAYTIME_START = 9   # 09:00 Oslo — start of allowed window
 _DAYTIME_END = 19    # 19:00 Oslo — end of allowed window
@@ -84,6 +93,86 @@ def _is_daytime() -> bool:
 
 def _oslo_time_str() -> str:
     return datetime.now(_OSLO_TZ).strftime("%H:%M")
+
+
+def _suggestion_external_id(entry: dict[str, Any]) -> str:
+    return str(entry.get("finnkode") or entry.get("linkedin_job_id") or entry.get("external_id") or "").strip()
+
+
+def _suggestion_key(platform: str, external_id: str) -> str:
+    return f"{platform}:{external_id}"
+
+
+def _load_queue_from_file(suggested_path: Path) -> list[dict[str, Any]]:
+    if not suggested_path.exists():
+        return []
+
+    queue: list[dict[str, Any]] = []
+    for line in suggested_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            queue.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return queue
+
+
+def _load_queue_from_db(db_path: Path, candidate_id: str) -> list[dict[str, Any]]:
+    if not db_path.exists():
+        return []
+
+    try:
+        conn = connect_primary_db(db_path)
+        try:
+            rows = list_suggestion_leads(conn, candidate_id)
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+    queue: list[dict[str, Any]] = []
+    for row in rows:
+        payload = row.get("payload_json") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        merged = {
+            **payload,
+            "suggestion_id": row.get("suggestion_id", ""),
+            "platform": row.get("platform", ""),
+            "external_id": row.get("external_id", ""),
+            "job_url": row.get("job_url", ""),
+            "job_id_hint": row.get("job_id_hint", ""),
+            "suggested_at": row.get("suggested_at", ""),
+            "email_subject": row.get("email_subject", ""),
+            "status": row.get("status", ""),
+            "fetched_at": row.get("fetched_at", ""),
+            "last_error": row.get("last_error", ""),
+        }
+        if merged.get("platform") == "finn" and merged.get("external_id") and not merged.get("finnkode"):
+            merged["finnkode"] = merged["external_id"]
+        if merged.get("platform") == "linkedin" and merged.get("external_id") and not merged.get("linkedin_job_id"):
+            merged["linkedin_job_id"] = merged["external_id"]
+        queue.append(merged)
+    return queue
+
+
+def _load_merged_queue(suggested_path: Path, db_path: Path, candidate_id: str) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for entry in _load_queue_from_db(db_path, candidate_id):
+        platform = str(entry.get("platform") or "").strip()
+        external_id = _suggestion_external_id(entry)
+        if platform and external_id:
+            merged[_suggestion_key(platform, external_id)] = entry
+
+    for entry in _load_queue_from_file(suggested_path):
+        platform = str(entry.get("platform") or "").strip()
+        external_id = _suggestion_external_id(entry)
+        if platform and external_id:
+            merged.setdefault(_suggestion_key(platform, external_id), entry)
+
+    return list(merged.values())
 
 
 # --- FINN job fetching ---
@@ -335,7 +424,17 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--suggested",
         default=str(DEFAULT_SUGGESTED_PATH),
-        help="Path to suggested_jobs.jsonl (default: reports/suggested_jobs.jsonl)",
+        help="Path to suggested_jobs.jsonl fallback bridge file (default: reports/suggested_jobs.jsonl)",
+    )
+    ap.add_argument(
+        "--db",
+        default=str(DEFAULT_DB_PATH),
+        help="Path to primary jobpipe.sqlite for suggestion leads",
+    )
+    ap.add_argument(
+        "--candidate-id",
+        default=DEFAULT_CANDIDATE_ID,
+        help=f"Candidate ID for suggestion lead reads/writes (default: {DEFAULT_CANDIDATE_ID})",
     )
     ap.add_argument(
         "--out",
@@ -397,29 +496,24 @@ def main(argv: Optional[List[str]] = None) -> None:
             )
             sys.exit(0)
 
-    # --- Load queue ---
     suggested_path = Path(args.suggested)
-    if not suggested_path.exists():
+    db_path = Path(args.db)
+
+    # --- Load queue ---
+    queue = _load_merged_queue(suggested_path, db_path, args.candidate_id)
+    if not queue:
         print(
-            f"No suggestion queue found at {suggested_path}.\n"
+            "No suggestion queue found in the primary DB or fallback queue file.\n"
             "Run:  python -m jobpipe.cli.scan_gmail --scan-suggestions"
         )
         sys.exit(0)
-
-    queue: List[dict] = []
-    for line in suggested_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                queue.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
 
     # Filter to FINN jobs that haven't been fetched yet and aren't in ledger
     ledger_ids = _load_ledger_ids(Path(args.ledger))
     finn_pending = [
         j for j in queue
         if j.get("platform") == "finn"
+        and (j.get("status", "queued") == "queued")
         and not j.get("fetched_at")
         and f"finn_{j.get('finnkode', '')}" not in ledger_ids
         and j.get("finnkode")
@@ -427,13 +521,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     linkedin_pending = [
         j for j in queue
         if j.get("platform") == "linkedin"
+        and (j.get("status", "queued") == "queued")
         and not j.get("fetched_at")
     ]
 
     print(
         f"Queue: {len(finn_pending)} FINN pending, "
         f"{len(linkedin_pending)} LinkedIn pending (manual scraping required), "
-        f"{len([j for j in queue if j.get('fetched_at')])} already fetched."
+        f"{len([j for j in queue if j.get('fetched_at') or j.get('status') == 'fetched'])} already fetched."
     )
 
     if not finn_pending:
@@ -467,6 +562,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     fetched: List[dict] = []
     fetched_finnkodes: set = set()
     failed_finnkodes: set = set()
+    fetched_suggestion_ids: set = set()
+    failed_suggestion_ids: set = set()
 
     for i, suggestion in enumerate(batch):
         finnkode = suggestion["finnkode"]
@@ -483,6 +580,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             job["email_subject"] = suggestion.get("email_subject", "")
             fetched.append(job)
             fetched_finnkodes.add(finnkode)
+            if suggestion.get("suggestion_id"):
+                fetched_suggestion_ids.add(str(suggestion["suggestion_id"]))
             print(
                 f"    [OK] '{job.get('title', '?')[:60]}'  "
                 f"({job.get('employer_name', '?')[:30]})  "
@@ -490,6 +589,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             )
         else:
             failed_finnkodes.add(finnkode)
+            if suggestion.get("suggestion_id"):
+                failed_suggestion_ids.add(str(suggestion["suggestion_id"]))
             print(f"    [FAIL] Could not extract content for finn_{finnkode}")
 
     # --- Write to jobs_delta.jsonl ---
@@ -501,22 +602,54 @@ def main(argv: Optional[List[str]] = None) -> None:
                 f.write(json.dumps(job, ensure_ascii=False) + "\n")
         print(f"\n[OK] Appended {len(fetched)} jobs to {out_path}")
 
+    # --- Mark fetched/failed in the primary DB ---
+    if (fetched_suggestion_ids or failed_suggestion_ids) and db_path:
+        try:
+            conn = connect_primary_db(db_path)
+            try:
+                ensure_candidate(conn, candidate_id=args.candidate_id)
+                now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                for suggestion_id in fetched_suggestion_ids:
+                    mark_suggestion_lead_status(
+                        conn,
+                        suggestion_id,
+                        status="fetched",
+                        fetched_at=now_iso,
+                        last_error="",
+                        updated_at=now_iso,
+                    )
+                for suggestion_id in failed_suggestion_ids:
+                    mark_suggestion_lead_status(
+                        conn,
+                        suggestion_id,
+                        status="failed",
+                        fetched_at="",
+                        last_error="fetch_failed",
+                        updated_at=now_iso,
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"Warning: could not update suggestion leads in primary DB ({e}).", file=sys.stderr)
+
     # --- Mark fetched in the queue file (so next run skips them) ---
     if fetched_finnkodes:
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        updated_lines: List[str] = []
-        for line in suggested_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-                if entry.get("finnkode") in fetched_finnkodes:
-                    entry["fetched_at"] = now_iso
-                updated_lines.append(json.dumps(entry, ensure_ascii=False))
-            except json.JSONDecodeError:
-                updated_lines.append(line)
-        suggested_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
-        print(f"Updated {len(fetched_finnkodes)} entries in {suggested_path} (marked fetched_at)")
+        if suggested_path.exists():
+            updated_lines: List[str] = []
+            for line in suggested_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("finnkode") in fetched_finnkodes:
+                        entry["fetched_at"] = now_iso
+                    updated_lines.append(json.dumps(entry, ensure_ascii=False))
+                except json.JSONDecodeError:
+                    updated_lines.append(line)
+            suggested_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+            print(f"Updated {len(fetched_finnkodes)} entries in {suggested_path} (marked fetched_at)")
 
     print(
         f"\nSummary:\n"

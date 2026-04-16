@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 def _json_text(value: Any) -> str:
@@ -110,6 +110,29 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_generated_documents_candidate_job
             ON generated_documents(candidate_id, job_id);
+
+        CREATE TABLE IF NOT EXISTS suggestion_leads (
+            suggestion_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            job_url TEXT NOT NULL DEFAULT '',
+            job_id_hint TEXT NOT NULL DEFAULT '',
+            suggested_at TEXT NOT NULL DEFAULT '',
+            email_subject TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'gmail_suggestions',
+            status TEXT NOT NULL DEFAULT 'queued',
+            fetched_at TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_suggestion_leads_candidate_platform_external
+            ON suggestion_leads(candidate_id, platform, external_id);
+        CREATE INDEX IF NOT EXISTS idx_suggestion_leads_candidate_status
+            ON suggestion_leads(candidate_id, status, platform, updated_at);
         """
     )
 
@@ -237,3 +260,80 @@ def insert_generated_document(conn: sqlite3.Connection, row: Mapping[str, Any]) 
     payload = dict(row)
     payload["document_json"] = _json_text(payload.get("document_json"))
     _upsert(conn, "generated_documents", payload, ["document_id"])
+
+
+def upsert_suggestion_lead(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["payload_json"] = _json_text(payload.get("payload_json"))
+    _upsert(conn, "suggestion_leads", payload, ["suggestion_id"])
+
+
+def list_suggestion_leads(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    *,
+    statuses: Iterable[str] | None = None,
+    platform: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["candidate_id = ?"]
+    params: list[Any] = [candidate_id]
+
+    normalized_statuses = [str(s).strip() for s in (statuses or []) if str(s).strip()]
+    if normalized_statuses:
+        placeholders = ", ".join(["?"] * len(normalized_statuses))
+        clauses.append(f"status IN ({placeholders})")
+        params.extend(normalized_statuses)
+
+    if platform:
+        clauses.append("platform = ?")
+        params.append(platform)
+
+    sql = """
+        SELECT suggestion_id, candidate_id, platform, external_id, job_url, job_id_hint,
+               suggested_at, email_subject, source, status, fetched_at, last_error,
+               payload_json, created_at, updated_at
+        FROM suggestion_leads
+        WHERE {where}
+        ORDER BY
+            CASE status
+                WHEN 'queued' THEN 0
+                WHEN 'fetched' THEN 1
+                WHEN 'failed' THEN 2
+                ELSE 3
+            END,
+            suggested_at DESC,
+            updated_at DESC
+    """.format(where=" AND ".join(clauses))
+    if limit and int(limit) > 0:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+
+    cursor = conn.execute(sql, params)
+    columns = [col[0] for col in (cursor.description or [])]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for row in rows:
+        try:
+            row["payload_json"] = json.loads(row.get("payload_json") or "{}")
+        except Exception:
+            pass
+    return rows
+
+
+def mark_suggestion_lead_status(
+    conn: sqlite3.Connection,
+    suggestion_id: str,
+    *,
+    status: str,
+    fetched_at: str = "",
+    last_error: str = "",
+    updated_at: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE suggestion_leads
+        SET status = ?, fetched_at = ?, last_error = ?, updated_at = ?
+        WHERE suggestion_id = ?
+        """,
+        [status, fetched_at, last_error, updated_at, suggestion_id],
+    )

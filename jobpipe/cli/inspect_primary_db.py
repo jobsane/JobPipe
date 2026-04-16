@@ -81,6 +81,7 @@ def _summary(conn: sqlite3.Connection, candidate_id: str) -> dict[str, Any]:
             "application_events": _count(conn, "application_events"),
             "application_summary": _count(conn, "application_summary"),
             "generated_documents": _count(conn, "generated_documents"),
+            "suggestion_leads": _count(conn, "suggestion_leads"),
         },
         "candidate": candidate,
         "active_profile": active_profile,
@@ -195,6 +196,28 @@ def _documents_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> 
     return rows
 
 
+def _suggestions_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT suggestion_id, candidate_id, platform, external_id, job_url, job_id_hint,
+               suggested_at, email_subject, source, status, fetched_at, last_error,
+               payload_json, created_at, updated_at
+        FROM suggestion_leads
+        WHERE candidate_id = ?
+        ORDER BY updated_at DESC, suggested_at DESC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+    for row in rows:
+        try:
+            row["payload_json"] = json.loads(row.get("payload_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
 def _print_summary(data: dict[str, Any], db_path: Path) -> None:
     print("=== JobPipe Primary DB ===")
     print(f"DB: {db_path.resolve()}")
@@ -207,7 +230,8 @@ def _print_summary(data: dict[str, Any], db_path: Path) -> None:
         f"profiles={counts.get('candidate_profiles', 0)}, "
         f"app_events={counts.get('application_events', 0)}, "
         f"app_summary={counts.get('application_summary', 0)}, "
-        f"documents={counts.get('generated_documents', 0)}"
+        f"documents={counts.get('generated_documents', 0)}, "
+        f"suggestions={counts.get('suggestion_leads', 0)}"
     )
 
     candidate = data.get("candidate")
@@ -277,7 +301,7 @@ def main() -> None:
     ap.add_argument(
         "--show",
         action="append",
-        choices=["summary", "profile", "applications", "events", "candidates", "documents"],
+        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions"],
         help="Which view(s) to show. Default: summary",
     )
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
@@ -302,6 +326,8 @@ def main() -> None:
                 payload["candidates"] = _candidates_view(conn)
             elif view == "documents":
                 payload["documents"] = _documents_view(conn, args.candidate_id, args.limit)
+            elif view == "suggestions":
+                payload["suggestions"] = _suggestions_view(conn, args.candidate_id, args.limit)
     finally:
         conn.close()
 
@@ -322,6 +348,8 @@ def main() -> None:
             _print_rows("Candidates", payload.get("candidates", []))
         elif view == "documents":
             _print_rows("Generated Documents", payload.get("documents", []))
+        elif view == "suggestions":
+            _print_rows("Suggestion Leads", payload.get("suggestions", []))
         if view != views[-1]:
             print("")
 

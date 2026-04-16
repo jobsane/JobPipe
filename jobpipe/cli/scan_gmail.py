@@ -10,8 +10,9 @@ TWO MODES:
 
 2. Suggestions scan (--scan-suggestions) — scan for platform job recommendations:
    Finds FINN "Ledige stillinger" and LinkedIn "New jobs for you" alert emails.
-   Extracts job URLs and writes unprocessed jobs to reports/suggested_jobs.jsonl
-   so pull_suggested.py can fetch their full content for the pipeline.
+   Extracts job URLs and stores unprocessed jobs in the primary DB suggestion queue,
+   mirroring them to reports/suggested_jobs.jsonl as a compatibility bridge so
+   pull_suggested.py can fetch their full content for the pipeline.
    Platform-suggested jobs carry suggested_by_platform=true — the triage stage
    treats this as a calibration signal (lets LLM decide instead of semantic filter).
 
@@ -39,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -58,6 +60,7 @@ from jobpipe.core.paths import (
     primary_db_path,
     suggested_jobs_path,
 )
+from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, list_suggestion_leads, upsert_suggestion_lead
 
 load_env_file(".env")
 
@@ -86,6 +89,56 @@ DEFAULT_CREDS_PATH = gmail_credentials_path()
 DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+
+
+def _suggestion_external_id(entry: Dict[str, Any]) -> str:
+    return str(entry.get("finnkode") or entry.get("linkedin_job_id") or entry.get("external_id") or "").strip()
+
+
+def _suggestion_key(platform: str, external_id: str) -> str:
+    return f"{platform}:{external_id}"
+
+
+def _suggestion_id(candidate_id: str, platform: str, external_id: str) -> str:
+    raw = f"{candidate_id}|{platform}|{external_id}"
+    return "suggestion_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _load_existing_suggestion_keys(
+    suggested_path: Path,
+    db_path: Path,
+    candidate_id: str,
+) -> set[str]:
+    keys: set[str] = set()
+
+    if db_path.exists():
+        try:
+            conn = connect_primary_db(db_path)
+            try:
+                for row in list_suggestion_leads(conn, candidate_id):
+                    platform = str(row.get("platform") or "").strip()
+                    external_id = str(row.get("external_id") or "").strip()
+                    if platform and external_id:
+                        keys.add(_suggestion_key(platform, external_id))
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    if suggested_path.exists():
+        try:
+            for line in suggested_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                entry = json.loads(line)
+                platform = str(entry.get("platform") or "").strip()
+                external_id = _suggestion_external_id(entry)
+                if platform and external_id:
+                    keys.add(_suggestion_key(platform, external_id))
+        except Exception:
+            pass
+
+    return keys
 
 # Priority order for status upgrades (higher = more final)
 _STATUS_ORDER: Dict[str, int] = {
@@ -979,6 +1032,8 @@ def scan_suggestions(
     days: int = 90,
     suggested_path: Path = DEFAULT_SUGGESTED_PATH,
     ledger_path: Path = DEFAULT_LEDGER_PATH,
+    db_path: Path = DEFAULT_DB_PATH,
+    candidate_id: str = DEFAULT_CANDIDATE_ID,
     token_path: Path = DEFAULT_TOKEN_PATH,
     creds_path: Path = DEFAULT_CREDS_PATH,
     dry_run: bool = False,
@@ -1043,19 +1098,9 @@ def scan_suggestions(
             if verbose:
                 print(f"Warning: ledger read failed: {e}", file=sys.stderr)
 
-    # Load existing queue to avoid duplicates across runs
-    existing_queue_keys: set = set()
-    if suggested_path.exists():
-        try:
-            for line in suggested_path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    entry = json.loads(line)
-                    k = entry.get("platform", "") + ":" + (
-                        entry.get("finnkode") or entry.get("linkedin_job_id") or ""
-                    )
-                    existing_queue_keys.add(k)
-        except Exception:
-            pass
+    # Load existing queue to avoid duplicates across runs.
+    # Prefer the primary DB, but still include the legacy JSONL sidecar as a bridge.
+    existing_queue_keys = _load_existing_suggestion_keys(suggested_path, db_path, candidate_id)
 
     finn_total = 0
     linkedin_total = 0
@@ -1139,12 +1184,16 @@ def scan_suggestions(
                 linkedin_total += 1
                 ledger_jid = ledger_linkedin_ids.get(job.get("linkedin_job_id", ""))
 
-            dedup_key = platform + ":" + (job.get("finnkode") or job.get("linkedin_job_id") or "")
+            external_id = _suggestion_external_id(job)
+            dedup_key = _suggestion_key(platform, external_id)
 
             if ledger_jid:
                 already_in_ledger += 1
                 if verbose:
                     print(f"    [{platform_label}] In ledger: {ledger_jid}")
+                continue
+
+            if not external_id:
                 continue
 
             if dedup_key in existing_queue_keys:
@@ -1163,6 +1212,43 @@ def scan_suggestions(
 
     # Write to queue
     if new_queued and not dry_run:
+        try:
+            conn = connect_primary_db(db_path)
+            try:
+                ensure_candidate(conn, candidate_id=candidate_id)
+                now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                for entry in new_queued:
+                    platform = str(entry.get("platform") or "").strip()
+                    external_id = _suggestion_external_id(entry)
+                    if not platform or not external_id:
+                        continue
+                    upsert_suggestion_lead(
+                        conn,
+                        {
+                            "suggestion_id": _suggestion_id(candidate_id, platform, external_id),
+                            "candidate_id": candidate_id,
+                            "platform": platform,
+                            "external_id": external_id,
+                            "job_url": str(entry.get("job_url") or "").strip(),
+                            "job_id_hint": str(entry.get("job_id_hint") or "").strip(),
+                            "suggested_at": str(entry.get("suggested_at") or "").strip(),
+                            "email_subject": str(entry.get("email_subject") or "").strip(),
+                            "source": "gmail_suggestions",
+                            "status": "queued",
+                            "fetched_at": "",
+                            "last_error": "",
+                            "payload_json": entry,
+                            "created_at": now,
+                            "updated_at": now,
+                        },
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            if verbose:
+                print(f"Warning: primary DB suggestion write failed: {e}", file=sys.stderr)
+
         suggested_path.parent.mkdir(parents=True, exist_ok=True)
         with open(suggested_path, "a", encoding="utf-8") as f:
             for entry in new_queued:
@@ -1179,7 +1265,8 @@ def scan_suggestions(
     )
     if new_queued and not dry_run:
         print(
-            f"  Written to: {suggested_path}\n"
+            f"  Stored in DB: {db_path}\n"
+            f"  Fallback queue: {suggested_path}\n"
             f"  Next step:  python -m jobpipe.cli.pull_suggested\n"
             f"              (runs 09:00-19:00 Oslo time, max 20 jobs/run)"
         )
@@ -1241,7 +1328,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         action="store_true",
         help=(
             "Scan for FINN/LinkedIn job suggestion emails instead of status emails. "
-            "Writes new suggestions to reports/suggested_jobs.jsonl."
+            "Stores new suggestions in the primary DB and mirrors them to suggested_jobs.jsonl."
         ),
     )
     ap.add_argument(
@@ -1261,6 +1348,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             days=args.days,
             suggested_path=Path(args.suggested),
             ledger_path=Path(args.ledger),
+            db_path=Path(args.db),
+            candidate_id=args.candidate_id,
             token_path=Path(args.token),
             creds_path=Path(args.creds),
             dry_run=args.dry_run,
@@ -1268,17 +1357,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         return
 
-        scan(
-            days=args.days,
-            state_path=Path(args.state),
-            ledger_path=Path(args.ledger),
-            token_path=Path(args.token),
-            creds_path=Path(args.creds),
-            db_path=Path(args.db),
-            candidate_id=args.candidate_id,
-            dry_run=args.dry_run,
-            verbose=args.verbose,
-        )
+    scan(
+        days=args.days,
+        state_path=Path(args.state),
+        ledger_path=Path(args.ledger),
+        token_path=Path(args.token),
+        creds_path=Path(args.creds),
+        db_path=Path(args.db),
+        candidate_id=args.candidate_id,
+        dry_run=args.dry_run,
+        verbose=args.verbose,
+    )
 
 
 if __name__ == "__main__":
