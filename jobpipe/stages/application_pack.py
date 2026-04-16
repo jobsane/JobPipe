@@ -6,13 +6,14 @@ from pathlib import Path
 
 from agents import Agent
 
+from jobpipe.core.paths import resume_json_path
 from jobpipe.core.schema import JobContext, ApplicationPackOut
 from jobpipe.stages._common import run_agent
 
 logger = logging.getLogger(__name__)
 
 # Path to the candidate's JSON Resume (standard jsonresume.org format)
-_RESUME_JSON_PATH = Path(__file__).parents[2] / "reports" / "resume.json"
+_RESUME_JSON_PATH = resume_json_path()
 
 PACK_INSTRUCTIONS = """Du er en norsk søknadsassistent. Du mottar kontekst som JSON og
 produserer en komplett søknadspakke for kandidaten.

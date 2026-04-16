@@ -44,6 +44,7 @@ from typing import Callable, Tuple
 
 import numpy as np
 
+from jobpipe.core.paths import profile_embedding_cache_path
 from jobpipe.core.schema import JobContext, TriageOut
 from jobpipe.stages._common import job_excerpt
 
@@ -54,7 +55,7 @@ except ImportError:
     _HAS_FASTEMBED = False
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
-PROFILE_CACHE_PATH = Path("reports/profile_embedding.npy")
+PROFILE_CACHE_PATH = profile_embedding_cache_path()
 
 
 # ---------------------------------------------------------------------------

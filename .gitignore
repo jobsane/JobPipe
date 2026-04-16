@@ -54,6 +54,7 @@ PROJECT_INSTRUCTIONS.md
 *_out.txt
 commit_msg.txt
 pipeline_error.json
+.jobpipe_tmp/
 
 # OS / IDE
 .DS_Store

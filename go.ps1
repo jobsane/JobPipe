@@ -16,6 +16,34 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot          # ensure CWD = project root (editable install needs this)
 $py = "$PSScriptRoot\.venv\Scripts\python.exe"
 
+function Import-DotEnv {
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    foreach ($raw in Get-Content -LiteralPath $Path) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+            continue
+        }
+
+        $parts = $line.Split("=", 2)
+        $key = $parts[0].Trim()
+        if (-not $key -or [Environment]::GetEnvironmentVariable($key, "Process")) {
+            continue
+        }
+
+        $value = $parts[1].Trim().Trim('"').Trim("'")
+        [Environment]::SetEnvironmentVariable($key, $value, "Process")
+    }
+}
+
+Import-DotEnv (Join-Path $PSScriptRoot ".env")
+
 if (-not (Test-Path $py)) {
     Write-Error "Venv not found at $py - run: python -m venv .venv && .venv\Scripts\pip install -e ."
     exit 1
@@ -23,6 +51,13 @@ if (-not (Test-Path $py)) {
 
 $env:OPENAI_AGENTS_DISABLE_TRACING = "1"
 $maxJobs = if ($DryRun) { 2 } else { 100 }
+$profilePath = if ($env:JOBPIPE_PROFILE_PATH) {
+    $env:JOBPIPE_PROFILE_PATH
+} elseif ($env:JOBPIPE_DATA_DIR) {
+    Join-Path $env:JOBPIPE_DATA_DIR "profile_pack.md"
+} else {
+    ".\profile_pack.md"
+}
 
 Write-Host ""
 Write-Host "=== JobPipe ===" -ForegroundColor Cyan
@@ -70,7 +105,7 @@ if ($WithSuggestions) {
 # 1. Pull + process
 Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
 & $py -m jobpipe.cli.drain_queue `
-    --profile .\profile_pack.md `
+    --profile $profilePath `
     --config .\configs\pipeline.v1.yaml `
     --out .\out_runs `
     --state .\jobs_state.json `

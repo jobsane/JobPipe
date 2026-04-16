@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.paths import suggested_jobs_path
+
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -57,7 +59,7 @@ except Exception:
     # Fallback: CET (UTC+1). Off by 1h during CEST (summer) — close enough for time guard.
     _OSLO_TZ = timezone(timedelta(hours=1))
 
-DEFAULT_SUGGESTED_PATH = Path("./reports/suggested_jobs.jsonl")
+DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
 DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
 DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 

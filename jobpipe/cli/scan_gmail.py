@@ -48,6 +48,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import (
+    application_state_path,
+    gmail_credentials_path,
+    gmail_token_path,
+    suggested_jobs_path,
+)
+
 # Windows cp1252 consoles can't encode arbitrary Unicode from email data.
 # Wrap stdout so non-encodable chars become '?' instead of crashing.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -66,11 +73,11 @@ except ImportError:
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-DEFAULT_STATE_PATH = Path("./reports/application_state.json")
+DEFAULT_STATE_PATH = application_state_path()
 DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
-DEFAULT_TOKEN_PATH = Path("./reports/gmail_token.json")
-DEFAULT_CREDS_PATH = Path("./reports/gmail_credentials.json")
-DEFAULT_SUGGESTED_PATH = Path("./reports/suggested_jobs.jsonl")
+DEFAULT_TOKEN_PATH = gmail_token_path()
+DEFAULT_CREDS_PATH = gmail_credentials_path()
+DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
 
 # Priority order for status upgrades (higher = more final)
 _STATUS_ORDER: Dict[str, int] = {

@@ -39,6 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import application_state_path
+
 # Stages that accumulate — order matters for display
 VALID_STAGES = ["shortlisted", "called", "applied", "interview", "second_interview"]
 
@@ -73,7 +75,7 @@ STATUS_ICON = {
     "dismissed":        "⚫",
 }
 
-DEFAULT_STATE_PATH = Path("./reports/application_state.json")
+DEFAULT_STATE_PATH = application_state_path()
 
 
 # ---------------------------------------------------------------------------

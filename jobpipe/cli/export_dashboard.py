@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import application_state_path
+
 try:
     import yaml as _yaml
     def _load_thresholds() -> Dict[str, Any]:
@@ -51,7 +53,7 @@ def _reclassify(fit_score, pivot_score, thr: Dict[str, Any]) -> str:
         return "APPLY"
     return "REVIEW_HIGH" if pivot >= pivot_boost else "REVIEW_LOW"
 
-_APP_STATE_PATH = Path("./reports/application_state.json")
+_APP_STATE_PATH = application_state_path()
 _CONFIG_PATH = Path("./configs/pipeline.v1.yaml")
 
 _DETAIL_COLS = (
