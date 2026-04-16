@@ -13,7 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from jobpipe.core.paths import application_state_path
+from jobpipe.core.io import load_env_file
+
+load_env_file(".env")
+
+from jobpipe.core.paths import application_state_path, primary_db_path
 
 try:
     import yaml as _yaml
@@ -54,7 +58,9 @@ def _reclassify(fit_score, pivot_score, thr: Dict[str, Any]) -> str:
     return "REVIEW_HIGH" if pivot >= pivot_boost else "REVIEW_LOW"
 
 _APP_STATE_PATH = application_state_path()
+_PRIMARY_DB_PATH = primary_db_path()
 _CONFIG_PATH = Path("./configs/pipeline.v1.yaml")
+_DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 _DETAIL_COLS = (
     "triage_explanation", "reverse_decision", "reverse_confidence",
@@ -175,8 +181,102 @@ def _load_app_state(state_path: Path) -> Dict[str, Any]:
         return {}
 
 
-def build_payload(sqlite_path: Path, out_dir: Path, state_path: Optional[Path] = None) -> Dict[str, Any]:
-    app_state = _load_app_state(state_path or _APP_STATE_PATH)
+def _load_app_state_from_db(db_path: Path, candidate_id: str) -> Dict[str, Any]:
+    """Load application summary from the primary DB and shape it like application_state.json."""
+    if not db_path.exists():
+        return {}
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        summary_rows = [
+            dict(r) for r in conn.execute(
+                """
+                SELECT job_id, current_stage, current_outcome, effective_status,
+                       last_event_at, notes_latest, updated_at
+                FROM application_summary
+                WHERE candidate_id = ?
+                """,
+                [candidate_id],
+            )
+        ]
+        event_rows = [
+            dict(r) for r in conn.execute(
+                """
+                SELECT job_id, event_type, event_at, source, notes, metadata_json, created_at
+                FROM application_events
+                WHERE candidate_id = ?
+                ORDER BY event_at DESC, created_at DESC
+                """,
+                [candidate_id],
+            )
+        ]
+        conn.close()
+    except Exception:
+        return {}
+
+    latest_event_by_job: Dict[str, Dict[str, Any]] = {}
+    for row in event_rows:
+        job_id = str(row.get("job_id") or "").strip()
+        if job_id and job_id not in latest_event_by_job:
+            latest_event_by_job[job_id] = row
+
+    out: Dict[str, Any] = {}
+    for row in summary_rows:
+        job_id = str(row.get("job_id") or "").strip()
+        if not job_id:
+            continue
+
+        latest = latest_event_by_job.get(job_id, {})
+        try:
+            metadata = json.loads(latest.get("metadata_json") or "{}")
+        except Exception:
+            metadata = {}
+
+        stages = metadata.get("stages", [])
+        if not isinstance(stages, list):
+            stages = []
+
+        outcome = str(row.get("current_outcome") or metadata.get("outcome") or "").strip()
+        out[job_id] = {
+            "status": str(row.get("effective_status") or metadata.get("effective_status") or "").strip(),
+            "stages": stages,
+            "outcome": outcome,
+            "updated_at": str(row.get("updated_at") or row.get("last_event_at") or "").strip(),
+            "source": str(latest.get("source") or "").strip(),
+            "notes": str(row.get("notes_latest") or latest.get("notes") or "").strip(),
+            "email_subject": str(metadata.get("email_subject") or "").strip(),
+            "email_date": str(metadata.get("email_date") or "").strip(),
+        }
+
+    return out
+
+
+def _load_app_state_merged(
+    state_path: Optional[Path],
+    db_path: Optional[Path],
+    candidate_id: str,
+) -> Dict[str, Any]:
+    """Read app state from the primary DB first, with JSON fallback for unknown jobs."""
+    merged = _load_app_state_from_db(db_path or _PRIMARY_DB_PATH, candidate_id)
+    sidecar = _load_app_state(state_path or _APP_STATE_PATH)
+    for job_id, entry in sidecar.items():
+        merged.setdefault(job_id, entry)
+    return merged
+
+
+def build_payload(
+    sqlite_path: Path,
+    out_dir: Path,
+    state_path: Optional[Path] = None,
+    primary_db_path_: Optional[Path] = None,
+    candidate_id: str = _DEFAULT_CANDIDATE_ID,
+) -> Dict[str, Any]:
+    app_state = _load_app_state_merged(
+        state_path=state_path,
+        db_path=primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id=candidate_id,
+    )
     thresholds = _load_thresholds()
     conn = sqlite3.connect(str(sqlite_path))
 
@@ -254,8 +354,16 @@ def build_payload(sqlite_path: Path, out_dir: Path, state_path: Optional[Path] =
 
 
 def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path,
-           state_path: Optional[Path] = None) -> None:
-    payload = build_payload(sqlite_path, out_dir, state_path=state_path)
+           state_path: Optional[Path] = None,
+           primary_db_path_: Optional[Path] = None,
+           candidate_id: str = _DEFAULT_CANDIDATE_ID) -> None:
+    payload = build_payload(
+        sqlite_path,
+        out_dir,
+        state_path=state_path,
+        primary_db_path_=primary_db_path_,
+        candidate_id=candidate_id,
+    )
 
     template = template_path.read_text(encoding="utf-8")
 
@@ -288,9 +396,19 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--template", default="./reports/dashboard_template.html", help="HTML template")
     ap.add_argument("--out", default="./reports/dashboard.html", help="Output HTML path")
     ap.add_argument("--app-state", default="", help="Path to application_state.json (default: reports/application_state.json)")
+    ap.add_argument("--db", default=str(_PRIMARY_DB_PATH), help="Path to primary jobpipe.sqlite")
+    ap.add_argument("--candidate-id", default=_DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB reads (default: {_DEFAULT_CANDIDATE_ID})")
     args = ap.parse_args(argv)
     state_path = Path(args.app_state) if args.app_state else None
-    export(Path(args.sqlite), Path(args.out_runs), Path(args.template), Path(args.out), state_path=state_path)
+    export(
+        Path(args.sqlite),
+        Path(args.out_runs),
+        Path(args.template),
+        Path(args.out),
+        state_path=state_path,
+        primary_db_path_=Path(args.db),
+        candidate_id=args.candidate_id,
+    )
 
 
 if __name__ == "__main__":

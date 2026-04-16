@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 from agents import Agent
 
-from jobpipe.core.paths import resume_json_path
+from jobpipe.core.io import now_iso
+from jobpipe.core.paths import primary_db_path, resume_json_path
+from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, insert_generated_document
 from jobpipe.core.schema import JobContext, ApplicationPackOut
 from jobpipe.stages._common import run_agent
 
@@ -14,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Path to the candidate's JSON Resume (standard jsonresume.org format)
 _RESUME_JSON_PATH = resume_json_path()
+_PRIMARY_DB_PATH = primary_db_path()
+_DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 PACK_INSTRUCTIONS = """Du er en norsk søknadsassistent. Du mottar kontekst som JSON og
 produserer en komplett søknadspakke for kandidaten.
@@ -67,7 +73,88 @@ def _load_resume_context() -> dict:
         return {"resume_work": [], "resume_projects": []}
 
 
-def _generate_cv_docx(pack_data: dict, job_input: dict, job_path: Path) -> None:
+def _preview_text(pack_data: dict) -> str:
+    parts: list[str] = []
+    headline = (pack_data.get("positioning_headline") or "").strip()
+    if headline:
+        parts.append(headline)
+    cover_angle = (pack_data.get("cover_letter_angle") or "").strip()
+    if cover_angle:
+        parts.append(cover_angle)
+    highlights = [str(x).strip() for x in (pack_data.get("cv_highlights") or []) if str(x).strip()]
+    if highlights:
+        parts.append(" | ".join(highlights[:3]))
+    return " ".join(parts)[:800]
+
+
+def _document_id(candidate_id: str, job_id: str, kind: str, storage_path: Path) -> str:
+    raw = f"{candidate_id}|{job_id}|{kind}|{storage_path.name}"
+    return "doc_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _sync_generated_documents(
+    ctx: JobContext,
+    pack_data: dict,
+    draft_path: Path,
+    docx_path: Path | None = None,
+) -> None:
+    try:
+        conn = connect_primary_db(_PRIMARY_DB_PATH)
+        try:
+            ensure_candidate(conn, candidate_id=_DEFAULT_CANDIDATE_ID)
+            now = now_iso()
+            evaluation_id = f"{ctx.meta.run_id}:{ctx.job_id}"
+            preview = _preview_text(pack_data)
+
+            insert_generated_document(
+                conn,
+                {
+                    "document_id": _document_id(_DEFAULT_CANDIDATE_ID, ctx.job_id, "application_pack_json", draft_path),
+                    "candidate_id": _DEFAULT_CANDIDATE_ID,
+                    "job_id": ctx.job_id,
+                    "evaluation_id": evaluation_id,
+                    "kind": "application_pack_json",
+                    "producer": "jobpipe_pipeline",
+                    "status": "draft",
+                    "storage_path": str(draft_path.resolve()),
+                    "preview_text": preview,
+                    "document_json": pack_data,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+            if docx_path and docx_path.exists():
+                insert_generated_document(
+                    conn,
+                    {
+                        "document_id": _document_id(_DEFAULT_CANDIDATE_ID, ctx.job_id, "cv_highlights_docx", docx_path),
+                        "candidate_id": _DEFAULT_CANDIDATE_ID,
+                        "job_id": ctx.job_id,
+                        "evaluation_id": evaluation_id,
+                        "kind": "cv_highlights_docx",
+                        "producer": "jobpipe_pipeline",
+                        "status": "draft",
+                        "storage_path": str(docx_path.resolve()),
+                        "preview_text": preview,
+                        "document_json": {
+                            "positioning_headline": pack_data.get("positioning_headline", ""),
+                            "cv_highlights": pack_data.get("cv_highlights", []),
+                            "cv_experience_refs": pack_data.get("cv_experience_refs", []),
+                        },
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[application_pack] could not sync generated_documents metadata: %s", exc)
+
+
+def _generate_cv_docx(pack_data: dict, job_input: dict, job_path: Path) -> Path | None:
     """Generate a DOCX 'Relevant Experience' supplement from cv_highlights."""
     try:
         from docx import Document
@@ -75,12 +162,12 @@ def _generate_cv_docx(pack_data: dict, job_input: dict, job_path: Path) -> None:
         from docx.enum.text import WD_ALIGN_PARAGRAPH
     except ImportError:
         logger.warning("[application_pack] python-docx not installed — skipping DOCX generation")
-        return
+        return None
 
     highlights = pack_data.get("cv_highlights", [])
     refs = pack_data.get("cv_experience_refs", [])
     if not highlights:
-        return
+        return None
 
     title = (job_input.get("title") or "").strip()
     employer = (job_input.get("employer_name") or job_input.get("company") or "").strip()
@@ -162,6 +249,7 @@ def _generate_cv_docx(pack_data: dict, job_input: dict, job_path: Path) -> None:
     out_path = job_path / "07_cv_highlights.docx"
     doc.save(str(out_path))
     logger.info("[application_pack] saved cv_highlights DOCX to %s", out_path)
+    return out_path
 
 
 def application_pack_stage_factory(model: str, web_search: bool = False):  # noqa: ARG001
@@ -215,7 +303,8 @@ def application_pack_stage_factory(model: str, web_search: bool = False):  # noq
         )
 
         # Generate DOCX supplement
-        _generate_cv_docx(pack_data, ctx.job, job_path)
+        docx_path = _generate_cv_docx(pack_data, ctx.job, job_path)
+        _sync_generated_documents(ctx, pack_data, draft_path=draft_path, docx_path=docx_path)
 
         return ctx
 

@@ -34,12 +34,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from jobpipe.core.paths import application_state_path
+from jobpipe.core.io import load_env_file
+
+load_env_file(".env")
+
+from jobpipe.core.paths import application_state_path, primary_db_path
+from jobpipe.core.primary_db import (
+    connect_primary_db,
+    delete_application_tracking,
+    ensure_candidate,
+    insert_application_event,
+    upsert_application_summary,
+)
 
 # Stages that accumulate — order matters for display
 VALID_STAGES = ["shortlisted", "called", "applied", "interview", "second_interview"]
@@ -76,6 +89,21 @@ STATUS_ICON = {
 }
 
 DEFAULT_STATE_PATH = application_state_path()
+DEFAULT_DB_PATH = primary_db_path()
+DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+
+
+def _console_text(text: str, stream) -> str:
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+        return text
+    except UnicodeEncodeError:
+        return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
+def _print(text: str = "", *, file=sys.stdout) -> None:
+    print(_console_text(text, file), file=file)
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +162,80 @@ def _effective_status(entry: Dict[str, Any]) -> str:
     return stages[-1]
 
 
+def _current_stage(entry: Dict[str, Any]) -> str:
+    stages = entry.get("stages", [])
+    if not stages:
+        return ""
+    for s in reversed(VALID_STAGES):
+        if s in stages:
+            return s
+    return stages[-1]
+
+
+def _sync_job_to_primary_db(
+    *,
+    candidate_id: str,
+    job_id: str,
+    token: str,
+    entry: Dict[str, Any] | None,
+    db_path: Path,
+    source: str,
+) -> None:
+    try:
+        conn = connect_primary_db(db_path)
+        try:
+            ensure_candidate(conn, candidate_id=candidate_id)
+
+            if token == "clear" or entry is None:
+                delete_application_tracking(conn, candidate_id=candidate_id, job_id=job_id)
+                conn.commit()
+                return
+
+            event_time = entry.get("email_date") or entry.get("updated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            effective_source = (source or entry.get("source") or "manual").strip() or "manual"
+            metadata = {
+                "stages": list(entry.get("stages", [])),
+                "outcome": entry.get("outcome") or "",
+                "effective_status": _effective_status(entry),
+                "email_subject": entry.get("email_subject", ""),
+                "email_date": entry.get("email_date", ""),
+            }
+
+            insert_application_event(
+                conn,
+                {
+                    "application_event_id": f"app_{uuid.uuid4().hex[:20]}",
+                    "candidate_id": candidate_id,
+                    "job_id": job_id,
+                    "event_type": token,
+                    "event_at": event_time,
+                    "source": effective_source,
+                    "notes": entry.get("notes", ""),
+                    "metadata_json": metadata,
+                    "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+            )
+
+            upsert_application_summary(
+                conn,
+                {
+                    "candidate_id": candidate_id,
+                    "job_id": job_id,
+                    "current_stage": _current_stage(entry),
+                    "current_outcome": entry.get("outcome") or "",
+                    "effective_status": _effective_status(entry),
+                    "last_event_at": event_time,
+                    "notes_latest": entry.get("notes", ""),
+                    "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[WARN] primary DB sync failed for {job_id}: {exc}", file=sys.stderr)
+
+
 # ---------------------------------------------------------------------------
 # I/O
 # ---------------------------------------------------------------------------
@@ -173,6 +275,9 @@ def add_stage(
     source: str = "manual",
     email_subject: str = "",
     email_date: str = "",
+    db_path: Path = DEFAULT_DB_PATH,
+    candidate_id: str = DEFAULT_CANDIDATE_ID,
+    quiet: bool = False,
 ) -> None:
     state = load_state(state_path)
     apps = state.setdefault("applications", {})
@@ -181,9 +286,19 @@ def add_stage(
         if job_id in apps:
             del apps[job_id]
             save_state(state_path, state)
-            print(f"[OK] Cleared status for {job_id}")
+            _sync_job_to_primary_db(
+                candidate_id=candidate_id,
+                job_id=job_id,
+                token=token,
+                entry=None,
+                db_path=db_path,
+                source=source,
+            )
+            if not quiet:
+                _print(f"[OK] Cleared status for {job_id}")
         else:
-            print(f"No entry found for {job_id}")
+            if not quiet:
+                _print(f"No entry found for {job_id}")
         return
 
     if token not in ALL_VALID - {"clear"}:
@@ -218,20 +333,31 @@ def add_stage(
     if token in VALID_OUTCOMES:
         entry["outcome"] = token
         label = OUTCOME_LABELS.get(token, token)
-        print(f"[OK] {job_id} → outcome: {label}")
+        if not quiet:
+            _print(f"[OK] {job_id} → outcome: {label}")
     else:
         # Additive stage
         stages: List[str] = entry.setdefault("stages", [])
         if token not in stages:
             stages.append(token)
             label = STAGE_LABELS.get(token, token)
-            print(f"[OK] {job_id} → stage added: {label}")
+            if not quiet:
+                _print(f"[OK] {job_id} → stage added: {label}")
         else:
             label = STAGE_LABELS.get(token, token)
-            print(f"[OK] {job_id} → stage already present: {label} (notes updated if supplied)")
+            if not quiet:
+                _print(f"[OK] {job_id} → stage already present: {label} (notes updated if supplied)")
 
     apps[job_id] = entry
     save_state(state_path, state)
+    _sync_job_to_primary_db(
+        candidate_id=candidate_id,
+        job_id=job_id,
+        token=token,
+        entry=entry,
+        db_path=db_path,
+        source=source,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +388,7 @@ def list_statuses(state_path: Path, filter_status: str = "") -> None:
     state = load_state(state_path)
     apps = state.get("applications", {})
     if not apps:
-        print("No application status entries found.")
+        _print("No application status entries found.")
         return
 
     rows = sorted(apps.items(), key=lambda x: x[1].get("updated_at", ""), reverse=True)
@@ -277,16 +403,16 @@ def list_statuses(state_path: Path, filter_status: str = "") -> None:
             return _effective_status(entry) == filter_status
         rows = [(jid, e) for jid, e in rows if _matches(e)]
 
-    print(f"\n{'Job ID':<42} {'Timeline':<60} {'Updated'}")
-    print("─" * 110)
+    _print(f"\n{'Job ID':<42} {'Timeline':<60} {'Updated'}")
+    _print("─" * 110)
     for job_id, entry in rows:
         timeline = _format_stages(entry)
         updated = (entry.get("updated_at") or "")[:10]
-        print(f"{STATUS_ICON.get(_effective_status(entry), '  ')} {job_id:<40} {timeline:<60} {updated}")
+        _print(f"{STATUS_ICON.get(_effective_status(entry), '  ')} {job_id:<40} {timeline:<60} {updated}")
         if entry.get("notes"):
-            print(f"   {'':40} ↳ {entry['notes'][:100]}")
+            _print(f"   {'':40} ↳ {entry['notes'][:100]}")
 
-    print(f"\nTotal: {len(rows)}")
+    _print(f"\nTotal: {len(rows)}")
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +446,16 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=str(DEFAULT_STATE_PATH),
         help=f"Path to application_state.json (default: {DEFAULT_STATE_PATH})",
     )
+    ap.add_argument(
+        "--db",
+        default=str(DEFAULT_DB_PATH),
+        help=f"Path to primary jobpipe.sqlite (default: {DEFAULT_DB_PATH})",
+    )
+    ap.add_argument(
+        "--candidate-id",
+        default=DEFAULT_CANDIDATE_ID,
+        help=f"Candidate ID for primary DB writes (default: {DEFAULT_CANDIDATE_ID})",
+    )
     ap.add_argument("--list", action="store_true", help="List all tracked applications")
     ap.add_argument(
         "--filter-status",
@@ -329,6 +465,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     args = ap.parse_args(argv)
     state_path = Path(args.state)
+    db_path = Path(args.db)
 
     if args.list:
         list_statuses(state_path, filter_status=args.filter_status)
@@ -348,6 +485,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         state_path=state_path,
         notes=notes,
         source="manual",
+        db_path=db_path,
+        candidate_id=args.candidate_id,
     )
 
     # If --pre-call-notes supplied but stage isn't 'called', also auto-add 'called'
@@ -358,6 +497,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             state_path=state_path,
             notes=args.pre_call_notes,
             source="manual",
+            db_path=db_path,
+            candidate_id=args.candidate_id,
         )
 
 

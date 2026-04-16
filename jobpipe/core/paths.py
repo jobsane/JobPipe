@@ -19,6 +19,53 @@ def data_root() -> Path | None:
     return _expand_path(raw)
 
 
+def db_root() -> Path:
+    raw = (os.environ.get("JOBPIPE_DB_DIR") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    root = data_root()
+    if root is not None:
+        return root / "db"
+    return repo_root() / "reports"
+
+
+def primary_db_path() -> Path:
+    raw = (os.environ.get("JOBPIPE_DB_PATH") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    return db_root() / "jobpipe.sqlite"
+
+
+def artifacts_root() -> Path:
+    raw = (os.environ.get("JOBPIPE_ARTIFACT_DIR") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    root = data_root()
+    if root is not None:
+        return root / "artifacts"
+    return repo_root() / "out_runs"
+
+
+def documents_root() -> Path:
+    raw = (os.environ.get("JOBPIPE_DOCUMENTS_DIR") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    root = data_root()
+    if root is not None:
+        return root / "documents"
+    return repo_root() / "reports" / "documents"
+
+
+def exports_root() -> Path:
+    raw = (os.environ.get("JOBPIPE_EXPORT_DIR") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    root = data_root()
+    if root is not None:
+        return root / "exports"
+    return repo_root() / "reports"
+
+
 def profile_pack_path() -> Path:
     raw = (os.environ.get("JOBPIPE_PROFILE_PATH") or "").strip()
     if raw:

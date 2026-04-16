@@ -41,6 +41,7 @@ import argparse
 import base64
 import io
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -48,12 +49,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.cli.mark_status import add_stage
+from jobpipe.core.io import load_env_file
 from jobpipe.core.paths import (
     application_state_path,
     gmail_credentials_path,
     gmail_token_path,
+    primary_db_path,
     suggested_jobs_path,
 )
+
+load_env_file(".env")
 
 # Windows cp1252 consoles can't encode arbitrary Unicode from email data.
 # Wrap stdout so non-encodable chars become '?' instead of crashing.
@@ -77,7 +83,9 @@ DEFAULT_STATE_PATH = application_state_path()
 DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 DEFAULT_TOKEN_PATH = gmail_token_path()
 DEFAULT_CREDS_PATH = gmail_credentials_path()
+DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
+DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 # Priority order for status upgrades (higher = more final)
 _STATUS_ORDER: Dict[str, int] = {
@@ -702,7 +710,12 @@ def _match_jobs(
 def _load_state(path: Path) -> Dict[str, Any]:
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            apps = raw.get("applications", {})
+            for entry in apps.values():
+                if not entry.get("status"):
+                    entry["status"] = _entry_effective_status(entry)
+            return raw
         except Exception as e:
             print(f"Warning: could not read state file {path}: {e}", file=sys.stderr)
     return {"version": 1, "updated_at": "", "applications": {}}
@@ -714,6 +727,66 @@ def _save_state(path: Path, state: Dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _entry_effective_status(entry: Dict[str, Any]) -> str:
+    status = (entry.get("status") or "").strip()
+    if status:
+        return status
+    outcome = (entry.get("outcome") or "").strip()
+    if outcome:
+        return outcome
+    stages = entry.get("stages", [])
+    if not isinstance(stages, list):
+        return ""
+    for stage in ("second_interview", "interview", "applied", "called", "shortlisted"):
+        if stage in stages:
+            return stage
+    return ""
+
+
+def _cache_state_after_write(
+    apps: Dict[str, Dict[str, Any]],
+    job_id: str,
+    status: str,
+    parsed: Dict[str, Any],
+    existing: Dict[str, Any],
+) -> None:
+    entry = dict(existing)
+    entry["status"] = status
+    entry["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    entry["source"] = "gmail"
+    entry["email_subject"] = parsed["subject"][:120]
+    entry["email_date"] = parsed["date"]
+    apps[job_id] = entry
+
+
+def _persist_gmail_status(
+    *,
+    apps: Dict[str, Dict[str, Any]],
+    job_id: str,
+    status: str,
+    parsed: Dict[str, Any],
+    existing: Dict[str, Any],
+    state_path: Path,
+    db_path: Path,
+    candidate_id: str,
+    dry_run: bool,
+) -> None:
+    if not dry_run:
+        add_stage(
+            job_id=job_id,
+            token=status,
+            state_path=state_path,
+            notes=existing.get("notes", ""),
+            source="gmail",
+            email_subject=parsed["subject"][:120],
+            email_date=parsed["date"],
+            db_path=db_path,
+            candidate_id=candidate_id,
+            quiet=True,
+        )
+    _cache_state_after_write(apps, job_id, status, parsed, existing)
+
+
 # --- Main scan ---
 
 def scan(
@@ -722,6 +795,8 @@ def scan(
     ledger_path: Path = DEFAULT_LEDGER_PATH,
     token_path: Path = DEFAULT_TOKEN_PATH,
     creds_path: Path = DEFAULT_CREDS_PATH,
+    db_path: Path = DEFAULT_DB_PATH,
+    candidate_id: str = DEFAULT_CANDIDATE_ID,
     dry_run: bool = False,
     verbose: bool = False,
 ) -> int:
@@ -874,25 +949,21 @@ def scan(
                 print(f"    job_id={job_id}  subject='{parsed['subject'][:60]}'  date={parsed['date']}")
 
             if not dry_run:
-                entry: Dict[str, Any] = {
-                    "status": status,
-                    "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                    "source": "gmail",
-                    "email_subject": parsed["subject"][:120],
-                    "email_date": parsed["date"],
-                }
-                # Preserve existing notes
-                if existing.get("notes"):
-                    entry["notes"] = existing["notes"]
-                apps[job_id] = entry
                 written += 1
+            _persist_gmail_status(
+                apps=apps,
+                job_id=job_id,
+                status=status,
+                parsed=parsed,
+                existing=existing,
+                state_path=state_path,
+                db_path=db_path,
+                candidate_id=candidate_id,
+                dry_run=dry_run,
+            )
 
     if not dry_run and written:
-        _save_state(state_path, state)
-        print(f"\n[OK] Saved {written} new/updated entries to {state_path}")
-    elif dry_run and written == 0:
-        # written counter not incremented in dry run — count would-be writes
-        pass
+        print(f"\n[OK] Saved {written} new/updated entries to {state_path} and {db_path}")
 
     print(
         f"\nSummary: classified={len(msg_ids)-unclassified}  unclassified={unclassified}  "
@@ -1158,6 +1229,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--days", type=int, default=90, help="Days back to scan (default: 90)")
     ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to application_state.json")
     ap.add_argument("--ledger", default=str(DEFAULT_LEDGER_PATH), help="Path to ledger.sqlite")
+    ap.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to primary jobpipe.sqlite")
+    ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB writes (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--token", default=str(DEFAULT_TOKEN_PATH), help="OAuth token path (gmail_token.json)")
     ap.add_argument("--creds", default=str(DEFAULT_CREDS_PATH), help="OAuth credentials path (gmail_credentials.json)")
     ap.add_argument("--dry-run", action="store_true", help="Preview without writing")
@@ -1195,15 +1268,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         return
 
-    scan(
-        days=args.days,
-        state_path=Path(args.state),
-        ledger_path=Path(args.ledger),
-        token_path=Path(args.token),
-        creds_path=Path(args.creds),
-        dry_run=args.dry_run,
-        verbose=args.verbose,
-    )
+        scan(
+            days=args.days,
+            state_path=Path(args.state),
+            ledger_path=Path(args.ledger),
+            token_path=Path(args.token),
+            creds_path=Path(args.creds),
+            db_path=Path(args.db),
+            candidate_id=args.candidate_id,
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+        )
 
 
 if __name__ == "__main__":
