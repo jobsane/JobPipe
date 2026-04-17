@@ -1,0 +1,127 @@
+pipeline_name: jobpipe_v1
+
+models:
+  triage: gpt-4.1-nano
+  reverse_triage: gpt-4.1-mini
+  parse: gpt-4.1-mini
+  profile_match: gpt-4.1-mini
+  pivot: gpt-4.1-mini
+  application_pack: gpt-4.1-mini
+  writer: gpt-4.1
+  packet: gpt-4.1-mini
+
+# Order is respected by run_feed.build_stages (parse/moderate are aliases: parse->parsed, moderate->moderator)
+stages:
+  - triage          # includes semantic pre-filter when semantic_filter_threshold > 0
+  # - reverse_triage  # disabled: semantic filter + confidence calibration makes this redundant
+  - parse
+  - profile_match
+  - pivot
+  - moderate
+  - application_pack
+  # - writer
+  # - packet
+
+thresholds:
+  # --- Semantic pre-filter (free local embeddings, runs before LLM triage) ---
+  # Set to 0.0 to disable. Tune upward to be more aggressive (saves more tokens).
+  #
+  # CALIBRATION NOTES (2026-04-13):
+  # BAAI/bge-small-en-v1.5 (English-only) was disabled — Norwegian texts clustered
+  # 0.52-0.76 with no separation between target and irrelevant roles.
+  #
+  # SWITCHED (2026-04-13) to paraphrase-multilingual-MiniLM-L12-v2 (~220 MB ONNX).
+  # Starting at threshold=0.45 (conservative — below expected optimum of 0.55-0.60).
+  # TO CALIBRATE: run pipeline on a sample, inspect scores in 01_triage.json signals
+  # (look for "sim:X.XX" tag), find score separating helse/håndverk from IT-mgmt roles,
+  # then raise threshold toward 0.55-0.60. Delete reports/profile_embedding.npy
+  # whenever profile_pack.md changes or after switching models to rebuild the cache.
+  semantic_filter_threshold: 0.30  # Lowered from 0.45 — calibration showed real interview jobs score 0.33-0.42
+  semantic_filter_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+  reverse_triage_min_conf: 0.60   # kept for reference if reverse_triage is re-enabled
+  reverse_triage_skip_above: 0.82
+  apply_strong_fit: 78
+  apply_fit: 67
+  review_fit: 45                 # backward compat
+  review_min_fit: 30             # hard floor: below this, SKIP no matter pivot
+  review_high_min_fit: 58        # separates REVIEW_LOW vs REVIEW_HIGH
+  pivot_boost_apply: 78          # pivot should rarely force APPLY
+  max_ad_text_chars: 3200        # default for parse / profile_match / pivot
+  triage_max_ad_text_chars: 1500           # triage only needs title + opening
+  reverse_triage_max_ad_text_chars: 1800   # slightly more for reconsideration
+
+safety_rules:
+  never_skip_if_title_matches: true
+
+  # If title matches this, triage must not SKIP (force at least REVIEW)
+  target_title_regex: '(?i)\b(produkteier\w*|product\s+owner|produktleder\w*|product\s+manager|tjenesteeier\w*|service\s+owner|tjenesteansvarlig\w*|tjenesteleder\w*|services?\s*manager|system(eier|ansvar)\w*|systemansvar\w*|systemeier\w*|applikasjonsforvalt(ning|er)|systemforvalt(ning|er)|plattform(ansvar(lig)?|eier|leder|forvalt(ning|er))\w*|it-?\s*prosjektleder\w*|digital\s+prosjektleder\w*|prosjektleder\w*\s*(it|digital)?|digital\s+transformasjon|transformation\s+advisor|rådgiver\s+digital|it-?\s*analytiker\w*|business\s+analyst|crm-?(ansvarlig|manager)\w*|endringsleder\w*|endringsledelse|digitaliseringsleder\w*|digitaliseringsansvarlig\w*|digitaliseringssjef\w*|digitaliseringskoordinator\w*|digitaliserings(leder|ansvarlig|sjef)\w*|forretningsutvikl(ing|er)\w*|virksomhetsutvikl(ing|er)\w*|organisasjonsutvikl(ing|er)\w*|programleder\w*|porteføljeleder\w*|tjenesteforvalter\w*|seksjonsleder\s+digital|avdelingsleder\s+digital|leder\s+digitalisering|leder\s+digital|leder\s+strategi|digital\s+tjenesteutvikling)\b'
+
+  very_strong_positive_regex: '(?i)\b(tjenesteeier|service\s+owner|tjenesteleder|services?\s*manager|systemeier|systemansvar|plattform(ansvar(lig)?|eier|leder|forvalt(ning|er))|applikasjonsforvalt(ning|er)|systemforvalt(ning|er)|itsm|itil|servicenow|cmdb|incident\s+management|problem\s+management|change\s+management|service\s+catalog|sla|crm[-\s]?(ansvarlig|forvalt(ning|er)|administrator|admin|manager)|salesforce(\s+administrator|\s+admin)?|dynamics\s*365(\s+crm)?|microsoft\s*dynamics(\s*365)?|hubspot(\s+(admin|administrator|ops|operations))?|endringsledelse|organisasjonsutvikling)\b'
+
+  # Weak positives (lower precision) — only override SKIP when combined
+  weak_positive_regex: '(?i)\b(backlog|roadmap|prioriter(ing|e)|mvp|hypotes(e|er)|gevinstrealisering|produktstrategi|product\s+discovery|tverrfag(lig|lige)|stakeholder(s)?|interessent(er)?|forvalt(ning|er)|governance|porteføljestyr(ing)?|tjenesteportefølje|leverandørstyring|leverandøroppfølging|kontraktsforvaltning|endringsledelse|smidig|scrum|kanban|prosesseier|prosessledelse|prosessforbedring|integrasjon(er)?|api(er)?|datakvalitet|masterdata|data\s+governance|\bmdm\b|compliance|gdpr|risiko|sikkerhet|iam|tilgangsstyring|azure\s*ad|e-?commerce|netthandel|cro|a\/?b-?test(ing)?|konvertering|heatmap(s)?|power\s*bi|tableau|looker|google\s*analytics|ga4|rapportering|dashbord|marketing\s+automation|jira|confluence|zendesk|videreutvikling|plattformdrift|plattformforvaltning|kravhåndtering|behovsavklaring)\b'
+
+  # Gating for weak override
+  weak_override_max_skip_confidence: 0.40
+  weak_override_min_hits: 4
+  weak_override_min_hits_with_anchor: 2
+  weak_anchor_regex: '(?i)\b(tjenesteeier|service\s+owner|systemeier|applikasjonsforvalt|systemforvalt|plattform(ansvar(lig)?|eier|leder|forvalt)|itsm|itil|servicenow|cmdb|crm|salesforce|dynamics\s*365|hubspot|integrasjon|api|data\s+governance|masterdata|gdpr|compliance|endringsledelse)\b'
+
+  # Hard NO titles => auto-SKIP unless target_title_regex also matches (conflict => REVIEW)
+  hard_no_title_regex: '(?i)\b(account\s+manager|key\s+account|account\s+executive|sales|selger|salg|bd(r)?|sd(r)?|møtebook|kundeservice|support\s*(konsulent|medarbeider)?|helpdesk|call\s*center|butikk|butikkmedarbeider|kasse|varepåfyll|sykepleier|lege|helsefagarbeider|lærer|lektor|barnehage|pedagog|sjåfør|lager|renhold|håndverk|sosionom|vernepleier|bioingeniør|radiograf|portør|tannhelse|adjunkt|brannkonstabel|montør|elektriker|rørlegger|kokk|servitør|resepsjonist|vaktmester|gartner|bonde|fisker|matros|maskinist|revisor|regnskaps(fører|medarbeider)|bokholder|advokat|advokatfullmektig|jurist|eiendomsmegler|tolk|bibliotekar|arkivar|fysioterapeut|ergoterapeut|psykolog|veterinær|optiker|jordmor|ambulanse|pleiemedarbeider|hjelpepleier|aktivitør|barnevernspedagog)\b'
+
+  # --- GEO FILTER (python, pre-AI) ---
+  geo_enabled: true
+
+  # Allow: 0xxx (Oslo), 1xxx (Akershus), 3xxx (Vestfold/Telemark), 4xxx (Agder) — excluding xx00 sorting codes
+  geo_postal_regex: "^([0134])(00[1-9]|0[1-9]\\d|[1-9](0[1-9]|[1-9]\\d))$"
+
+  geo_allow_remote_regex: "(?i)(remote|fjern|hjemmekontor|hybrid)"
+
+  # Allowed counties for postal-code fallback (used when work_postalCode is missing).
+  # Matches: Oslo, Akershus (re-est. 2024), Viken (2020-2024 interim), Vestfold, Telemark,
+  # the merged Vestfold og Telemark, and Agder / Aust-Agder / Vest-Agder.
+  geo_county_regex: "(?i)\\b(oslo|akershus|viken|vestfold|telemark|agder|aust-agder|vest-agder)\\b"
+  geo_municipal_regex: ""
+
+# ---------------------------------------------------------------------------
+# FINN direct search intake (pull_finn_search.py)
+# Scrapes public FINN search pages by keyword — no auth required.
+# Jobs are tagged suggested_by_platform=true so the semantic filter won't
+# kill them; the LLM triage + profile_match stages decide their fate.
+# Tune the query list and location to match the target role profile.
+# ---------------------------------------------------------------------------
+finn_search:
+  # FINN location code — leave empty to search all of Norway.
+  # The pipeline geo filter (triage.py) handles location filtering correctly.
+  # Using a FINN location code here cuts results too aggressively (e.g. Oslo
+  # municipality drops produktansvarlig results from 23 → 2).
+  location: ""
+
+  # Max result pages to fetch per query (each page ~50-70 cards, so 2 pages ≈ 100-140 jobs).
+  max_pages: 2
+
+  # Max full-content fetches per run across all queries. Keep ≤ 50 to stay under radar.
+  max_fetch: 40
+
+  # Search queries — each maps to one FINN /job/search?q= call.
+  # Format: { label: "human label", q: "finn search string" }
+  # Tuned for Lars's role profile: product ownership, IT management, digital advisory.
+  queries:
+    - label: "Produktansvarlig / produkteier / produktleder"
+      q: "produktansvarlig OR produkteier OR produktleder"
+    - label: "Digitaliseringsleder / konsulent"
+      q: "digitaliseringsleder OR digitaliseringskonsulent OR digitalisering"
+    - label: "IT-prosjektleder / rådgiver"
+      q: "IT-prosjektleder OR prosjektleder IT OR IT-rådgiver"
+    - label: "Tjenesteeier / systemansvarlig / plattformansvarlig"
+      q: "tjenesteeier OR systemansvarlig OR plattformansvarlig OR tjenesteansvarlig"
+    - label: "CRM / Salesforce / ServiceNow"
+      q: "CRM-ansvarlig OR Salesforce OR ServiceNow OR ITSM"
+    - label: "E-commerce / netthandel / konvertering"
+      q: "ecommerce OR netthandel OR konverteringssjef OR konverteringsansvarlig OR markedsplassansvarlig OR digital commerce"
+    - label: "Endringsleder / forretningsutvikler / organisasjonsutvikling"
+      q: "endringsleder OR forretningsutvikler OR organisasjonsutvikling OR prosesseier OR prosessforbedring OR virksomhetsutvikler"
+    - label: "Programleder / PMO / portefølje / tjenesteforvalter"
+      q: "programleder OR PMO OR porteføljeleder OR tjenesteforvalter OR tjenesteforvaltning OR prosjektportefølje"

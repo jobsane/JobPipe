@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobPipe Dashboard</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242836;
+  --border: #2e3346;
+  --text: #e1e4ed;
+  --text-dim: #8b90a0;
+  --green: #34d399;
+  --green-bg: rgba(52,211,153,0.12);
+  --blue: #60a5fa;
+  --blue-bg: rgba(96,165,250,0.12);
+  --amber: #fbbf24;
+  --amber-bg: rgba(251,191,36,0.12);
+  --purple: #a78bfa;
+  --purple-bg: rgba(167,139,250,0.12);
+  --red: #f87171;
+  --red-bg: rgba(248,113,113,0.12);
+  --gray: #6b7280;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+
+.container { max-width:1440px; margin:0 auto; padding:24px; }
+
+/* Header */
+header { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; flex-wrap:wrap; gap:16px; }
+header h1 { font-size:24px; font-weight:700; }
+header h1 span { color:var(--green); }
+.meta { color:var(--text-dim); font-size:13px; }
+
+/* Badges */
+.badges { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; }
+.badge { padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
+.badge-green { background:var(--green-bg); color:var(--green); }
+.badge-blue { background:var(--blue-bg); color:var(--blue); }
+.badge-amber { background:var(--amber-bg); color:var(--amber); }
+.badge-purple { background:var(--purple-bg); color:var(--purple); }
+.badge-red { background:var(--red-bg); color:var(--red); }
+
+/* Urgent banner */
+.urgent-banner { background:var(--red-bg); border:1px solid rgba(248,113,113,0.3); border-radius:10px; padding:14px 20px; margin-bottom:24px; display:none; }
+.urgent-banner h3 { color:var(--red); font-size:15px; margin-bottom:8px; }
+.urgent-banner .urgent-list { font-size:13px; }
+.urgent-banner .urgent-item { padding:4px 0; border-bottom:1px solid rgba(248,113,113,0.1); }
+.urgent-banner .urgent-item:last-child { border:none; }
+.urgent-banner a { color:var(--red); }
+
+/* Tabs */
+.tabs { display:flex; gap:4px; margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:0; }
+.tab { padding:10px 18px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:14px; font-weight:500; border-bottom:2px solid transparent; transition:all .15s; }
+.tab:hover { color:var(--text); }
+.tab.active { color:var(--green); border-bottom-color:var(--green); }
+
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Cards grid */
+.grid { display:grid; gap:20px; margin-bottom:32px; }
+.grid-2 { grid-template-columns:1fr 1fr; }
+.grid-3 { grid-template-columns:1fr 1fr 1fr; }
+@media(max-width:900px) { .grid-2, .grid-3 { grid-template-columns:1fr; } }
+
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
+.card h3 { font-size:15px; font-weight:600; margin-bottom:16px; color:var(--text-dim); }
+
+/* Funnel */
+.funnel-bar { display:flex; align-items:center; margin-bottom:10px; }
+.funnel-label { width:180px; font-size:13px; color:var(--text-dim); flex-shrink:0; }
+.funnel-track { flex:1; height:28px; background:var(--surface2); border-radius:6px; overflow:hidden; position:relative; }
+.funnel-fill { height:100%; border-radius:6px; transition:width 0.5s ease; display:flex; align-items:center; padding-left:10px; font-size:12px; font-weight:600; color:var(--bg); min-width:40px; }
+.funnel-count { margin-left:10px; font-size:13px; color:var(--text-dim); min-width:60px; }
+
+/* Donut chart (CSS-based) */
+.donut-container { display:flex; align-items:center; gap:24px; }
+.donut-svg { width:160px; height:160px; }
+.donut-legend { font-size:13px; }
+.donut-legend-item { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.donut-legend-swatch { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+
+/* Scatter canvas */
+.scatter-canvas { width:100%; height:360px; background:var(--surface2); border-radius:8px; }
+
+/* Timeline canvas */
+.timeline-canvas { width:100%; height:280px; background:var(--surface2); border-radius:8px; }
+
+/* Employer bar chart */
+.emp-bar { display:flex; align-items:center; margin-bottom:6px; }
+.emp-name { width:200px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.emp-track { flex:1; height:20px; background:var(--surface2); border-radius:4px; overflow:hidden; }
+.emp-fill { height:100%; background:var(--blue); border-radius:4px; transition:width 0.4s; }
+.emp-count { margin-left:8px; font-size:12px; color:var(--text-dim); min-width:24px; }
+
+/* Table */
+.table-controls { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+.table-controls input, .table-controls select {
+  background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:13px;
+}
+.table-controls input { width:260px; }
+
+table { width:100%; border-collapse:collapse; font-size:13px; }
+thead th { text-align:left; padding:10px 12px; border-bottom:2px solid var(--border); color:var(--text-dim); font-weight:600; cursor:pointer; white-space:nowrap; user-select:none; }
+thead th:hover { color:var(--text); }
+thead th.sorted-asc::after { content:' \u25B2'; font-size:10px; }
+thead th.sorted-desc::after { content:' \u25BC'; font-size:10px; }
+tbody tr { border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
+tbody tr:hover { background:var(--surface2); }
+tbody td { padding:10px 12px; vertical-align:top; }
+
+.decision-pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.pill-APPLY_STRONGLY { background:var(--green-bg); color:var(--green); }
+.pill-APPLY { background:var(--blue-bg); color:var(--blue); }
+.pill-REVIEW_HIGH { background:var(--amber-bg); color:var(--amber); }
+.pill-REVIEW_LOW { background:var(--purple-bg); color:var(--purple); }
+
+.score-bar { display:inline-block; width:50px; height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; vertical-align:middle; margin-right:6px; }
+.score-fill { height:100%; border-radius:4px; }
+
+a.apply-link { color:var(--green); text-decoration:none; font-weight:600; }
+a.apply-link:hover { text-decoration:underline; }
+
+/* Expanded detail row */
+.detail-row { display:none; }
+.detail-row.open { display:table-row; }
+.detail-row td { padding:16px 20px; background:var(--surface2); }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.detail-section h4 { font-size:13px; color:var(--text-dim); margin-bottom:6px; }
+.detail-section ul { padding-left:18px; font-size:13px; }
+.detail-section li { margin-bottom:4px; }
+.detail-section p { font-size:13px; color:var(--text); }
+@media(max-width:800px) { .detail-grid { grid-template-columns:1fr; } }
+
+/* Due date coloring */
+.due-urgent { color:var(--red); font-weight:600; }
+.due-soon { color:var(--amber); }
+.due-ok { color:var(--text-dim); }
+
+.empty-state { text-align:center; padding:48px; color:var(--text-dim); font-size:15px; }
+
+/* Health cards */
+.health-value { font-size:32px; font-weight:700; margin-bottom:6px; }
+.health-sub { font-size:12px; color:var(--text-dim); }
+
+/* Scatter tooltip */
+.scatter-tooltip { position:fixed; pointer-events:none; display:none; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:12px; max-width:280px; z-index:100; line-height:1.7; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
+.scatter-tooltip strong { display:block; color:var(--text); margin-bottom:2px; }
+
+/* Triage signal tags */
+.sig-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin:2px; background:rgba(0,0,0,0.2); }
+
+/* Application status */
+.app-pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.app-shortlisted    { background:var(--amber-bg); color:var(--amber); }
+.app-applied        { background:var(--blue-bg); color:var(--blue); }
+.app-interview      { background:var(--green-bg); color:var(--green); }
+.app-second_interview { background:#7c3aed22; color:#7c3aed; }
+.app-called         { background:#f0f9ff; color:#0369a1; }
+.app-accepted       { background:var(--green-bg); color:var(--green); }
+.app-rejected       { background:var(--red-bg); color:var(--red); }
+.app-dismissed      { background:rgba(107,114,128,0.15); color:var(--gray); }
+
+/* Milestone timeline */
+.milestone-track { display:flex; align-items:center; gap:0; margin:10px 0 6px 0; flex-wrap:wrap; }
+.milestone-step { display:flex; align-items:center; gap:4px; }
+.milestone-dot { width:22px; height:22px; border-radius:50%; border:2px solid var(--border); background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:11px; transition:all .15s; }
+.milestone-dot.done   { border-color:var(--blue); background:var(--blue-bg); }
+.milestone-dot.outcome-accepted { border-color:var(--green); background:var(--green-bg); }
+.milestone-dot.outcome-rejected { border-color:var(--red); background:var(--red-bg); }
+.milestone-dot.outcome-dismissed { border-color:var(--gray); background:rgba(107,114,128,0.15); }
+.milestone-label { font-size:10px; color:var(--text-dim); white-space:nowrap; }
+.milestone-label.done { color:var(--text); font-weight:600; }
+.milestone-connector { width:20px; height:2px; background:var(--border); margin:0 2px; flex-shrink:0; }
+.milestone-connector.done { background:var(--blue); }
+
+.status-buttons { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+.status-btn { padding:4px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-dim); font-size:11px; cursor:pointer; transition:all .15s; }
+.status-btn:hover { color:var(--text); border-color:var(--text-dim); }
+.status-btn.done-stage  { background:var(--blue-bg); color:var(--blue); border-color:var(--blue); }
+.status-btn.active-accepted  { background:var(--green-bg); color:var(--green); border-color:var(--green); }
+.status-btn.active-rejected  { background:var(--red-bg); color:var(--red); border-color:var(--red); }
+.status-btn.active-dismissed { background:rgba(107,114,128,0.15); color:var(--gray); border-color:var(--gray); }
+.status-divider { width:1px; height:20px; background:var(--border); margin:0 4px; }
+
+.copy-toast { font-size:11px; color:var(--green); margin-left:8px; opacity:0; transition:opacity .3s; }
+.copy-toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Job<span>Pipe</span> Dashboard</h1>
+    <div class="meta" id="metaInfo"></div>
+  </header>
+
+  <div id="urgentBanner" class="urgent-banner">
+    <h3>Expiring within 7 days</h3>
+    <div class="urgent-list" id="urgentList"></div>
+  </div>
+
+  <div class="badges" id="badges"></div>
+
+  <div class="tabs" id="tabBar">
+    <button class="tab active" data-tab="action">Action List</button>
+    <button class="tab" data-tab="pipeline">Pipeline</button>
+    <button class="tab" data-tab="scores">Scores</button>
+    <button class="tab" data-tab="timeline">Timeline</button>
+    <button class="tab" data-tab="employers">Employers</button>
+  </div>
+
+  <!-- TAB: Action List -->
+  <div class="tab-content active" id="tab-action">
+    <div class="table-controls">
+      <input type="text" id="searchInput" placeholder="Search title, employer...">
+      <select id="decisionFilter">
+        <option value="apply_plus" selected>APPLY+ (no expired)</option>
+        <option value="all">All actionable</option>
+        <option value="APPLY_STRONGLY">APPLY STRONGLY</option>
+        <option value="APPLY">APPLY</option>
+        <option value="REVIEW_HIGH">REVIEW HIGH</option>
+        <option value="REVIEW_LOW">REVIEW LOW</option>
+      </select>
+      <label style="margin-left:12px; font-size:13px; color:var(--text-dim); cursor:pointer;">
+        <input type="checkbox" id="hideExpired" checked style="margin-right:4px;">
+        Hide expired
+      </label>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="actionTable">
+        <thead>
+          <tr>
+            <th data-col="final_decision">Decision</th>
+            <th data-col="app_status">Status</th>
+            <th data-col="title">Title</th>
+            <th data-col="employer">Employer</th>
+            <th data-col="work_city">Location</th>
+            <th data-col="fit_score">Fit</th>
+            <th data-col="pivot_score">Pivot</th>
+            <th data-col="final_confidence">Conf</th>
+            <th data-col="applicationDue">Deadline</th>
+            <th>Apply</th>
+          </tr>
+        </thead>
+        <tbody id="actionBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB: Pipeline -->
+  <div class="tab-content" id="tab-pipeline">
+    <div class="grid grid-3" id="healthCards" style="margin-bottom:20px;"></div>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Pipeline Funnel</h3>
+        <div id="funnelChart"></div>
+      </div>
+      <div class="card">
+        <h3>SKIP Breakdown</h3>
+        <div class="donut-container">
+          <svg class="donut-svg" viewBox="0 0 160 160" id="donutSvg"></svg>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Scores -->
+  <div class="tab-content" id="tab-scores">
+    <div class="card">
+      <h3>Fit Score vs Pivot Score (non-SKIP jobs)</h3>
+      <canvas class="scatter-canvas" id="scatterCanvas"></canvas>
+      <div class="scatter-tooltip" id="scatterTooltip"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Timeline -->
+  <div class="tab-content" id="tab-timeline">
+    <div class="card">
+      <h3>Run History</h3>
+      <canvas class="timeline-canvas" id="timelineCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- TAB: Employers -->
+  <div class="tab-content" id="tab-employers">
+    <div class="card">
+      <h3>Top Employers (APPLY+ decisions)</h3>
+      <div id="employerChart"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Data is injected inline by export_dashboard.py — no fetch needed.
+// The placeholder below is replaced at build time with the full JSON payload.
+let DATA = /*__DASHBOARD_DATA__*/;
+let sortCol = 'fit_score';
+let sortDir = -1; // -1 = desc
+
+function loadData() {
+  if (!DATA) {
+    document.querySelector('.container').innerHTML = `<div class="empty-state">
+      <p>No data embedded. Rebuild with:</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--text-dim)"><code>python -m jobpipe.cli.export_dashboard</code></p>
+    </div>`;
+    return;
+  }
+  render();
+}
+
+// ── Pipeline Health ──
+function renderPipelineHealth() {
+  const el = document.getElementById('healthCards');
+  if (!el) return;
+  const jobs = DATA.jobs;
+  const total = jobs.length;
+  if (!total) return;
+
+  const actionable = jobs.filter(j => classifyJob(j) === 'actionable').length;
+  const geo        = jobs.filter(j => classifyJob(j) === 'geo').length;
+
+  // Token waste: triage LLM said non-SKIP, but moderator still SKIP'd (low fit after parsing)
+  const llmSeen   = jobs.filter(j => j.triage_decision && j.triage_decision !== 'SKIP');
+  const llmWasted = llmSeen.filter(j => j.final_decision === 'SKIP');
+  const wasteRate  = llmSeen.length ? (llmWasted.length / llmSeen.length * 100) : null;
+
+  const passRate = (actionable / total * 100).toFixed(1);
+  const geoRate  = (geo / total * 100).toFixed(1);
+
+  const passColor  = actionable >= 10 ? 'var(--green)' : actionable >= 3 ? 'var(--amber)' : 'var(--text-dim)';
+  const wasteColor = wasteRate === null ? 'var(--text-dim)'
+    : wasteRate <= 30 ? 'var(--green)' : wasteRate <= 50 ? 'var(--amber)' : 'var(--red)';
+
+  const cards = [
+    { label: 'Overall pass rate',
+      value: passRate + '%',
+      sub: actionable + ' of ' + total.toLocaleString() + ' jobs are actionable',
+      color: passColor },
+    { label: 'Geo-block rate',
+      value: geoRate + '%',
+      sub: geo.toLocaleString() + ' blocked by location filter',
+      color: 'var(--purple)' },
+    { label: 'Token waste rate',
+      value: wasteRate !== null ? wasteRate.toFixed(1) + '%' : '—',
+      sub: llmWasted.length + ' of ' + llmSeen.length + ' LLM-triaged jobs → final SKIP',
+      color: wasteColor },
+  ];
+
+  el.innerHTML = cards.map(c =>
+    '<div class="card"><h3>' + c.label + '</h3>' +
+    '<div class="health-value" style="color:' + c.color + '">' + c.value + '</div>' +
+    '<div class="health-sub">' + c.sub + '</div></div>'
+  ).join('');
+}
+
+function render() {
+  renderMeta();
+  renderBadges();
+  renderUrgent();
+  renderActionTable();
+  renderPipelineHealth();
+  renderFunnel();
+  renderDonut();
+  renderScatter();
+  renderTimeline();
+  renderEmployers();
+}
+
+// ── Meta ──
+function renderMeta() {
+  const d = new Date(DATA.generated_at);
+  document.getElementById('metaInfo').textContent =
+    `${DATA.jobs.length.toLocaleString()} jobs \u00b7 Generated ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+}
+
+// ── Badges ──
+function renderBadges() {
+  const counts = {};
+  DATA.jobs.forEach(j => { counts[j.final_decision] = (counts[j.final_decision]||0)+1; });
+  const el = document.getElementById('badges');
+  const items = [
+    ['APPLY_STRONGLY', 'badge-green'],
+    ['APPLY', 'badge-blue'],
+    ['REVIEW_HIGH', 'badge-amber'],
+    ['REVIEW_LOW', 'badge-purple'],
+  ];
+  el.innerHTML = items.map(([d,cls]) =>
+    `<span class="badge ${cls}" style="cursor:pointer" title="Filter to ${d.replace('_',' ')}" onclick="setFilter('${d}')">${counts[d]||0} ${d.replace('_',' ')}</span>`
+  ).join('');
+}
+
+function setFilter(val) {
+  document.getElementById('decisionFilter').value = val;
+  document.getElementById('hideExpired').checked = false;
+  renderActionTable();
+}
+
+// ── Urgent (expiring soon) ──
+function renderUrgent() {
+  const now = new Date();
+  const week = new Date(now.getTime() + 7*86400000);
+  const actionable = DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
+  const urgent = actionable.filter(j => {
+    if (!j.applicationDue || j.applicationDue.length < 10) return false;
+    const d = new Date(j.applicationDue);
+    return d >= now && d <= week;
+  }).sort((a,b) => new Date(a.applicationDue) - new Date(b.applicationDue));
+
+  const banner = document.getElementById('urgentBanner');
+  if (urgent.length === 0) { banner.style.display='none'; return; }
+  banner.style.display='block';
+  document.getElementById('urgentList').innerHTML = urgent.map(j => {
+    const days = Math.ceil((new Date(j.applicationDue) - now) / 86400000);
+    const label = days <= 1 ? 'TODAY' : days + 'd';
+    const link = j.application_url || j.source_url || '#';
+    return `<div class="urgent-item">${label} \u2014 <strong>${esc(j.title)}</strong> @ ${esc(j.employer)} (fit ${j.fit_score||'?'}) <a href="${esc(link)}" target="_blank">Apply \u2192</a></div>`;
+  }).join('');
+}
+
+// ── Action Table ──
+function getActionable() {
+  return DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
+}
+
+function isJobExpired(j) {
+  if (!j.applicationDue || j.applicationDue.length < 10) return false;
+  return new Date(j.applicationDue) < new Date();
+}
+
+function renderActionTable() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const filter = document.getElementById('decisionFilter').value;
+  const hideExpired = document.getElementById('hideExpired').checked;
+
+  let rows = getActionable();
+  if (filter === 'apply_plus') {
+    rows = rows.filter(j => j.final_decision === 'APPLY_STRONGLY' || j.final_decision === 'APPLY');
+  } else if (filter !== 'all') {
+    rows = rows.filter(j => j.final_decision === filter);
+  }
+  if (hideExpired) rows = rows.filter(j => !isJobExpired(j));
+  if (search) rows = rows.filter(j =>
+    (j.title||'').toLowerCase().includes(search) ||
+    (j.employer||'').toLowerCase().includes(search) ||
+    (j.work_city||'').toLowerCase().includes(search)
+  );
+
+  rows.sort((a,b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (sortCol === 'final_decision') {
+      const ord = {APPLY_STRONGLY:0,APPLY:1,REVIEW_HIGH:2,REVIEW_LOW:3};
+      av = ord[av] ?? 9; bv = ord[bv] ?? 9;
+    }
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * (sortDir === -1 ? -1 : 1);
+    return (av - bv) * sortDir;
+  });
+
+  // Update sort indicators
+  document.querySelectorAll('#actionTable th').forEach(th => {
+    th.classList.remove('sorted-asc','sorted-desc');
+    if (th.dataset.col === sortCol) {
+      th.classList.add(sortDir === 1 ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+
+  const tbody = document.getElementById('actionBody');
+  tbody.innerHTML = rows.map((j, i) => {
+    const due = formatDue(j.applicationDue);
+    const link = j.application_url || j.source_url || '';
+    const loc = esc(j.work_city || j.work_county || '');
+    return `<tr data-idx="${i}" onclick="toggleDetail(this)">
+      <td><span class="decision-pill pill-${j.final_decision}">${j.final_decision.replace('_',' ')}</span></td>
+      <td>${appStatusPill(j)}</td>
+      <td>${esc(j.title||'')}</td>
+      <td>${esc(j.employer||'')}</td>
+      <td style="color:var(--text-dim)">${loc}</td>
+      <td>${scoreCell(j.fit_score)}</td>
+      <td>${scoreCell(j.pivot_score)}</td>
+      <td>${j.final_confidence != null ? (j.final_confidence*100).toFixed(0)+'%' : ''}</td>
+      <td class="${due.cls}">${due.text}</td>
+      <td>${link ? `<a class="apply-link" href="${esc(link)}" target="_blank" onclick="event.stopPropagation()">Apply \u2192</a>` : ''}</td>
+    </tr>
+    <tr class="detail-row" id="detail-${i}"><td colspan="10">${renderDetail(j)}</td></tr>`;
+  }).join('');
+}
+
+function scoreCell(v) {
+  if (v == null) return '<span style="color:var(--text-dim)">-</span>';
+  const pct = Math.min(100, v);
+  const color = v >= 75 ? 'var(--green)' : v >= 55 ? 'var(--blue)' : v >= 25 ? 'var(--amber)' : 'var(--gray)';
+  return `<span class="score-bar"><span class="score-fill" style="width:${pct}%;background:${color}"></span></span>${v}`;
+}
+
+function formatDue(d) {
+  if (!d) return {text:'-', cls:'due-ok'};
+  // Try to parse as a date; fall back to showing the raw text for Norwegian
+  // freeform values like "Snarest", "Fortløpende", "Snarest, vi vurderer…"
+  const due = new Date(d);
+  if (isNaN(due.getTime())) {
+    // Treat "Snarest" / "Fortløpende" as rolling — show as a neutral badge
+    const short = d.length > 20 ? d.slice(0, 18) + '…' : d;
+    return {text: short, cls:'due-ok'};
+  }
+  const now = new Date();
+  const days = Math.ceil((due - now) / 86400000);
+  if (days < 0) return {text:'Expired', cls:'due-urgent'};
+  if (days === 0) return {text:'TODAY', cls:'due-urgent'};
+  if (days <= 3) return {text:due.toLocaleDateString(), cls:'due-urgent'};
+  if (days <= 14) return {text:due.toLocaleDateString(), cls:'due-soon'};
+  return {text:due.toLocaleDateString(), cls:'due-ok'};
+}
+
+// ── Application status ──
+const APP_STAGES = [
+  { key:'shortlisted',      icon:'⭐', label:'Shortlisted' },
+  { key:'called',           icon:'📞', label:'Ringt' },
+  { key:'applied',          icon:'📤', label:'Søkt' },
+  { key:'interview',        icon:'🗣', label:'Intervju' },
+  { key:'second_interview', icon:'🔄', label:'2. runde' },
+];
+const APP_OUTCOMES = [
+  { key:'accepted',  icon:'✅', label:'Takket ja' },
+  { key:'rejected',  icon:'❌', label:'Avslag' },
+  { key:'dismissed', icon:'⚫', label:'Ikke aktuell' },
+];
+
+function _parseStages(j) {
+  try { return JSON.parse(j.app_stages || '[]'); } catch(e) { return []; }
+}
+
+function appStatusPill(j_or_status) {
+  // Accept either a job object (new) or a plain status string (legacy table column)
+  const status = (typeof j_or_status === 'string') ? j_or_status : (j_or_status.app_outcome || j_or_status.app_status || '');
+  if (!status) return '<span style="color:var(--text-dim);font-size:11px">—</span>';
+  const found = [...APP_STAGES, ...APP_OUTCOMES].find(x => x.key === status);
+  const label = found ? found.icon + ' ' + found.label : status;
+  return `<span class="app-pill app-${status}">${label}</span>`;
+}
+
+function copyStatusCmd(jobId, token) {
+  const cmd = `python -m jobpipe.cli.mark_status ${jobId} ${token}`;
+  navigator.clipboard.writeText(cmd).then(() => {
+    const toast = document.getElementById('copyToast');
+    if (toast) {
+      toast.textContent = `✓ Kopiert: ${cmd}`;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+  }).catch(() => {
+    prompt('Kopier og kjør i terminalen:', cmd);
+  });
+}
+
+function renderMilestoneTrack(stages, outcome) {
+  let html = '<div class="milestone-track">';
+  APP_STAGES.forEach((s, i) => {
+    const done = stages.includes(s.key);
+    const dotCls = done ? ' done' : '';
+    const lblCls = done ? ' done' : '';
+    const connCls = (i < APP_STAGES.length - 1 && done && stages.includes(APP_STAGES[i+1].key)) ? ' done' : '';
+    html += `<div class="milestone-step">
+      <div class="milestone-dot${dotCls}" title="${s.label}">${done ? s.icon : ''}</div>
+      <span class="milestone-label${lblCls}">${s.label}</span>
+    </div>`;
+    if (i < APP_STAGES.length - 1) {
+      html += `<div class="milestone-connector${connCls}"></div>`;
+    }
+  });
+  if (outcome) {
+    const o = APP_OUTCOMES.find(x => x.key === outcome);
+    if (o) {
+      html += `<div class="milestone-connector done"></div>
+        <div class="milestone-step">
+          <div class="milestone-dot outcome-${outcome}">${o.icon}</div>
+          <span class="milestone-label done">${o.label}</span>
+        </div>`;
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderStatusButtons(j) {
+  const stages = _parseStages(j);
+  const outcome = j.app_outcome || '';
+
+  // Stage buttons (additive)
+  const stageBtns = APP_STAGES.map(s => {
+    const active = stages.includes(s.key) ? ' done-stage' : '';
+    const tick = stages.includes(s.key) ? '✓ ' : '';
+    return `<button class="status-btn${active}" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','${s.key}')">${tick}${s.icon} ${s.label}</button>`;
+  }).join('');
+
+  // Outcome buttons (terminal)
+  const outcomeBtns = APP_OUTCOMES.map(o => {
+    const active = outcome === o.key ? ` active-${o.key}` : '';
+    return `<button class="status-btn${active}" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','${o.key}')">${o.icon} ${o.label}</button>`;
+  }).join('');
+
+  const hasAny = stages.length > 0 || outcome;
+  const clearBtn = hasAny
+    ? `<button class="status-btn" style="margin-left:4px;color:var(--red)" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','clear')">✕ Fjern alt</button>`
+    : '';
+
+  const src = j.app_source === 'email' ? ' <span style="color:var(--text-dim);font-size:11px">(fra e-post)</span>' : '';
+  const updated = j.app_updated_at ? ' <span style="color:var(--text-dim);font-size:11px">' + (j.app_updated_at||'').slice(0,10) + '</span>' : '';
+
+  const timeline = hasAny ? renderMilestoneTrack(stages, outcome) : '';
+  const notes = j.app_notes ? `<p style="font-size:12px;color:var(--text-dim);margin:6px 0 4px 0;font-style:italic">"${esc(j.app_notes)}"</p>` : '';
+
+  return `<div class="detail-section" style="grid-column:1/-1">
+    <h4>Søknadsstatus${src}${updated}</h4>
+    ${timeline}
+    ${notes}
+    <div class="status-buttons">
+      ${stageBtns}
+      <div class="status-divider"></div>
+      ${outcomeBtns}
+      ${clearBtn}
+      <span class="copy-toast" id="copyToast"></span>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:6px">Klikk en knapp → kommando kopieres til utklippstavlen → kjør i terminalen → kjør go.ps1 for å oppdatere dashbordet.</p>
+  </div>`;
+}
+
+function parseTags(raw) {
+  if (!raw) return [];
+  try { const a = JSON.parse(raw); if (Array.isArray(a)) return a; } catch(e) {}
+  return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function sigTag(t) {
+  const col = t.startsWith('safety:') ? 'var(--green)'
+    : t.includes('geo') ? 'var(--purple)'
+    : t.includes('hard_no') ? 'var(--red)'
+    : 'var(--text-dim)';
+  return '<span class="sig-tag" style="border:1px solid '+col+';color:'+col+'">'+esc(t)+'</span>';
+}
+
+function renderDetail(j) {
+  if (!j.detail) return '<p style="color:var(--text-dim)">No detail data</p>';
+  const d = j.detail;
+  const tags = parseTags(j.triage_signals);
+  const tagHtml = tags.length ? tags.map(sigTag).join('') : '';
+  return `<div class="detail-grid">
+    <div class="detail-section">
+      <h4>Overlaps (what matches)</h4>
+      ${d.overlaps.length ? '<ul>'+d.overlaps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '<p>-</p>'}
+    </div>
+    <div class="detail-section">
+      <h4>Gaps</h4>
+      ${d.gaps.length ? '<ul>'+d.gaps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '<p>-</p>'}
+    </div>
+    <div class="detail-section">
+      <h4>Pivot potential</h4>
+      <p>${esc(d.pivot_type||'-')} (risk: ${esc(d.pivot_risk||'-')})</p>
+      ${d.pivot_why.length ? '<ul>'+d.pivot_why.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : ''}
+    </div>
+    <div class="detail-section">
+      <h4>Recommendation</h4>
+      <p>${esc(j.recommendation_reason||'-')}</p>
+      ${j.cv_focus ? '<h4 style="margin-top:12px">CV focus</h4><p>'+esc(j.cv_focus)+'</p>' : ''}
+    </div>
+    ${d.hard_blockers.length ? '<div class="detail-section"><h4 style="color:var(--red)">Hard blockers</h4><ul>'+d.hard_blockers.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>' : ''}
+    ${tagHtml ? '<div class="detail-section"><h4>Triage signals</h4><p>'+tagHtml+'</p></div>' : ''}
+    ${j.triage_explanation ? '<div class="detail-section"><h4>Triage reasoning</h4><p>'+esc(j.triage_explanation)+'</p></div>' : ''}
+    ${renderStatusButtons(j)}
+  </div>`;
+}
+
+function toggleDetail(tr) {
+  const idx = tr.dataset.idx;
+  const detail = document.getElementById('detail-'+idx);
+  detail.classList.toggle('open');
+}
+
+// ── Classification helpers ──
+function classifyJob(j) {
+  const fd = j.final_decision || '';
+  const sigs = (j.triage_signals||'').trim();
+  const expl = (j.triage_explanation||'').trim();
+  if (fd !== 'SKIP') return 'actionable';
+  if (sigs.includes('hard_no_title')) return 'hard_no';
+  if (!sigs && !expl) return 'geo';
+  return 'ai_skip';
+}
+
+// ── Funnel ──
+// The pipeline filters are cumulative: geo → title → AI triage → moderator.
+// Each step only counts jobs that survived all previous steps.
+function renderFunnel() {
+  const jobs = DATA.jobs;
+  const total = jobs.length;
+  const geoBlocked = jobs.filter(j => classifyJob(j)==='geo').length;
+  const geoPassed = total - geoBlocked;
+  const hardNo = jobs.filter(j => classifyJob(j)==='hard_no').length;
+  const hardNoPassed = geoPassed - hardNo;
+  // AI triage: jobs that survived geo+title but were SKIP'd by AI
+  const aiSkipped = jobs.filter(j => classifyJob(j)==='ai_skip').length;
+  const triagePassed = hardNoPassed - aiSkipped;
+  // Final non-SKIP = actionable (should equal triagePassed since moderator only refines, doesn't add SKIPs beyond what triage did)
+  const nonSkip = jobs.filter(j => classifyJob(j)==='actionable').length;
+
+  const steps = [
+    ['Total jobs ingested', total, 'var(--text-dim)'],
+    ['After geo filter', geoPassed, 'var(--purple)'],
+    ['After title filter', hardNoPassed, 'var(--blue)'],
+    ['After AI triage', nonSkip, 'var(--green)'],
+  ];
+
+  document.getElementById('funnelChart').innerHTML = steps.map(([label, count, color]) => {
+    const pct = total > 0 ? (count/total*100) : 0;
+    return `<div class="funnel-bar">
+      <span class="funnel-label">${label}</span>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${Math.max(2,pct)}%;background:${color}">${count}</div></div>
+      <span class="funnel-count">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Donut ──
+function renderDonut() {
+  const jobs = DATA.jobs;
+  const geo = jobs.filter(j => classifyJob(j)==='geo').length;
+  const hardNo = jobs.filter(j => classifyJob(j)==='hard_no').length;
+  const aiSkip = jobs.filter(j => classifyJob(j)==='ai_skip').length;
+  const nonSkip = jobs.filter(j => classifyJob(j)==='actionable').length;
+
+  const slices = [
+    ['Geo-blocked', geo, '#a78bfa'],
+    ['Hard-no title', hardNo, '#f87171'],
+    ['AI-decided SKIP', Math.max(0, aiSkip), '#6b7280'],
+    ['Non-SKIP', nonSkip, '#34d399'],
+  ];
+
+  const totalJobs = jobs.length;
+  const svg = document.getElementById('donutSvg');
+  const cx=80, cy=80, r=60, r2=35;
+  let cumAngle = -Math.PI/2;
+  let paths = '';
+
+  slices.forEach(([label, count, color]) => {
+    if (count <= 0) return;
+    const angle = (count/totalJobs) * Math.PI * 2;
+    const x1o = cx + r * Math.cos(cumAngle);
+    const y1o = cy + r * Math.sin(cumAngle);
+    const x1i = cx + r2 * Math.cos(cumAngle);
+    const y1i = cy + r2 * Math.sin(cumAngle);
+    cumAngle += angle;
+    const x2o = cx + r * Math.cos(cumAngle);
+    const y2o = cy + r * Math.sin(cumAngle);
+    const x2i = cx + r2 * Math.cos(cumAngle);
+    const y2i = cy + r2 * Math.sin(cumAngle);
+    const large = angle > Math.PI ? 1 : 0;
+    paths += `<path d="M${x1o},${y1o} A${r},${r} 0 ${large} 1 ${x2o},${y2o} L${x2i},${y2i} A${r2},${r2} 0 ${large} 0 ${x1i},${y1i} Z" fill="${color}" opacity="0.85"/>`;
+  });
+
+  svg.innerHTML = paths;
+  document.getElementById('donutLegend').innerHTML = slices.map(([label,count,color]) =>
+    `<div class="donut-legend-item"><span class="donut-legend-swatch" style="background:${color}"></span>${label}: ${count} (${(count/totalJobs*100).toFixed(1)}%)</div>`
+  ).join('');
+}
+
+// ── Scatter (Canvas) ──
+function renderScatter() {
+  const canvas = document.getElementById('scatterCanvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 40;
+  canvas.height = 360;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const pad = {top:20, right:20, bottom:40, left:50};
+  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface2');
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2e3346';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 100; i += 25) {
+    const x = pad.left + (i/100)*pw;
+    const y = pad.top + ph - (i/100)*ph;
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ph); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+pw, y); ctx.stroke();
+    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText(i, x, h - pad.bottom + 16);
+    ctx.textAlign = 'right'; ctx.fillText(i, pad.left - 8, y + 4);
+  }
+
+  // Axis labels
+  ctx.fillStyle = '#8b90a0'; ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center'; ctx.fillText('Fit Score', pad.left + pw/2, h - 4);
+  ctx.save(); ctx.translate(14, pad.top + ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('Pivot Score', 0, 0); ctx.restore();
+
+  // Threshold lines
+  const thresholds = [
+    [25, 'var(--gray)', 'SKIP floor'],
+    [55, 'var(--amber)', 'REVIEW_HIGH'],
+    [62, 'var(--blue)', 'APPLY'],
+    [75, 'var(--green)', 'APPLY_STRONGLY'],
+  ];
+  thresholds.forEach(([v, color, label]) => {
+    const x = pad.left + (v/100)*pw;
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ph); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(label, x+3, pad.top + 12);
+  });
+
+  // Points
+  const colors = {
+    APPLY_STRONGLY: '#34d399', APPLY: '#60a5fa',
+    REVIEW_HIGH: '#fbbf24', REVIEW_LOW: '#a78bfa', SKIP: '#3a3f50'
+  };
+
+  const scored = DATA.jobs.filter(j => j.fit_score != null && j.pivot_score != null && j.fit_score > 0);
+  // Draw SKIP first (behind), then non-SKIP
+  scored.sort((a,b) => {
+    const ord = {SKIP:0,REVIEW_LOW:1,REVIEW_HIGH:2,APPLY:3,APPLY_STRONGLY:4};
+    return (ord[a.final_decision]||0) - (ord[b.final_decision]||0);
+  });
+
+  const pts = [];
+  scored.forEach(j => {
+    const x = pad.left + (j.fit_score/100)*pw;
+    const y = pad.top + ph - (j.pivot_score/100)*ph;
+    const c = colors[j.final_decision] || '#3a3f50';
+    const isAction = j.final_decision !== 'SKIP';
+    ctx.beginPath();
+    ctx.arc(x, y, isAction ? 5 : 3, 0, Math.PI*2);
+    ctx.fillStyle = c;
+    ctx.globalAlpha = isAction ? 0.9 : 0.35;
+    ctx.fill();
+    pts.push({x, y, j});
+  });
+  ctx.globalAlpha = 1;
+
+  // Tooltip on hover
+  const tip = document.getElementById('scatterTooltip');
+  const dc = {APPLY_STRONGLY:'#34d399',APPLY:'#60a5fa',REVIEW_HIGH:'#fbbf24',REVIEW_LOW:'#a78bfa',SKIP:'#6b7280'};
+  canvas.onmousemove = function(e) {
+    const r = canvas.getBoundingClientRect();
+    const sx = canvas.width / r.width;
+    const sy = canvas.height / r.height;
+    const mx = (e.clientX - r.left) * sx;
+    const my = (e.clientY - r.top) * sy;
+    let nearest = null, best = 20;
+    pts.forEach(p => { const d = Math.hypot(p.x - mx, p.y - my); if (d < best) { best = d; nearest = p; } });
+    if (!nearest) { tip.style.display = 'none'; return; }
+    const j = nearest.j;
+    const col = dc[j.final_decision] || '#e1e4ed';
+    const loc = j.work_city || j.work_county || '';
+    tip.innerHTML = '<strong>' + esc(j.title || '(untitled)') + '</strong>' +
+      esc(j.employer || '') + (loc ? ' &middot; ' + esc(loc) : '') + '<br>' +
+      '<span style="color:' + col + ';font-weight:600">' + esc(j.final_decision || '') + '</span>' +
+      '&nbsp;&nbsp;Fit: ' + (j.fit_score ?? '—') + '&nbsp;&nbsp;Pivot: ' + (j.pivot_score ?? '—');
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 16) + 'px';
+    tip.style.top  = (e.clientY - 8) + 'px';
+  };
+  canvas.onmouseleave = function() { tip.style.display = 'none'; };
+}
+
+// ── Timeline (Canvas) ──
+function renderTimeline() {
+  const canvas = document.getElementById('timelineCanvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 40;
+  canvas.height = 280;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const pad = {top:20, right:20, bottom:40, left:50};
+  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface2');
+  ctx.fillRect(0, 0, w, h);
+
+  // Group events by run
+  const runs = {};
+  DATA.events.forEach(e => {
+    if (!runs[e.run_id]) runs[e.run_id] = {seen_at: e.seen_at, run_mtime: e.run_mtime, total:0, nonSkip:0, apply:0};
+    runs[e.run_id].total++;
+    if (e.final_decision && e.final_decision !== 'SKIP') runs[e.run_id].nonSkip++;
+    if (e.final_decision === 'APPLY' || e.final_decision === 'APPLY_STRONGLY') runs[e.run_id].apply++;
+  });
+
+  const runList = Object.entries(runs).sort((a,b) => (a[1].run_mtime||0)-(b[1].run_mtime||0));
+  if (runList.length === 0) return;
+
+  const maxTotal = Math.max(...runList.map(([,r])=>r.total));
+
+  // X axis = run index, Y = count
+  ctx.strokeStyle = '#2e3346'; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= maxTotal; i += Math.ceil(maxTotal/5)) {
+    const y = pad.top + ph - (i/maxTotal)*ph;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+pw, y); ctx.stroke();
+    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right'; ctx.fillText(i, pad.left-8, y+4);
+  }
+
+  // Draw lines
+  function drawLine(getData, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    runList.forEach(([,r], i) => {
+      const x = pad.left + (i/(runList.length-1||1))*pw;
+      const y = pad.top + ph - (getData(r)/maxTotal)*ph;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+
+  drawLine(r=>r.total, '#6b7280');
+  drawLine(r=>r.nonSkip, '#60a5fa');
+  drawLine(r=>r.apply, '#34d399');
+
+  // Legend
+  const legend = [['Total', '#6b7280'], ['Non-SKIP', '#60a5fa'], ['APPLY+', '#34d399']];
+  legend.forEach(([label, color], i) => {
+    const x = pad.left + 10 + i * 100;
+    ctx.fillStyle = color; ctx.fillRect(x, pad.top+4, 14, 3);
+    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(label, x+18, pad.top+8);
+  });
+
+  // X axis labels (first, middle, last dates)
+  ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  [0, Math.floor(runList.length/2), runList.length-1].forEach(i => {
+    const r = runList[i];
+    if (!r) return;
+    const x = pad.left + (i/(runList.length-1||1))*pw;
+    const d = r[1].seen_at ? new Date(r[1].seen_at).toLocaleDateString() : '';
+    ctx.fillText(d, x, h - pad.bottom + 16);
+  });
+}
+
+// ── Employers ──
+function renderEmployers() {
+  const actionable = DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
+  const counts = {};
+  actionable.forEach(j => { const e = j.employer || '(unknown)'; counts[e] = (counts[e]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  const max = sorted[0] ? sorted[0][1] : 1;
+
+  document.getElementById('employerChart').innerHTML = sorted.map(([name, count]) => {
+    const pct = (count/max*100);
+    return `<div class="emp-bar">
+      <span class="emp-name" title="${esc(name)}">${esc(name)}</span>
+      <div class="emp-track"><div class="emp-fill" style="width:${pct}%"></div></div>
+      <span class="emp-count">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Utilities ──
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// ── Event handlers ──
+document.getElementById('searchInput').addEventListener('input', renderActionTable);
+document.getElementById('decisionFilter').addEventListener('change', renderActionTable);
+document.getElementById('hideExpired').addEventListener('change', renderActionTable);
+
+document.querySelectorAll('#actionTable th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (sortCol === col) sortDir *= -1;
+    else { sortCol = col; sortDir = col === 'title' || col === 'employer' ? 1 : -1; }
+    renderActionTable();
+  });
+});
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+    // Re-render canvases on tab switch (they need visible dimensions)
+    if (tab.dataset.tab === 'scores') setTimeout(renderScatter, 50);
+    if (tab.dataset.tab === 'timeline') setTimeout(renderTimeline, 50);
+  });
+});
+
+window.addEventListener('resize', () => {
+  if (document.getElementById('tab-scores').classList.contains('active')) renderScatter();
+  if (document.getElementById('tab-timeline').classList.contains('active')) renderTimeline();
+});
+
+// ── Init ──
+loadData();
+</script>
+</body>
+</html>

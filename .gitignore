@@ -1,0 +1,70 @@
+# Sensitive credentials - never commit these
+reports/gmail_credentials.json
+reports/gmail_token.json
+
+# Personal application tracking data
+reports/application_state.json
+
+# Generated/large data files - too big and regenerable
+reports/ledger.sqlite
+reports/ledger_latest.csv
+reports/dashboard.html
+reports/dashboard_data.json
+reports/shortlist_*.csv
+reports/shortlist_*.json
+
+# Pipeline data files
+jobs_delta.jsonl
+jobs_expired.jsonl
+jobs_state.json
+
+# Pipeline output artifacts (large, fully regenerable)
+out_runs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ML model cache
+reports/profile_embedding.npy
+*.npy
+
+# Personal profile and CV data
+profile_pack.md
+reports/resume.json
+reports/resume_fixed.json
+
+# Personal job favorites/tracking data
+favorites_batch.jsonl
+favorites_cache.json
+
+# Internal agent working files
+AGENT_STATUS.md
+AUDIT.md
+COWORK_PROJECT_INSTRUCTIONS.md
+PROJECT_INSTRUCTIONS.md
+
+# Logs and temp artifacts
+*.log
+*.tmp
+*_out.txt
+commit_msg.txt
+pipeline_error.json
+jobpipe_mirror_*/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Test output
+.pytest_cache/
+htmlcov/
+.coverage
