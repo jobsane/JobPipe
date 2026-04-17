@@ -82,7 +82,8 @@ It should not become:
 4. `OSS_SCOPE.md`
 5. `DEPENDENCY_POLICY.md`
 6. `BOUNDARY_MAP.md`
-7. supporting docs and implementation notes
+7. `MOVE_MAP.md`
+8. supporting docs and implementation notes
 
 ## Public / Private Boundary
 
@@ -92,6 +93,8 @@ The rule is:
 
 - public for generic, reusable OSS value
 - private for tuned, proprietary, or commercially sensitive workflow logic
+
+The current concrete module/file guidance is defined in `MOVE_MAP.md`.
 
 ## Release Baseline
 

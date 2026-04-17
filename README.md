@@ -62,6 +62,7 @@ Read these first:
 4. [OSS_SCOPE.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/OSS_SCOPE.md)
 5. [DEPENDENCY_POLICY.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/DEPENDENCY_POLICY.md)
 6. [BOUNDARY_MAP.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/BOUNDARY_MAP.md)
+7. [MOVE_MAP.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/MOVE_MAP.md)
 
 Supporting docs:
 
@@ -108,6 +109,7 @@ If a separate private/commercial layer is introduced later, the naming direction
 - `JobPipe Workbench` = later private/commercial implementation
 
 The working public/private split is defined in [BOUNDARY_MAP.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/BOUNDARY_MAP.md).
+The concrete code-placement guidance lives in [MOVE_MAP.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/MOVE_MAP.md).
 
 ## License
 
