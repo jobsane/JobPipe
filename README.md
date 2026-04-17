@@ -99,6 +99,15 @@ python -m jobpipe.cli.export_dashboard
 python -m jobpipe.cli.scan_gmail --dry-run
 ```
 
+Optional private policy/config overlays can be applied on top of the public baseline config:
+
+```powershell
+python -m jobpipe.cli.run_feed --config .\configs\pipeline.v1.yaml --config-overlay C:\path\to\overlay.yaml
+.\go.ps1 -ConfigOverlay C:\path\to\overlay.yaml
+```
+
+The baseline stays public. Overlays are the intended seam for later private policy packs.
+
 ## Packaging
 
 The package name is `jobpipe`.

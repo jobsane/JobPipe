@@ -111,6 +111,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--env-file", default=".env", help="Optional .env file (default: .env).")
     ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
     ap.add_argument("--config", default="", help="Path to pipeline YAML (optional).")
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
     ap.add_argument("--out", default="./out_runs", help="Output folder for runs (default: ./out_runs)")
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
 
@@ -256,6 +257,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             ]
             if args.config:
                 run_cmd += ["--config", args.config]
+            for overlay in args.config_overlay:
+                run_cmd += ["--config-overlay", overlay]
             if args.overwrite:
                 run_cmd += ["--overwrite"]
 

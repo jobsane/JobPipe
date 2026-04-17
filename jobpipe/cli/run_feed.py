@@ -135,11 +135,12 @@ def main() -> None:
     ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
     ap.add_argument("--out", default="out_runs", help="Output directory")
     ap.add_argument("--config", default="configs/pipeline.v1.yaml", help="Pipeline config YAML")
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
     ap.add_argument("--max", type=int, default=0, help="Max number of jobs (0 = all)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite per-stage artifacts")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, overlays=args.config_overlay)
     profile_pack = load_profile_pack(args.profile)
 
     run_id = f"{cfg.pipeline_name}_{uuid.uuid4().hex[:8]}"

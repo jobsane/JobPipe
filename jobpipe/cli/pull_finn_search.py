@@ -42,6 +42,8 @@ from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.config import load_raw_config
+
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -337,45 +339,30 @@ def _load_ledger_ids(ledger_path: Path) -> set:
         return set()
 
 
-# ---------------------------------------------------------------------------
-# Config loading (reads finn_search section from pipeline.v1.yaml if present)
-# ---------------------------------------------------------------------------
-
-def _load_queries_from_config(config_path: Path) -> Optional[List[Tuple[str, str]]]:
-    """Load finn_search.queries from YAML config. Returns None if not configured."""
+def _load_finn_search_section(config_path: Path, overlays: List[str]) -> Dict[str, Any]:
     if not config_path.exists():
-        return None
+        return {}
     try:
-        import yaml  # type: ignore
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        section = cfg.get("finn_search") or {}
-        queries_raw = section.get("queries") or []
-        if not queries_raw:
-            return None
-        result = []
-        for item in queries_raw:
-            if isinstance(item, str):
-                result.append((item, item))
-            elif isinstance(item, dict):
-                label = item.get("label") or item.get("q") or str(item)
-                q     = item.get("q") or item.get("query") or label
-                result.append((label, q))
-        return result if result else None
+        cfg = load_raw_config(config_path, overlays=overlays)
     except Exception:
-        return None
+        return {}
+    section = cfg.get("finn_search") or {}
+    return section if isinstance(section, dict) else {}
 
 
-def _load_location_from_config(config_path: Path) -> Optional[str]:
-    if not config_path.exists():
+def _load_queries_from_section(section: Dict[str, Any]) -> Optional[List[Tuple[str, str]]]:
+    queries_raw = section.get("queries") or []
+    if not queries_raw:
         return None
-    try:
-        import yaml  # type: ignore
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        return (cfg.get("finn_search") or {}).get("location")
-    except Exception:
-        return None
+    result = []
+    for item in queries_raw:
+        if isinstance(item, str):
+            result.append((item, item))
+        elif isinstance(item, dict):
+            label = item.get("label") or item.get("q") or str(item)
+            q = item.get("q") or item.get("query") or label
+            result.append((label, q))
+    return result if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +379,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         epilog=__doc__,
     )
     ap.add_argument("--config",   default=str(DEFAULT_CONFIG_PATH), help="Pipeline YAML config")
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
     ap.add_argument("--out",      default=str(DEFAULT_OUT_PATH),    help="Output JSONL to append to")
     ap.add_argument("--ledger",   default=str(DEFAULT_LEDGER_PATH), help="Ledger SQLite for dedup")
     ap.add_argument("--max",      type=int, default=40,             help="Max full-content fetches per run (default: 40)")
@@ -422,8 +410,9 @@ def main(argv: Optional[List[str]] = None) -> None:
             sys.exit(0)
 
     config_path = Path(args.config)
-    queries  = _load_queries_from_config(config_path) or DEFAULT_QUERIES
-    location = _load_location_from_config(config_path) or DEFAULT_LOCATION
+    finn_search = _load_finn_search_section(config_path, args.config_overlay)
+    queries  = _load_queries_from_section(finn_search) or DEFAULT_QUERIES
+    location = finn_search.get("location") or DEFAULT_LOCATION
 
     ledger_ids = _load_ledger_ids(Path(args.ledger))
     print(f"Ledger: {len(ledger_ids)} known job IDs")

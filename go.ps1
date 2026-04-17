@@ -5,11 +5,13 @@
 #   .\go.ps1 -NoOpen             full run, skip auto-opening browser
 #   .\go.ps1 -WithSuggestions    scan Gmail for suggestions + fetch queued FINN jobs
 #                                + scrape FINN search by keyword (all daytime only, 09-19 Oslo)
+#   .\go.ps1 -ConfigOverlay <path>  apply one or more private overlay YAML files
 
 param(
     [switch]$DryRun,
     [switch]$NoOpen,
-    [switch]$WithSuggestions
+    [switch]$WithSuggestions,
+    [string[]]$ConfigOverlay
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +25,14 @@ if (-not (Test-Path $py)) {
 
 $env:OPENAI_AGENTS_DISABLE_TRACING = "1"
 $maxJobs = if ($DryRun) { 2 } else { 100 }
+$overlayArgs = @()
+if ($ConfigOverlay) {
+    foreach ($overlay in $ConfigOverlay) {
+        if ($overlay) {
+            $overlayArgs += @("--config-overlay", $overlay)
+        }
+    }
+}
 
 Write-Host ""
 Write-Host "=== JobPipe ===" -ForegroundColor Cyan
@@ -33,6 +43,9 @@ if ($DryRun) {
 }
 if ($WithSuggestions) {
     Write-Host "Suggestions: ON (FINN/LinkedIn email scan + fetch)"
+}
+if ($overlayArgs.Count -gt 0) {
+    Write-Host "Config overlays: $($ConfigOverlay -join ', ')"
 }
 Write-Host ""
 
@@ -60,7 +73,8 @@ if ($WithSuggestions) {
     Write-Host "[0c/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
     & $py -m jobpipe.cli.pull_finn_search `
         --config .\configs\pipeline.v1.yaml `
-        --max 40
+        --max 40 `
+        @overlayArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "pull_finn_search failed (exit $LASTEXITCODE). Continuing."
     }
@@ -75,7 +89,8 @@ Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
     --out .\out_runs `
     --state .\jobs_state.json `
     --batch-size $maxJobs `
-    --overwrite
+    --overwrite `
+    @overlayArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "drain_queue failed (exit $LASTEXITCODE)"
@@ -98,7 +113,7 @@ if ($LASTEXITCODE -ne 0) {
 # 3. Rebuild dashboard
 Write-Host ""
 Write-Host "[3/3] export_dashboard..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.export_dashboard
+& $py -m jobpipe.cli.export_dashboard @overlayArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "export_dashboard failed (exit $LASTEXITCODE)"

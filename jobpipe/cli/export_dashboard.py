@@ -13,17 +13,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-try:
-    import yaml as _yaml
-    def _load_thresholds() -> Dict[str, Any]:
-        try:
-            raw = _yaml.safe_load(_CONFIG_PATH.read_bytes())
-            return (raw or {}).get("thresholds", {})
-        except Exception:
-            return {}
-except ImportError:
-    def _load_thresholds() -> Dict[str, Any]:
+from jobpipe.core.config import load_raw_config
+
+
+def _load_thresholds(config_path: Path, overlays: Optional[List[str]] = None) -> Dict[str, Any]:
+    try:
+        raw = load_raw_config(config_path, overlays=overlays or [])
+    except Exception:
         return {}
+    thresholds = raw.get("thresholds", {})
+    return thresholds if isinstance(thresholds, dict) else {}
 
 
 def _reclassify(fit_score, pivot_score, thr: Dict[str, Any]) -> str:
@@ -173,9 +172,10 @@ def _load_app_state(state_path: Path) -> Dict[str, Any]:
         return {}
 
 
-def build_payload(sqlite_path: Path, out_dir: Path, state_path: Optional[Path] = None) -> Dict[str, Any]:
+def build_payload(sqlite_path: Path, out_dir: Path, state_path: Optional[Path] = None,
+                  config_path: Optional[Path] = None, config_overlays: Optional[List[str]] = None) -> Dict[str, Any]:
     app_state = _load_app_state(state_path or _APP_STATE_PATH)
-    thresholds = _load_thresholds()
+    thresholds = _load_thresholds(config_path or _CONFIG_PATH, overlays=config_overlays)
     conn = sqlite3.connect(str(sqlite_path))
 
     jobs_raw = _rows_as_dicts(conn, """
@@ -252,8 +252,15 @@ def build_payload(sqlite_path: Path, out_dir: Path, state_path: Optional[Path] =
 
 
 def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path,
-           state_path: Optional[Path] = None) -> None:
-    payload = build_payload(sqlite_path, out_dir, state_path=state_path)
+           state_path: Optional[Path] = None, config_path: Optional[Path] = None,
+           config_overlays: Optional[List[str]] = None) -> None:
+    payload = build_payload(
+        sqlite_path,
+        out_dir,
+        state_path=state_path,
+        config_path=config_path,
+        config_overlays=config_overlays,
+    )
 
     template = template_path.read_text(encoding="utf-8")
 
@@ -286,9 +293,19 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--template", default="./reports/dashboard_template.html", help="HTML template")
     ap.add_argument("--out", default="./reports/dashboard.html", help="Output HTML path")
     ap.add_argument("--app-state", default="", help="Path to application_state.json (default: reports/application_state.json)")
+    ap.add_argument("--config", default=str(_CONFIG_PATH), help="Pipeline config YAML")
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
     args = ap.parse_args(argv)
     state_path = Path(args.app_state) if args.app_state else None
-    export(Path(args.sqlite), Path(args.out_runs), Path(args.template), Path(args.out), state_path=state_path)
+    export(
+        Path(args.sqlite),
+        Path(args.out_runs),
+        Path(args.template),
+        Path(args.out),
+        state_path=state_path,
+        config_path=Path(args.config),
+        config_overlays=args.config_overlay,
+    )
 
 
 if __name__ == "__main__":
