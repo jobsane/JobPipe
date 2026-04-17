@@ -19,7 +19,7 @@ First-time setup — you need Gmail API credentials:
     1. Go to https://console.cloud.google.com/
     2. Create/select a project, enable the Gmail API
     3. Create OAuth2 credentials (Desktop app type)
-    4. Download credentials.json → save to ./reports/gmail_credentials.json
+    4. Download credentials.json → save to your JobPipe data root at reports/gmail_credentials.json
     5. Run: python -m jobpipe.cli.scan_gmail --setup
        (opens browser for one-time OAuth consent)
 
@@ -48,6 +48,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
 # Windows cp1252 consoles can't encode arbitrary Unicode from email data.
 # Wrap stdout so non-encodable chars become '?' instead of crashing.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -66,11 +68,12 @@ except ImportError:
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-DEFAULT_STATE_PATH = Path("./reports/application_state.json")
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
-DEFAULT_TOKEN_PATH = Path("./reports/gmail_token.json")
-DEFAULT_CREDS_PATH = Path("./reports/gmail_credentials.json")
-DEFAULT_SUGGESTED_PATH = Path("./reports/suggested_jobs.jsonl")
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_STATE_PATH = _DEFAULT_PATHS.application_state_path
+DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
+DEFAULT_TOKEN_PATH = _DEFAULT_PATHS.gmail_token_path
+DEFAULT_CREDS_PATH = _DEFAULT_PATHS.gmail_credentials_path
+DEFAULT_SUGGESTED_PATH = _DEFAULT_PATHS.suggested_jobs_path
 
 # Priority order for status upgrades (higher = more final)
 _STATUS_ORDER: Dict[str, int] = {
@@ -1149,10 +1152,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         epilog=__doc__,
     )
     ap.add_argument("--days", type=int, default=90, help="Days back to scan (default: 90)")
-    ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to application_state.json")
-    ap.add_argument("--ledger", default=str(DEFAULT_LEDGER_PATH), help="Path to ledger.sqlite")
-    ap.add_argument("--token", default=str(DEFAULT_TOKEN_PATH), help="OAuth token path (gmail_token.json)")
-    ap.add_argument("--creds", default=str(DEFAULT_CREDS_PATH), help="OAuth credentials path (gmail_credentials.json)")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument("--state", default="", help=f"Path to application_state.json (default: {DEFAULT_STATE_PATH})")
+    ap.add_argument("--ledger", default="", help=f"Path to ledger.sqlite (default: {DEFAULT_LEDGER_PATH})")
+    ap.add_argument("--token", default="", help=f"OAuth token path (default: {DEFAULT_TOKEN_PATH})")
+    ap.add_argument("--creds", default="", help=f"OAuth credentials path (default: {DEFAULT_CREDS_PATH})")
     ap.add_argument("--dry-run", action="store_true", help="Preview without writing")
     ap.add_argument("--verbose", "-v", action="store_true", help="Show all processing details")
     ap.add_argument("--setup", action="store_true", help="Run one-time OAuth2 setup")
@@ -1166,23 +1174,30 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument(
         "--suggested",
-        default=str(DEFAULT_SUGGESTED_PATH),
-        help="Path for suggested_jobs.jsonl output (used with --scan-suggestions)",
+        default="",
+        help=f"Path for suggested_jobs.jsonl output (default: {DEFAULT_SUGGESTED_PATH})",
     )
 
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    state_path = Path(args.state) if args.state else paths.application_state_path
+    ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
+    token_path = Path(args.token) if args.token else paths.gmail_token_path
+    creds_path = Path(args.creds) if args.creds else paths.gmail_credentials_path
+    suggested_path = Path(args.suggested) if args.suggested else paths.suggested_jobs_path
 
     if args.setup:
-        setup_oauth(Path(args.creds), Path(args.token))
+        setup_oauth(creds_path, token_path)
         return
 
     if args.scan_suggestions:
         scan_suggestions(
             days=args.days,
-            suggested_path=Path(args.suggested),
-            ledger_path=Path(args.ledger),
-            token_path=Path(args.token),
-            creds_path=Path(args.creds),
+            suggested_path=suggested_path,
+            ledger_path=ledger_path,
+            token_path=token_path,
+            creds_path=creds_path,
             dry_run=args.dry_run,
             verbose=args.verbose,
         )
@@ -1190,10 +1205,10 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     scan(
         days=args.days,
-        state_path=Path(args.state),
-        ledger_path=Path(args.ledger),
-        token_path=Path(args.token),
-        creds_path=Path(args.creds),
+        state_path=state_path,
+        ledger_path=ledger_path,
+        token_path=token_path,
+        creds_path=creds_path,
         dry_run=args.dry_run,
         verbose=args.verbose,
     )

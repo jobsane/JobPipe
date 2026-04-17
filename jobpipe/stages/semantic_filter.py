@@ -33,17 +33,18 @@ Recommended for Norwegian:
 Profile cache
 -------------
 The profile embedding is computed once and cached to disk.
-Delete reports/profile_embedding.npy to force a rebuild (e.g. after editing
-profile_pack.md).
+Delete the cached profile embedding in the JobPipe data root cache directory to
+force a rebuild (e.g. after editing profile_pack.md).
 """
 from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 
+from jobpipe.core.paths import get_jobpipe_paths
 from jobpipe.core.schema import JobContext, TriageOut
 from jobpipe.stages._common import job_excerpt
 
@@ -54,7 +55,10 @@ except ImportError:
     _HAS_FASTEMBED = False
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
-PROFILE_CACHE_PATH = Path("reports/profile_embedding.npy")
+
+
+def _default_profile_cache_path() -> Path:
+    return get_jobpipe_paths().profile_embedding_path
 
 
 # ---------------------------------------------------------------------------
@@ -92,9 +96,10 @@ def _extract_profile_text(profile_pack: str, max_chars: int = 1400) -> str:
 def build_or_load_profile_embedding(
     profile_pack: str,
     model: "TextEmbedding",
-    cache_path: Path = PROFILE_CACHE_PATH,
+    cache_path: Optional[Path] = None,
 ) -> np.ndarray:
     """Load cached profile embedding or build it from scratch."""
+    cache_path = cache_path or _default_profile_cache_path()
     if cache_path.exists():
         return np.load(cache_path)
     profile_text = _extract_profile_text(profile_pack)
@@ -117,7 +122,7 @@ def build_semantic_filter(
     profile_pack: str,
     model_name: str = DEFAULT_MODEL,
     max_job_text_chars: int = 500,
-    cache_path: Path = PROFILE_CACHE_PATH,
+    cache_path: Optional[Path] = None,
 ) -> FilterFn:
     """
     Returns a function: (ctx: JobContext) -> JobContext

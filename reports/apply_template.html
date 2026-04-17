@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Søknadsskrivebord — JobPipe</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242836;
+  --border: #2e3346;
+  --text: #e1e4ed;
+  --text-dim: #8b90a0;
+  --green: #34d399;
+  --green-bg: rgba(52,211,153,0.10);
+  --blue: #60a5fa;
+  --blue-bg: rgba(96,165,250,0.10);
+  --amber: #fbbf24;
+  --amber-bg: rgba(251,191,36,0.10);
+  --red: #f87171;
+  --red-bg: rgba(248,113,113,0.10);
+  --purple: #a78bfa;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background:var(--bg); color:var(--text); line-height:1.55; height:100vh; display:flex; flex-direction:column; }
+
+/* ── Top bar ── */
+.topbar { display:flex; align-items:center; gap:16px; padding:12px 24px;
+          background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+.topbar a.back { color:var(--text-dim); text-decoration:none; font-size:13px; }
+.topbar a.back:hover { color:var(--text); }
+.job-title { font-size:16px; font-weight:700; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.job-title span { color:var(--text-dim); font-weight:400; }
+.topbar-actions { display:flex; gap:8px; flex-shrink:0; }
+.btn { padding:6px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+       border:1px solid var(--border); background:var(--surface2); color:var(--text-dim);
+       text-decoration:none; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
+.btn:hover { color:var(--text); border-color:var(--text-dim); }
+.btn-green { background:var(--green-bg); border-color:rgba(52,211,153,.35); color:var(--green); }
+.btn-green:hover { background:rgba(52,211,153,.18); }
+.btn-blue { background:var(--blue-bg); border-color:rgba(96,165,250,.35); color:var(--blue); }
+.btn-blue:hover { background:rgba(96,165,250,.18); }
+.btn-amber { background:var(--amber-bg); border-color:rgba(251,191,36,.35); color:var(--amber); }
+
+/* ── Main layout: left editor + right chat ── */
+.workspace { display:flex; flex:1; overflow:hidden; }
+
+/* ── Left: document editor ── */
+.editor-panel { flex:1.4; display:flex; flex-direction:column; border-right:1px solid var(--border); overflow:hidden; }
+
+.tabs { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.tab-btn { padding:10px 18px; background:transparent; border:none; color:var(--text-dim);
+           cursor:pointer; font-size:13px; font-weight:500; border-bottom:2px solid transparent; transition:all .15s; }
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { color:var(--green); border-bottom-color:var(--green); }
+
+.tab-pane { display:none; flex:1; flex-direction:column; overflow:hidden; padding:20px 24px; }
+.tab-pane.active { display:flex; }
+
+/* Cover letter textarea */
+.letter-area { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:10px;
+               color:var(--text); font-size:14px; line-height:1.75; padding:20px;
+               resize:none; font-family:Georgia, 'Times New Roman', serif;
+               transition:border-color .15s; }
+.letter-area:focus { outline:none; border-color:var(--blue); }
+.letter-meta { display:flex; align-items:center; gap:12px; margin-top:10px; font-size:12px; color:var(--text-dim); }
+.wordcount { }
+.saved-indicator { color:var(--green); opacity:0; transition:opacity .3s; }
+.saved-indicator.show { opacity:1; }
+
+/* CV highlights */
+.highlights-list { display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+.highlight-item { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px;
+                  display:flex; gap:10px; align-items:flex-start; }
+.highlight-bullet { color:var(--green); font-size:18px; flex-shrink:0; line-height:1.4; }
+.highlight-text { flex:1; font-size:13px; line-height:1.6; }
+.highlight-ref { font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic; }
+.copy-btn { padding:4px 10px; border-radius:6px; border:1px solid var(--border);
+            background:transparent; color:var(--text-dim); font-size:11px; cursor:pointer; flex-shrink:0; transition:all .15s; }
+.copy-btn:hover { color:var(--text); border-color:var(--text-dim); }
+.copy-btn.copied { color:var(--green); border-color:var(--green); }
+
+/* Interview prep */
+.interview-list { display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+.interview-item { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; font-size:13px; }
+
+/* Context cards (collapsed accordion) */
+.ctx-card { border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
+.ctx-header { padding:10px 14px; cursor:pointer; font-size:12px; font-weight:600; color:var(--text-dim);
+              display:flex; justify-content:space-between; background:var(--surface2); user-select:none; }
+.ctx-header:hover { color:var(--text); }
+.ctx-body { display:none; padding:12px 14px; font-size:12px; line-height:1.65; }
+.ctx-body.open { display:block; }
+.ctx-body ul { padding-left:16px; }
+.ctx-body li { margin-bottom:4px; }
+
+/* ── Right: AI chat ── */
+.chat-panel { width:380px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+
+.chat-header { padding:14px 16px; border-bottom:1px solid var(--border); font-size:14px; font-weight:600; flex-shrink:0; }
+.chat-header span { color:var(--blue); }
+
+.chat-messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+
+.msg { max-width:92%; border-radius:10px; padding:10px 14px; font-size:13px; line-height:1.65; }
+.msg-user { align-self:flex-end; background:var(--blue-bg); border:1px solid rgba(96,165,250,.25); color:var(--blue); }
+.msg-ai { align-self:flex-start; background:var(--surface); border:1px solid var(--border); color:var(--text); }
+.msg-ai pre { white-space:pre-wrap; font-family:inherit; }
+.msg-action { display:flex; gap:6px; margin-top:8px; }
+.msg-apply-btn { padding:3px 10px; border-radius:6px; border:1px solid rgba(52,211,153,.35);
+                 background:var(--green-bg); color:var(--green); font-size:11px; cursor:pointer; transition:all .15s; }
+.msg-apply-btn:hover { background:rgba(52,211,153,.2); }
+
+.chat-suggestions { padding:10px 16px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:6px; flex-shrink:0; }
+.suggestion { padding:4px 10px; border-radius:16px; border:1px solid var(--border); background:var(--surface2);
+              color:var(--text-dim); font-size:11px; cursor:pointer; transition:all .15s; }
+.suggestion:hover { color:var(--text); border-color:var(--text-dim); }
+
+.chat-input-row { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border); flex-shrink:0; }
+.chat-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px;
+              color:var(--text); font-size:13px; padding:10px 12px; resize:none; min-height:42px; max-height:120px;
+              font-family:inherit; transition:border-color .15s; }
+.chat-input:focus { outline:none; border-color:var(--blue); }
+.send-btn { padding:10px 16px; background:var(--blue-bg); border:1px solid rgba(96,165,250,.35);
+            color:var(--blue); border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+            transition:all .15s; flex-shrink:0; }
+.send-btn:hover { background:rgba(96,165,250,.2); }
+.send-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* Spinner */
+.spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border);
+           border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Loading state */
+.loading { text-align:center; padding:40px; color:var(--text-dim); font-size:14px; }
+
+/* Toast */
+#toast { position:fixed; bottom:20px; right:20px; padding:10px 18px; border-radius:10px;
+         background:var(--surface); border:1px solid var(--border); font-size:13px; font-weight:500;
+         opacity:0; transition:opacity .25s; pointer-events:none; z-index:999; }
+#toast.ok { border-color:var(--green); color:var(--green); }
+#toast.err { border-color:var(--red); color:var(--red); }
+#toast.show { opacity:1; }
+
+/* JSON Resume preview section */
+.resume-section { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; overflow-y:auto; }
+.resume-section h2 { font-size:20px; font-weight:700; margin-bottom:2px; }
+.resume-section .resume-sub { color:var(--text-dim); font-size:13px; margin-bottom:16px; }
+.resume-section h3 { font-size:13px; font-weight:700; color:var(--blue); text-transform:uppercase; letter-spacing:.05em; margin:16px 0 8px 0; border-bottom:1px solid var(--border); padding-bottom:4px; }
+.resume-work-item { margin-bottom:14px; }
+.resume-work-item .position { font-weight:600; font-size:14px; }
+.resume-work-item .company { color:var(--text-dim); font-size:13px; }
+.resume-work-item .dates { color:var(--text-dim); font-size:12px; margin-bottom:4px; }
+.resume-work-item ul { padding-left:16px; font-size:13px; }
+.resume-work-item li { margin-bottom:3px; }
+.resume-work-item li.highlighted { color:var(--green); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back" href="/">← Dashboard</a>
+  <div class="job-title" id="jobTitle">Laster…</div>
+  <div class="topbar-actions">
+    <a id="sourceLink" class="btn btn-green" href="#" target="_blank" style="display:none">🔗 Annonse</a>
+    <button class="btn btn-blue" id="downloadDocxBtn" style="display:none" onclick="downloadDocx()">📥 Last ned DOCX</button>
+    <button class="btn" onclick="window.location.href='/'">← Dashboard</button>
+  </div>
+</div>
+
+<div class="workspace">
+
+  <!-- ── Left: document editor ── -->
+  <div class="editor-panel">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('letter')">✉️ Søknadsbrev</button>
+      <button class="tab-btn" onclick="switchTab('cv')">📋 CV-highlights</button>
+      <button class="tab-btn" onclick="switchTab('resume')">📄 JSON Resume</button>
+      <button class="tab-btn" onclick="switchTab('interview')">🎯 Intervjuprep</button>
+    </div>
+
+    <!-- Søknadsbrev -->
+    <div class="tab-pane active" id="tab-letter">
+      <textarea class="letter-area" id="letterArea"
+        placeholder="Skriv søknadsbrev her, eller klikk «Skriv søknadsbrev» i AI-assistenten til høyre for å generere et utkast…"
+        oninput="onLetterInput()"></textarea>
+      <div class="letter-meta">
+        <span class="wordcount" id="wordCount">0 ord</span>
+        <span class="wordcount" id="charCount"></span>
+        <span class="saved-indicator" id="savedIndicator">✓ Lagret</span>
+      </div>
+    </div>
+
+    <!-- CV-highlights -->
+    <div class="tab-pane" id="tab-cv">
+      <div class="highlights-list" id="highlightsList">
+        <div class="loading">Laster…</div>
+      </div>
+    </div>
+
+    <!-- JSON Resume (tailored view) -->
+    <div class="tab-pane" id="tab-resume">
+      <div class="resume-section" id="resumeView">
+        <div class="loading">Laster CV-data…</div>
+      </div>
+    </div>
+
+    <!-- Intervjuprep -->
+    <div class="tab-pane" id="tab-interview">
+      <div class="interview-list" id="interviewList">
+        <div class="loading">Laster…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: AI chat ── -->
+  <div class="chat-panel">
+    <div class="chat-header">AI-assistent <span>gpt-4.1-mini</span></div>
+
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg msg-ai">
+        Hei! Jeg har full kontekst om jobben og din profil.<br><br>
+        Klikk et forslag under, eller still meg et spørsmål. Jeg kan skrive et komplett søknadsbrev, spisse CV-punkter eller hjelpe med intervjuforberedelse.
+      </div>
+    </div>
+
+    <div class="chat-suggestions" id="suggestions">
+      <span class="suggestion" onclick="sendSuggestion(this)">✉️ Skriv søknadsbrev (230–260 ord)</span>
+      <span class="suggestion" onclick="sendSuggestion(this)">✂️ Kortere og skarpere</span>
+      <span class="suggestion" onclick="sendSuggestion(this)">🎯 Mer vekt på produkterfaring</span>
+      <span class="suggestion" onclick="sendSuggestion(this)">🔧 Tilpass til offentlig sektor</span>
+      <span class="suggestion" onclick="sendSuggestion(this)">💡 Hva bør jeg fremheve?</span>
+      <span class="suggestion" onclick="sendSuggestion(this)">🗣 Skriv et kort intro-avsnitt</span>
+    </div>
+
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="chatInput" placeholder="Skriv en melding…" rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"
+        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const PORT = document.querySelector('meta[name="jobpipe-port"]')?.content || '5100';
+const JOB_ID = document.querySelector('meta[name="jobpipe-job-id"]')?.content || '';
+const API = window.location.origin || `http://localhost:${PORT}`;
+const INITIAL_TAB = new URLSearchParams(window.location.search).get('tab') || 'letter';
+
+let PACK = null;
+let chatHistory = [];   // [{role, content}]
+let _saveTimer = null;
+let _currentTab = 'letter';
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  if (!JOB_ID) { showToast('Ingen job_id — naviger fra dashboardet', true); return; }
+  try {
+    const res = await fetch(`${API}/api/pack/${encodeURIComponent(JOB_ID)}`);
+    const data = await res.json();
+    if (data.error) { showToast('Feil: ' + data.error, true); return; }
+    PACK = data;
+    renderHeader(data);
+    renderContextCards(data);
+    renderHighlights(data.pack);
+    renderInterview(data.pack);
+    renderResume(data);
+    // Priority: manually saved draft > AI-generated cover letter > empty
+    const letterText = data.cover_letter_draft
+      || (data.pack && data.pack.cover_letter_text)
+      || '';
+    if (letterText) {
+      document.getElementById('letterArea').value = letterText;
+      updateWordCount();
+      if (!data.cover_letter_draft && data.pack && data.pack.cover_letter_text) {
+        showToast('AI-utkast lastet inn — rediger og lagre når du er klar');
+      }
+    }
+    switchTab(INITIAL_TAB === 'cv' || INITIAL_TAB === 'resume' || INITIAL_TAB === 'interview' ? INITIAL_TAB : 'letter');
+  } catch(e) {
+    showToast('Kunne ikke koble til serveren. Er dashboard_server.py startet?', true);
+  }
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+function renderHeader(data) {
+  const j = data.job || {};
+  const title = j.title || 'Ukjent stilling';
+  const employer = j.employer || '';
+  document.title = `${title} — Søknadsskrivebord`;
+  document.getElementById('jobTitle').innerHTML =
+    `${esc(title)} <span>@ ${esc(employer)}</span>`;
+  if (j.source_url) {
+    const lnk = document.getElementById('sourceLink');
+    lnk.href = j.source_url;
+    lnk.style.display = '';
+  }
+  if (data.has_docx) {
+    document.getElementById('downloadDocxBtn').style.display = '';
+  }
+}
+
+// ── Context cards (AI chat sidebar) ──────────────────────────────────────────
+function renderContextCards(data) {
+  const pack = data.pack || {};
+  const cards = [];
+
+  if (pack.positioning_headline)
+    cards.push(['🎯 Posisjonering', `<p>${esc(pack.positioning_headline)}</p>`]);
+
+  if (pack.cover_letter_angle)
+    cards.push(['✉️ Søknadsvinkel', `<p>${esc(pack.cover_letter_angle)}</p>`]);
+
+  if ((pack.top_value_props || []).length)
+    cards.push(['⭐ Toppverdier', '<ul>' + pack.top_value_props.map(v=>`<li>${esc(v)}</li>`).join('') + '</ul>']);
+
+  if ((pack.evidence_map || []).length)
+    cards.push(['🔗 Bevis-kart', '<ul>' + pack.evidence_map.map(e=>`<li>${esc(e)}</li>`).join('') + '</ul>']);
+
+  if ((data.overlaps || []).length)
+    cards.push(['✅ Overlaps', '<ul>' + data.overlaps.slice(0,6).map(o=>`<li>${esc(o)}</li>`).join('') + '</ul>']);
+
+  if ((data.gaps || []).length)
+    cards.push(['⚠️ Gaps', '<ul>' + data.gaps.slice(0,4).map(g=>`<li>${esc(g)}</li>`).join('') + '</ul>']);
+
+  if ((pack.gap_mitigations || []).length)
+    cards.push(['🛡 Gap-håndtering', '<ul>' + pack.gap_mitigations.map(g=>`<li>${esc(g)}</li>`).join('') + '</ul>']);
+
+  // Insert cards before suggestions
+  const container = document.createElement('div');
+  container.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border);overflow-y:auto;max-height:240px;';
+  container.innerHTML = cards.map((c, i) => `
+    <div class="ctx-card">
+      <div class="ctx-header" onclick="toggleCtx(${i})">
+        ${c[0]} <span id="ctx-arrow-${i}">▸</span>
+      </div>
+      <div class="ctx-body" id="ctx-body-${i}">${c[1]}</div>
+    </div>`).join('');
+
+  const chatPanel = document.querySelector('.chat-panel');
+  const chatMessages = document.getElementById('chatMessages');
+  chatPanel.insertBefore(container, chatMessages);
+}
+
+function toggleCtx(i) {
+  const body = document.getElementById('ctx-body-' + i);
+  const arrow = document.getElementById('ctx-arrow-' + i);
+  const open = body.classList.toggle('open');
+  arrow.textContent = open ? '▾' : '▸';
+}
+
+// ── CV Highlights ─────────────────────────────────────────────────────────────
+function renderHighlights(pack) {
+  const el = document.getElementById('highlightsList');
+  const highlights = (pack || {}).cv_highlights || [];
+  const refs = (pack || {}).cv_experience_refs || [];
+  if (!highlights.length) {
+    el.innerHTML = '<div class="loading">Ingen CV-highlights generert ennå. Klikk «Generer CV/søknad» i dashboardet.</div>';
+    return;
+  }
+  el.innerHTML = highlights.map((h, i) => `
+    <div class="highlight-item">
+      <div class="highlight-bullet">•</div>
+      <div style="flex:1">
+        <div class="highlight-text">${esc(h)}</div>
+        ${refs[i] ? `<div class="highlight-ref">${esc(refs[i])}</div>` : ''}
+      </div>
+      <button class="copy-btn" onclick="copyHighlight(this, ${i})">Kopier</button>
+    </div>`).join('');
+}
+
+function copyHighlight(btn, idx) {
+  const pack = PACK?.pack || {};
+  const text = (pack.cv_highlights || [])[idx] || '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Kopiert!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Kopier'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ── JSON Resume ───────────────────────────────────────────────────────────────
+function renderResume(data) {
+  const el = document.getElementById('resumeView');
+  const pack = data.pack || {};
+  const highlights = pack.cv_highlights || [];
+
+  // Fetch the resume from the server (it reads reports/resume.json)
+  fetch(`${API}/api/resume`).then(r => r.json()).then(resume => {
+    if (!resume || resume.error) {
+      el.innerHTML = '<div class="loading">resume.json ikke funnet i reports/.</div>';
+      return;
+    }
+    const b = resume.basics || {};
+    let html = `
+      <h2>${esc(b.name || 'Lars Værland')}</h2>
+      <div class="resume-sub">${esc(b.label || '')} &bull; ${esc(b.email || '')} &bull; ${esc((b.location||{}).city || '')}</div>`;
+
+    if ((resume.work || []).length) {
+      html += '<h3>Erfaring</h3>';
+      (resume.work || []).slice(0, 6).forEach(w => {
+        const wHighlights = (w.highlights || []);
+        html += `<div class="resume-work-item">
+          <div class="position">${esc(w.position || '')}</div>
+          <div class="company">${esc(w.name || w.company || '')}</div>
+          <div class="dates">${esc(w.startDate || '')} – ${esc(w.endDate || 'nå')}</div>
+          ${wHighlights.length ? '<ul>' + wHighlights.map(h => {
+            // Mark highlights that are selected in the application pack
+            const selected = highlights.some(ah => ah.includes(h.slice(0, 30)));
+            return `<li class="${selected ? 'highlighted' : ''}">${esc(h)}${selected ? ' ★' : ''}</li>`;
+          }).join('') + '</ul>' : ''}
+        </div>`;
+      });
+    }
+
+    if ((resume.education || []).length) {
+      html += '<h3>Utdanning</h3>';
+      (resume.education || []).forEach(e => {
+        html += `<div class="resume-work-item">
+          <div class="position">${esc(e.studyType || '')} i ${esc(e.area || '')}</div>
+          <div class="company">${esc(e.institution || '')}</div>
+          <div class="dates">${esc(e.startDate || '')} – ${esc(e.endDate || '')}</div>
+        </div>`;
+      });
+    }
+
+    if ((resume.skills || []).length) {
+      html += '<h3>Ferdigheter</h3>';
+      html += '<p style="font-size:13px">' + (resume.skills || []).map(s => esc(s.name)).join(' · ') + '</p>';
+    }
+
+    el.innerHTML = html;
+  }).catch(() => {
+    el.innerHTML = '<div class="loading">Kunne ikke laste resume.json.</div>';
+  });
+}
+
+// ── Interview prep ────────────────────────────────────────────────────────────
+function renderInterview(pack) {
+  const el = document.getElementById('interviewList');
+  const items = (pack || {}).interview_prep || [];
+  if (!items.length) {
+    el.innerHTML = '<div class="loading">Ingen intervjuforberedelse generert ennå.</div>';
+    return;
+  }
+  el.innerHTML = items.map((q, i) =>
+    `<div class="interview-item"><strong>${i+1}.</strong> ${esc(q)}</div>`
+  ).join('');
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  _currentTab = name;
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    const tabs = ['letter','cv','resume','interview'];
+    b.classList.toggle('active', tabs[i] === name);
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Cover letter editor ────────────────────────────────────────────────────────
+function onLetterInput() {
+  updateWordCount();
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveDraft, 1500);
+}
+
+function updateWordCount() {
+  const text = document.getElementById('letterArea').value.trim();
+  const words = text ? text.split(/\s+/).length : 0;
+  document.getElementById('wordCount').textContent = `${words} ord`;
+  document.getElementById('charCount').textContent = `${text.length} tegn`;
+}
+
+async function saveDraft() {
+  const text = document.getElementById('letterArea').value;
+  try {
+    await fetch(`${API}/api/draft/${encodeURIComponent(JOB_ID)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cover_letter: text}),
+    });
+    const ind = document.getElementById('savedIndicator');
+    ind.classList.add('show');
+    setTimeout(() => ind.classList.remove('show'), 2000);
+  } catch(e) {}
+}
+
+// ── AI Chat ───────────────────────────────────────────────────────────────────
+function sendSuggestion(el) {
+  document.getElementById('chatInput').value = el.textContent.replace(/^[^\s]+\s/, '').trim();
+  sendChat();
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  input.style.height = 'auto';
+
+  appendMsg('user', msg);
+  chatHistory.push({role: 'user', content: msg});
+
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<div class="spinner"></div>';
+
+  // Append thinking indicator
+  const thinkId = 'think-' + Date.now();
+  appendMsgRaw(`<div class="msg msg-ai" id="${thinkId}"><div class="spinner"></div> Tenker…</div>`);
+
+  try {
+    const res = await fetch(`${API}/api/chat`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_id: JOB_ID, messages: chatHistory}),
+    });
+    const data = await res.json();
+    document.getElementById(thinkId)?.remove();
+
+    if (data.error) {
+      appendMsg('ai', '⚠️ Feil: ' + data.error, false);
+    } else {
+      const reply = data.reply || '';
+      chatHistory.push({role: 'assistant', content: reply});
+      appendMsg('ai', reply, true);  // true = show "Bruk i søknadsbrev" button
+    }
+  } catch(e) {
+    document.getElementById(thinkId)?.remove();
+    appendMsg('ai', '⚠️ Serverfeil — er dashboard_server.py startet?', false);
+  }
+
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
+  scrollChat();
+}
+
+function appendMsg(role, content, showApply = false) {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg msg-' + (role === 'user' ? 'user' : 'ai');
+  div.innerHTML = `<pre>${esc(content)}</pre>`;
+  if (showApply && role !== 'user') {
+    const actions = document.createElement('div');
+    actions.className = 'msg-action';
+    const applyBtn = document.createElement('button');
+    applyBtn.className = 'msg-apply-btn';
+    applyBtn.textContent = '← Bruk i søknadsbrev';
+    applyBtn.onclick = () => {
+      document.getElementById('letterArea').value = content;
+      updateWordCount();
+      switchTab('letter');
+      saveDraft();
+      showToast('Tekst lagt inn i søknadsbrevet');
+    };
+    actions.appendChild(applyBtn);
+    div.appendChild(actions);
+  }
+  msgs.appendChild(div);
+  scrollChat();
+}
+
+function appendMsgRaw(html) {
+  document.getElementById('chatMessages').insertAdjacentHTML('beforeend', html);
+  scrollChat();
+}
+
+function scrollChat() {
+  const el = document.getElementById('chatMessages');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+function downloadDocx() {
+  window.open(`${API}/download/${encodeURIComponent(JOB_ID)}/07_cv_highlights.docx`, '_blank');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+let _toastTimer = null;
+function showToast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (isError ? 'err' : 'ok');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

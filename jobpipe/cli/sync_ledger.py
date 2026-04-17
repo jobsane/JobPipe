@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from jobpipe.core.io import now_iso, clean, pick, to_float, to_int
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
+_DEFAULT_PATHS = get_jobpipe_paths()
 
 
 def _parse_date_maybe(s: str) -> str:
@@ -59,6 +62,95 @@ def _safe_load_json(path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _resolve_stage_path(job_dir: Path, *names: str) -> Optional[Path]:
+    if not job_dir.exists():
+        return None
+    for name in names:
+        path = job_dir / name
+        if path.exists():
+            return path
+    return None
+
+
+def _load_stage_artifact(job_dir: Path, *names: str) -> Tuple[Dict[str, Any], Optional[Path]]:
+    path = _resolve_stage_path(job_dir, *names)
+    if not path:
+        return {}, None
+    return _safe_load_json(path), path
+
+
+def _truthy_flag(value: Any) -> int:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    text = clean(value).lower()
+    if text in {"1", "true", "yes", "y"}:
+        return 1
+    if text in {"0", "false", "no", "n"}:
+        return 0
+    return 0
+
+
+def _derive_job_source(
+    job_id: str,
+    explicit_source: str,
+    source_url: str,
+    application_url: str,
+    job_status: str = "",
+    occ_level1: str = "",
+    occ_level2: str = "",
+    cat_name: str = "",
+) -> str:
+    explicit = clean(explicit_source)
+    if explicit:
+        return explicit
+
+    lowered_job_id = clean(job_id).lower()
+    if lowered_job_id.startswith("finn_"):
+        return "finn"
+    if lowered_job_id.startswith("li_"):
+        return "linkedin"
+
+    hay = " ".join([clean(source_url).lower(), clean(application_url).lower()])
+    if "arbeidsplassen.nav.no" in hay or "nav.no/stillinger" in hay:
+        return "nav"
+    if "finn.no" in hay:
+        return "finn"
+    if "linkedin.com" in hay:
+        return "linkedin"
+    if clean(job_status) or clean(occ_level1) or clean(occ_level2) or clean(cat_name):
+        return "nav"
+    return ""
+
+
+def _collect_generated_documents(job_dir: Path, pack_path: Optional[Path]) -> Tuple[List[Dict[str, Any]], str]:
+    docs: List[Dict[str, Any]] = []
+    latest_mtime = 0.0
+
+    def add_doc(path: Path, kind: str, status: str) -> None:
+        nonlocal latest_mtime
+        if not path.exists():
+            return
+        latest_mtime = max(latest_mtime, path.stat().st_mtime)
+        docs.append(
+            {
+                "kind": kind,
+                "status": status,
+                "storage_path": str(path.resolve()),
+            }
+        )
+
+    if pack_path:
+        add_doc(pack_path, "application_pack_json", "saved")
+    add_doc(job_dir / "application_pack_draft.json", "application_pack_json", "draft")
+    add_doc(job_dir / "07_cv_highlights.docx", "cv_highlights_docx", "saved")
+    add_doc(job_dir / "cover_letter_draft.txt", "cover_letter_text", "draft")
+
+    generated_at = ""
+    if latest_mtime:
+        generated_at = datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return docs, generated_at
+
+
 @dataclass
 class EventRow:
     run_id: str
@@ -97,18 +189,10 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
     # Stage file numbering shifted when reverse_triage was disabled (2026-04-13).
     # Try new numbering first (03/04/05/06), fall back to old (04/05/06/07) for
     # any runs produced before the change.
-    def _load_stage(new_name: str, old_name: str) -> dict:
-        if not ev.job_dir.exists():
-            return {}
-        d = _safe_load_json(ev.job_dir / new_name)
-        if d:
-            return d
-        return _safe_load_json(ev.job_dir / old_name) or {}
-
-    match_j = _load_stage("03_profile_match.json", "04_profile_match.json")
-    pivot_j = _load_stage("04_pivot.json", "05_pivot.json")
-    mod_j = _load_stage("05_moderator.json", "06_moderator.json")
-    pack_j = _load_stage("06_application_pack.json", "07_application_pack.json")
+    match_j, _ = _load_stage_artifact(ev.job_dir, "03_profile_match.json", "04_profile_match.json")
+    pivot_j, _ = _load_stage_artifact(ev.job_dir, "04_pivot.json", "05_pivot.json")
+    mod_j, _ = _load_stage_artifact(ev.job_dir, "05_moderator.json", "06_moderator.json")
+    pack_j, pack_path = _load_stage_artifact(ev.job_dir, "06_application_pack.json", "07_application_pack.json")
 
     # Resolve job data: prefer nested "job" key, fall back to root of input file,
     # then to index row. This handles both pipeline output formats.
@@ -121,14 +205,40 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         job = row["job"]
 
     title = pick(job.get("title"), job.get("normalized_title"), row.get("title"))
-    employer = pick(job.get("employer_name"), job.get("employer"), row.get("employer"), row.get("employer_name"))
+    employer = pick(
+        job.get("employer_name"),
+        job.get("employer"),
+        job.get("company"),
+        row.get("employer"),
+        row.get("employer_name"),
+    )
     city = pick(job.get("work_city"), job.get("municipal"), job.get("municipalName"), row.get("work_city"))
     county = pick(job.get("work_county"), job.get("county"), row.get("work_county"))
     postal = pick(job.get("work_postalCode"), job.get("postalCode"), row.get("work_postalCode"))
     sector = pick(job.get("sector"), row.get("sector"))
-    source_url = pick(job.get("sourceurl"), job.get("link"), row.get("sourceurl"), row.get("link"))
-    app_url = pick(job.get("applicationUrl"), row.get("applicationUrl"))
+    source_url = pick(job.get("source_url"), job.get("sourceurl"), job.get("link"), row.get("source_url"), row.get("sourceurl"), row.get("link"))
+    app_url = pick(job.get("application_url"), job.get("applicationUrl"), row.get("application_url"), row.get("applicationUrl"))
     due = _parse_date_maybe(pick(job.get("applicationDue"), row.get("applicationDue")))
+    explicit_source = pick(job.get("source"), row.get("source"))
+    job_status = pick(job.get("status"), row.get("status"))
+    normalized_title = pick(job.get("normalized_title"), row.get("normalized_title"), title)
+    occ_level1 = pick(job.get("occ_level1"), row.get("occ_level1"))
+    occ_level2 = pick(job.get("occ_level2"), row.get("occ_level2"))
+    cat_type = pick(job.get("cat_type"), row.get("cat_type"))
+    cat_code = pick(job.get("cat_code"), row.get("cat_code"))
+    cat_name = pick(job.get("cat_name"), row.get("cat_name"))
+    cat_score = to_float(pick(job.get("cat_score"), row.get("cat_score")))
+    job_source = _derive_job_source(
+        ev.job_id,
+        explicit_source,
+        source_url,
+        app_url,
+        job_status=job_status,
+        occ_level1=occ_level1,
+        occ_level2=occ_level2,
+        cat_name=cat_name,
+    )
+    suggested_by_platform = _truthy_flag(pick(job.get("suggested_by_platform"), row.get("suggested_by_platform")))
 
     triage_decision = pick(triage_j.get("triage_decision"), row.get("triage_decision"), (row.get("triage") or {}).get("triage_decision"))
     triage_conf = to_float(pick(triage_j.get("confidence"), row.get("triage_confidence"), (row.get("triage") or {}).get("confidence")))
@@ -157,6 +267,15 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
     feedback_flags = pack_j.get("feedback_flags") or mod_j.get("feedback_flags") or []
     if isinstance(feedback_flags, str):
         feedback_flags = [feedback_flags]
+    cover_letter_text = clean(pack_j.get("cover_letter_text"))
+    cv_highlights = pack_j.get("cv_highlights") or []
+    if isinstance(cv_highlights, str):
+        cv_highlights = [cv_highlights]
+    generated_documents, pack_generated_at = _collect_generated_documents(ev.job_dir, pack_path)
+    pack_ready = 1 if pack_j else 0
+    pack_has_cover_letter = 1 if cover_letter_text else 0
+    pack_highlight_count = len([x for x in cv_highlights if clean(x)])
+    pack_docx_ready = 1 if any(doc.get("kind") == "cv_highlights_docx" for doc in generated_documents) else 0
 
     # Derive an explicit skip_reason so the dashboard can accurately categorise
     # each job without guessing from partial signals.
@@ -206,6 +325,16 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         "applicationDue": due,
         "source_url": source_url,
         "application_url": app_url,
+        "job_source": job_source,
+        "job_status": job_status,
+        "suggested_by_platform": suggested_by_platform,
+        "normalized_title": normalized_title,
+        "occ_level1": occ_level1,
+        "occ_level2": occ_level2,
+        "cat_type": cat_type,
+        "cat_code": cat_code,
+        "cat_name": cat_name,
+        "cat_score": cat_score,
 
         "triage_decision": triage_decision,
         "triage_confidence": triage_conf,
@@ -224,6 +353,12 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
 
         "cv_focus": " | ".join([clean(x) for x in cv_focus if clean(x)])[:2000],
         "feedback_flags": " | ".join([clean(x) for x in feedback_flags if clean(x)])[:2000],
+        "pack_ready": pack_ready,
+        "pack_generated_at": pack_generated_at,
+        "pack_has_cover_letter": pack_has_cover_letter,
+        "pack_highlight_count": pack_highlight_count,
+        "pack_docx_ready": pack_docx_ready,
+        "generated_documents_json": json.dumps(generated_documents, ensure_ascii=False),
 
         "description_snip": description_snip,
         "skip_reason": _skip_reason,
@@ -249,6 +384,16 @@ LEDGER_COLUMNS: List[Tuple[str, str]] = [
     ("applicationDue", "TEXT"),
     ("source_url", "TEXT"),
     ("application_url", "TEXT"),
+    ("job_source", "TEXT"),
+    ("job_status", "TEXT"),
+    ("suggested_by_platform", "INTEGER"),
+    ("normalized_title", "TEXT"),
+    ("occ_level1", "TEXT"),
+    ("occ_level2", "TEXT"),
+    ("cat_type", "TEXT"),
+    ("cat_code", "TEXT"),
+    ("cat_name", "TEXT"),
+    ("cat_score", "REAL"),
     ("triage_decision", "TEXT"),
     ("triage_confidence", "REAL"),
     ("triage_explanation", "TEXT"),
@@ -263,6 +408,12 @@ LEDGER_COLUMNS: List[Tuple[str, str]] = [
     ("recommendation_reason", "TEXT"),
     ("cv_focus", "TEXT"),
     ("feedback_flags", "TEXT"),
+    ("pack_ready", "INTEGER"),
+    ("pack_generated_at", "TEXT"),
+    ("pack_has_cover_letter", "INTEGER"),
+    ("pack_highlight_count", "INTEGER"),
+    ("pack_docx_ready", "INTEGER"),
+    ("generated_documents_json", "TEXT"),
     ("description_snip", "TEXT"),
     ("skip_reason", "TEXT"),
     ("raw_index_json", "TEXT"),
@@ -278,6 +429,9 @@ EVENTS_COLUMNS: List[Tuple[str, str]] = [
     ("job_id", "TEXT"),
     ("run_mtime", "REAL"),
     ("seen_at", "TEXT"),
+    ("job_source", "TEXT"),
+    ("job_status", "TEXT"),
+    ("skip_reason", "TEXT"),
     ("final_decision", "TEXT"),
     ("final_confidence", "REAL"),
     ("triage_decision", "TEXT"),
@@ -308,17 +462,22 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_decision ON ledger(final_decision);")
 
     # Migrate existing databases: add new columns if missing
-    for _col, _type in [("closed_at", "TEXT"), ("skip_reason", "TEXT")]:
-        try:
-            conn.execute(f"ALTER TABLE ledger ADD COLUMN {_col} {_type};")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+    existing_ledger_cols = {row[1] for row in conn.execute("PRAGMA table_info(ledger)")}
+    for _col, _type in LEDGER_COLUMNS:
+        if _col in existing_ledger_cols:
+            continue
+        conn.execute(f"ALTER TABLE ledger ADD COLUMN {_col} {_type};")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_skip_reason ON ledger(skip_reason);")
 
     ecols = ", ".join([f"{n} {t}" for n, t in EVENTS_COLUMNS])
     conn.execute(f"CREATE TABLE IF NOT EXISTS events ({ecols}, PRIMARY KEY (run_id, job_id));")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_run_mtime ON events(run_mtime);")
+    existing_event_cols = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+    for _col, _type in EVENTS_COLUMNS:
+        if _col in existing_event_cols:
+            continue
+        conn.execute(f"ALTER TABLE events ADD COLUMN {_col} {_type};")
     return conn
 
 
@@ -336,7 +495,12 @@ def upsert_ledger(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
 def insert_event(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
     names = [c[0] for c in EVENTS_COLUMNS]
     placeholders = ", ".join(["?"] * len(names))
-    conn.execute(f"INSERT OR IGNORE INTO events ({', '.join(names)}) VALUES ({placeholders});", [row.get(n) for n in names])
+    assignments = ", ".join([f"{n}=excluded.{n}" for n in names if n not in {"run_id", "job_id"}])
+    sql = (
+        f"INSERT INTO events ({', '.join(names)}) VALUES ({placeholders}) "
+        f"ON CONFLICT(run_id, job_id) DO UPDATE SET {assignments};"
+    )
+    conn.execute(sql, [row.get(n) for n in names])
 
 
 def row_is_newer(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
@@ -362,10 +526,23 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 def main(argv: Optional[List[str]] = None) -> None:
     ap = argparse.ArgumentParser(description="Build an incremental JobPipe ledger (CSV + SQLite) from out_runs/*/index.jsonl and per-job stage artifacts.")
-    ap.add_argument("--out", default="./out_runs", help="Path to out_runs (default: ./out_runs)")
-    ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
-    ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/ledger_latest.csv)")
-    ap.add_argument("--sqlite", default="", help="SQLite output path (default: <reports>/ledger.sqlite)")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
+        "--out",
+        default="",
+        help=f"Path to out_runs (default: {_DEFAULT_PATHS.out_runs_dir})",
+    )
+    ap.add_argument(
+        "--reports",
+        default="",
+        help=f"Reports folder (default: {_DEFAULT_PATHS.reports_dir})",
+    )
+    ap.add_argument("--csv", default="", help=f"CSV output path (default: {_DEFAULT_PATHS.ledger_csv_path})")
+    ap.add_argument("--sqlite", default="", help=f"SQLite output path (default: {_DEFAULT_PATHS.ledger_sqlite_path})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
     ap.add_argument("--desc-max-chars", type=int, default=4000, help="Max chars for description_snip if enabled (default: 4000)")
     # Detailed report options (replaces report_runs.py)
@@ -378,10 +555,13 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--limit", type=int, default=0, help="Limit rows in detailed report (0 = no limit).")
     args = ap.parse_args(argv)
 
-    out_dir = Path(args.out)
-    reports_dir = Path(args.reports)
-    csv_path = Path(args.csv) if args.csv else (reports_dir / "ledger_latest.csv")
-    sqlite_path = Path(args.sqlite) if args.sqlite else (reports_dir / "ledger.sqlite")
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=True)
+
+    out_dir = Path(args.out) if args.out else paths.out_runs_dir
+    reports_dir = Path(args.reports) if args.reports else paths.reports_dir
+    csv_path = Path(args.csv) if args.csv else paths.ledger_csv_path
+    sqlite_path = Path(args.sqlite) if args.sqlite else paths.ledger_sqlite_path
 
     conn = init_db(sqlite_path)
 
@@ -396,6 +576,9 @@ def main(argv: Optional[List[str]] = None) -> None:
             "job_id": enriched.get("job_id"),
             "run_mtime": enriched.get("run_mtime"),
             "seen_at": enriched.get("run_seen_at"),
+            "job_source": enriched.get("job_source"),
+            "job_status": enriched.get("job_status"),
+            "skip_reason": enriched.get("skip_reason"),
             "final_decision": enriched.get("final_decision"),
             "final_confidence": enriched.get("final_confidence"),
             "triage_decision": enriched.get("triage_decision"),

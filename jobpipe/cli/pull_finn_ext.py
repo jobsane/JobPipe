@@ -30,12 +30,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
-DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
+DEFAULT_OUT_PATH = _DEFAULT_PATHS.jobs_delta_path
 
 # Default location of FINN Chrome Extension output (Lars's machine)
 DEFAULT_FINN_EXT_JOBS = (
@@ -198,14 +201,19 @@ def main(argv: Optional[List[str]] = None) -> None:
         epilog=__doc__,
     )
     ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
         "--finn-jobs",
         default=DEFAULT_FINN_EXT_JOBS,
         help=f"Path to FINN extension jobs.jsonl (default: {DEFAULT_FINN_EXT_JOBS})",
     )
     ap.add_argument(
         "--out",
-        default=str(DEFAULT_OUT_PATH),
-        help="Output JSONL path (default: jobs_delta.jsonl)",
+        default="",
+        help=f"Output JSONL path (default: {DEFAULT_OUT_PATH})",
     )
     ap.add_argument(
         "--append",
@@ -214,8 +222,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument(
         "--ledger",
-        default=str(DEFAULT_LEDGER_PATH),
-        help="Ledger SQLite path for deduplication (default: reports/ledger.sqlite)",
+        default="",
+        help=f"Ledger SQLite path for deduplication (default: {DEFAULT_LEDGER_PATH})",
     )
     ap.add_argument(
         "--no-dedupe",
@@ -229,6 +237,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     jobs_path = Path(args.finn_jobs)
     if not jobs_path.exists():
@@ -240,7 +252,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(1)
 
-    ledger_ids = set() if args.no_dedupe else _load_ledger_ids(Path(args.ledger))
+    ledger_ids = set() if args.no_dedupe else _load_ledger_ids(ledger_path)
     print(f"Loaded {len(ledger_ids)} job IDs from ledger for deduplication.")
 
     # Read raw FINN extension records
@@ -292,13 +304,12 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Write output
     if args.dry_run:
-        print(f"\n[DRY RUN] Would write {len(normalized)} new jobs to {args.out}")
+        print(f"\n[DRY RUN] Would write {len(normalized)} new jobs to {out_path}")
         for job in normalized[:10]:
             print(f"  {job['job_id']}  {job['title'][:60]}  ({job.get('employer_name', '')})")
         if len(normalized) > 10:
             print(f"  ... and {len(normalized) - 10} more")
     elif normalized:
-        out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if args.append else "w"
         with open(out_path, mode, encoding="utf-8") as f:
@@ -316,7 +327,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         f"  No finnkode (skipped):   {stats['no_id']}\n"
     )
     if normalized and not args.dry_run:
-        print(f"Next step: run the pipeline on {args.out}")
+        print(f"Next step: run the pipeline on {out_path}")
         print("  .\\go.ps1 -DryRun   (test 2 jobs first)")
         print("  .\\go.ps1           (full run)")
 

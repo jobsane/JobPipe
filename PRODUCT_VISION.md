@@ -1,7 +1,7 @@
 # JobPipe — Product Vision
 
 **Owner:** Lars Værland
-**Last updated:** 2026-04-14
+**Last updated:** 2026-04-18
 
 ---
 
@@ -32,6 +32,43 @@ An AI-powered job hunting pipeline that automatically finds, scores, and prepare
 **If productized (future):**
 - For mid-career professionals actively job hunting: upload your CV, set your preferences, get a daily shortlist with AI-scored matches and ready-made application materials
 - Differentiator: multi-stage triage funnel that's cost-efficient (cheap models for filtering, expensive models only for top matches) + career-pivot scoring that catches non-obvious opportunities
+
+---
+
+## Product tracks
+
+### OSS JobPipe
+
+The OSS version must be a real single-user product, not a crippled demo. It should:
+- run locally
+- be platform agnostic
+- be portable across machines and repo checkouts
+- keep delivering full value to tinkerers and active job hunters without hosted infrastructure
+
+### Hosted / private JobPipe
+
+The private version is a separate product track:
+- multi-user
+- hosted
+- more advanced automation, collaboration, and admin functionality
+- allowed to depend on managed infrastructure that the OSS version must not require
+
+### Private data boundary
+
+For the OSS product, versioned code and private user state must be separate concerns.
+
+Target rule:
+- the git repo contains code, templates, examples, and docs
+- the user's private data lives in a stable user data root outside the repo
+- switching branches, recloning the repo, or resetting tracked files must not force Gmail re-auth, profile re-entry, or dashboard state rebuild from scratch
+
+Private user state includes:
+- profile and CV source files
+- credentials and tokens
+- job/application history
+- ledgers, caches, generated artifacts, and exports
+
+This boundary is now implemented in the active OSS runtime contract. The remaining work is to keep docs, habits, and future features aligned with it so private state does not creep back into the repo surface.
 
 ---
 
@@ -73,6 +110,7 @@ An AI-powered job hunting pipeline that automatically finds, scores, and prepare
 - As Lars, I want to filter by occupation code before AI triage so I skip obviously irrelevant categories at zero cost
 - As Lars, I want expiring-soon alerts so I don't miss application deadlines
 - As Lars, I want to mark jobs as "applied" / "rejected" / "interview" and track my application funnel
+- As Lars, I want a profile and CV page in the dashboard so the material that drives the pipeline is visible beside the jobs
 
 ### Future / aspirational
 - As Lars, I want the system to learn from my apply/reject decisions and improve triage over time
@@ -85,26 +123,26 @@ An AI-powered job hunting pipeline that automatically finds, scores, and prepare
 
 ```
 NAV API (pam-stilling-feed)
-    ↓ Apps Script (trigger, 200 jobs/run)
-Google Sheet (JobFeed, ~35,850 rows)
-    ↓ pull_sheets_csv.py (status filter: ACTIVE only)
-jobs_delta.jsonl
+    ↓ Apps Script (hourly; currently ~50 jobs/run, planned 200)
+Google Sheet (JobFeed)
+    ↓ pull_sheets_csv.py (ACTIVE-only + deadline filtering)
+<data-root>/jobs_delta.jsonl
     ↓ run_feed.py (staged pipeline)
     ├─ [FREE] Geo postal filter (0/1/3/4xxx)
     ├─ [FREE] Hard-no title regex
+    ├─ [FREE] Semantic pre-filter
     ├─ [NANO] AI triage (gpt-4.1-nano)
-    ├─ [MINI] Reverse triage (low-confidence reconsideration)
     ├─ [MINI] Parse (extract structured requirements)
     ├─ [MINI] Profile match (fit score 0-100)
     ├─ [MINI] Pivot (career pivot potential 0-100)
     ├─ [FREE] Moderate (deterministic thresholds → final decision)
-    └─ [FULL] Application pack (only for APPLY/APPLY_STRONGLY)
+    └─ [MINI] Application pack (only for APPLY/APPLY_STRONGLY)
     ↓
-out_runs/<run_id>/<job_id>/ (per-job artifacts)
+<data-root>/out_runs/<run_id>/<job_id>/ (per-job artifacts)
     ↓ sync_ledger.py
-reports/ledger.sqlite (deduplicated, latest state per job)
-    ↓ export_dashboard.py
-reports/dashboard.html (self-contained, opens in browser)
+<data-root>/reports/ledger.sqlite (deduplicated, latest state per job)
+    ↓ export_dashboard.py / dashboard_server.py
+<data-root>/exports/dashboard.html + local interactive dashboard
 ```
 
 **Cost funnel design:** The most expensive model (gpt-4.1) only runs for the ~1% of jobs that score APPLY or higher. The cheapest model (nano) handles the 95%+ that need to be filtered. This makes the system affordable to run continuously.
@@ -125,6 +163,7 @@ reports/dashboard.html (self-contained, opens in browser)
 7. **Noise is a cost** — every irrelevant job that reaches Lars wastes attention. Minimize noise at the earliest, cheapest layer possible.
 8. **Reduce cognitive load, don't add to it** — Lars has high IQ but average working memory and processing speed (Alva Labs profile). The system should externalize memory, pre-generate language, chunk decisions, and surface one clear action at a time. Application packs are not for reading — they are for *acting*. Every output should answer: "what do I do right now?"
 9. **Motivation articulation is a first-class output** — one of the hardest parts of applying is expressing *why* clearly. The application pack must generate ready-to-use motivation language in Norwegian, not generic summaries. The user should be able to copy and adapt, not write from scratch.
+10. **Private data must survive versioning** — repo operations must not behave like account resets. Local credentials, profile data, ledgers, and application state should survive branch switches and fresh clones through a stable data-root boundary outside tracked code.
 
 ---
 
@@ -173,8 +212,8 @@ The same job frequently appears on NAV, LinkedIn, and Finn.no simultaneously. St
 | Concern | Source of truth |
 |---------|----------------|
 | Job data (title, employer, description, scores) | `ledger.sqlite` |
-| Application status (applied, interview, rejected) | `reports/application_state.json` |
-| Raw job input (immutable) | `out_runs/*/00_input.json` |
+| Application status (applied, interview, rejected) | `<data-root>/reports/application_state.json` |
+| Raw job input (immutable) | `<data-root>/out_runs/*/00_input.json` |
 
 ### Gmail as a data pipe
 
@@ -222,7 +261,10 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 - [ ] Fix buildIndex_() performance in Apps Script (raise MAX_ENTRIES_PER_RUN 50→200)
 - [ ] Gmail auto-labeling: route LinkedIn/Finn.no alerts to SOKNADSPILOT, skip inbox
 - [ ] LinkedIn email lead extraction: parse alert emails → jobs_leads.jsonl
+- [x] Unify dashboard runtime and data contract so static export and local server show the same truth
+- [x] Add a Profile & CV page driven by `<data-root>/profile_pack.md` and `<data-root>/reports/resume.json`
 - [ ] Deadline alert: flag jobs expiring within 7 days in dashboard
+- [x] Define a local-first data root so credentials, profile data, ledgers, and exports survive repo versioning without re-setup
 
 ---
 
@@ -246,7 +288,8 @@ Key capabilities v3 would need:
 - Multi-user profiles (each with their own profile_pack, geo rules, thresholds)
 - UI for configuration (no YAML editing)
 - Non-NAV sources (Finn API, LinkedIn API, custom job boards)
-- Managed hosting (not self-hosted on user's Windows machine)
+- Managed hosting for the private product track
+- Clean separation between OSS single-user local mode and hosted multi-user mode
 - Commercial model TBD
 
 ---

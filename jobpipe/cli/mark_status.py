@@ -39,6 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
 # Stages that accumulate — order matters for display
 VALID_STAGES = ["shortlisted", "called", "applied", "interview", "second_interview"]
 
@@ -73,7 +75,8 @@ STATUS_ICON = {
     "dismissed":        "⚫",
 }
 
-DEFAULT_STATE_PATH = Path("./reports/application_state.json")
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_STATE_PATH = _DEFAULT_PATHS.application_state_path
 
 
 # ---------------------------------------------------------------------------
@@ -314,8 +317,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Notes from pre-application phone call (shortcut: also sets 'called' stage)",
     )
     ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
         "--state",
-        default=str(DEFAULT_STATE_PATH),
+        default="",
         help=f"Path to application_state.json (default: {DEFAULT_STATE_PATH})",
     )
     ap.add_argument("--list", action="store_true", help="List all tracked applications")
@@ -326,7 +334,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
 
     args = ap.parse_args(argv)
-    state_path = Path(args.state)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    state_path = Path(args.state) if args.state else paths.application_state_path
 
     if args.list:
         list_statuses(state_path, filter_status=args.filter_status)

@@ -17,10 +17,22 @@ def read_json_safe(path: str) -> dict | None:
     except Exception:
         return None
 
-from jobpipe.core.io import ensure_dir, iter_jobs, load_env_file, load_profile_pack, stable_job_id, now_iso, write_json
 
-# Load .env (OPENAI_API_KEY, etc.) before importing/initializing anything that might rely on env
-load_env_file(".env")
+def read_stage_json(job_dir: str, stage_name: str) -> dict | None:
+    """Read a stage artifact by suffix so stage-number drift does not break recovery."""
+    try:
+        matches = sorted(
+            name for name in os.listdir(job_dir)
+            if name.endswith(f"_{stage_name}.json")
+        )
+    except Exception:
+        return None
+    if not matches:
+        return None
+    return read_json_safe(os.path.join(job_dir, matches[-1]))
+
+from jobpipe.core.io import ensure_dir, iter_jobs, load_env_file, load_profile_pack, stable_job_id, now_iso, write_json
+from jobpipe.core.paths import JOBPIPE_DATA_ROOT_ENV, bootstrap_private_data, get_jobpipe_paths
 
 from jobpipe.core.config import load_config
 from jobpipe.core.schema import (
@@ -37,6 +49,8 @@ from jobpipe.stages.pivot import pivot_stage_factory
 from jobpipe.stages.profile_match import profile_match_stage_factory
 from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
 from jobpipe.stages.triage import triage_stage_factory
+
+_DEFAULT_PATHS = get_jobpipe_paths()
 
 
 def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
@@ -132,18 +146,50 @@ def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs", required=True, help="Path to jobs .jsonl/.json/.csv")
-    ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
-    ap.add_argument("--out", default="out_runs", help="Output directory")
-    ap.add_argument("--config", default="configs/pipeline.v1.yaml", help="Pipeline config YAML")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
+        "--env-file",
+        default="",
+        help=f"Path to .env file (default: {_DEFAULT_PATHS.env_file})",
+    )
+    ap.add_argument(
+        "--profile",
+        default="",
+        help=f"Path to profile_pack.md (default: {_DEFAULT_PATHS.profile_pack_path})",
+    )
+    ap.add_argument(
+        "--out",
+        default="",
+        help=f"Output directory (default: {_DEFAULT_PATHS.out_runs_dir})",
+    )
+    ap.add_argument(
+        "--config",
+        default="",
+        help=f"Pipeline config YAML (default: {_DEFAULT_PATHS.default_config_path})",
+    )
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
     ap.add_argument("--max", type=int, default=0, help="Max number of jobs (0 = all)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite per-stage artifacts")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
-    profile_pack = load_profile_pack(args.profile)
+    paths = get_jobpipe_paths(args.data_root or None)
+    os.environ[JOBPIPE_DATA_ROOT_ENV] = str(paths.data_root)
+    bootstrap_private_data(paths, include_artifacts=True)
+    env_file = args.env_file or str(paths.env_file)
+    profile_path = args.profile or str(paths.profile_pack_path)
+    out_path = args.out or str(paths.out_runs_dir)
+    config_path = args.config or str(paths.default_config_path)
+
+    load_env_file(env_file)
+    cfg = load_config(config_path, overlays=args.config_overlay)
+    profile_pack = load_profile_pack(profile_path)
 
     run_id = f"{cfg.pipeline_name}_{uuid.uuid4().hex[:8]}"
-    run_dir = os.path.join(args.out, run_id)
+    run_dir = os.path.join(out_path, run_id)
     ensure_dir(run_dir)
 
     runner = PipelineRunner(build_stages(cfg, profile_pack=profile_pack))
@@ -202,18 +248,20 @@ def main() -> None:
             # Reconstruct a minimal summary from artifacts
             try:
                 inp = read_json_safe(os.path.join(entry.path, "00_input.json")) or {}
-                triage = read_json_safe(os.path.join(entry.path, "01_triage.json")) or {}
-                mod = read_json_safe(os.path.join(entry.path, "05_moderator.json")) or {}
+                triage = read_stage_json(entry.path, "triage") or {}
+                profile = read_stage_json(entry.path, "profile_match") or {}
+                pivot = read_stage_json(entry.path, "pivot") or {}
+                mod = read_stage_json(entry.path, "moderator") or {}
                 rec = {
                     "job_id": jid,
                     "title": inp.get("title", ""),
                     "employer": inp.get("employer_name", ""),
-                    "triage_decision": triage.get("decision", ""),
+                    "triage_decision": triage.get("triage_decision", triage.get("decision", "")),
                     "triage_confidence": triage.get("confidence"),
                     "triage_signals": triage.get("signals", []),
                     "final_decision": mod.get("final_decision", ""),
-                    "fit_score": mod.get("fit_score"),
-                    "pivot_score": mod.get("pivot_score"),
+                    "fit_score": profile.get("fit_score"),
+                    "pivot_score": pivot.get("pivot_score"),
                     "repaired": True,
                 }
                 with open(index_path, "a", encoding="utf-8") as fh:

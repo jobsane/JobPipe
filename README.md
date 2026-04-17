@@ -1,169 +1,140 @@
-# Jobpipe
+# JobPipe
 
-An AI-powered job hunting pipeline for the Norwegian job market. Ingests listings from NAV and FINN.no, runs a cost-tiered triage and scoring pipeline, generates application drafts for top matches, and tracks application status automatically via Gmail — all from a single command.
+AI-assisted job hunting pipeline for Lars Værland. It ingests listings from NAV and FINN-related sources, runs a staged filter and scoring pipeline, writes per-job JSON artifacts, syncs the latest state into SQLite, and exports a dashboard for daily decision-making.
 
 ```powershell
 .\go.ps1
 ```
 
----
+## What Is Running Today
 
-## The problem it solves
-
-Manually reviewing hundreds of job listings per week is slow, noisy, and inconsistent. Jobpipe automates the parts where AI outperforms human attention — filtering, ranking, and first-pass evaluation — so time can be spent on the parts that actually require human judgment: writing, relationships, and decisions.
-
----
-
-## How it works
-
-```
-NAV pam-stilling-feed + FINN.no
-    ↓  Apps Script (hourly, ~50 jobs/run) + pull_finn_search.py
-Google Sheet / JSONL input
-    ↓  pull_sheets_csv.py  (delta pull, active listings only)
-
-Pipeline stages (per job):
-    [FREE]   Geo postal filter        Oslo / Akershus / Vestfold-Telemark / Agder
-    [FREE]   Hard-no title regex      Trades, retail, clinical, 1st-line support, etc.
-    [FREE]   Semantic pre-filter      Multilingual cosine similarity vs. candidate profile
-    [NANO]   Triage                   gpt-4.1-nano → SKIP / REVIEW / APPLY + noise_level
-    [MINI]   Parse                    gpt-4.1-mini → structured job requirements
-    [MINI]   Profile match            gpt-4.1-mini → fit_score 0–100 (4 dimensions)
-    [MINI]   Pivot                    gpt-4.1-mini → pivot_score 0–100
-    [FREE]   Moderate                 Deterministic thresholds → final decision
-    [MINI]   Application pack         Draft cover letter + CV highlights (APPLY+ only)
-
-    ↓  sync_ledger.py   →  reports/ledger.sqlite
-    ↓  export_dashboard.py  →  reports/dashboard.html  (self-contained, opens in browser)
-
-Gmail integration:
-    scan_gmail.py  →  auto-detects application confirmations, interviews, rejections
-                   →  updates application_state.json without manual input
+```text
+NAV pam-stilling-feed + FINN leads
+    ↓ Apps Script / pull scripts
+Google Sheet / JSONL delta
+    ↓ pull_sheets_csv.py
+<data-root>/jobs_delta.jsonl
+    ↓ run_feed.py
+    [FREE] Geo filter
+    [FREE] Hard-no title regex
+    [FREE] Semantic pre-filter
+    [NANO] Triage
+    [MINI] Parse
+    [MINI] Profile match
+    [MINI] Pivot
+    [FREE] Moderate
+    [MINI] Application pack
+    ↓
+<data-root>/out_runs/<run_id>/<job_id>/
+    ↓ sync_ledger.py
+<data-root>/reports/ledger.sqlite
+    ↓ export_dashboard.py
+<data-root>/exports/dashboard.html
 ```
 
-**Design principle:** free filters run before any LLM call. The geo filter, regex filter, and semantic pre-filter eliminate the majority of listings at zero cost, so LLM spend is concentrated on genuinely relevant jobs.
+The core rule is unchanged throughout the repo: cheap filters run before any LLM call.
 
----
+## Local Data Root
 
-## Decision tiers
+Private user data now lives outside the git worktree by default.
 
-| Decision | Condition |
-|---|---|
-| `APPLY_STRONGLY` | fit_score ≥ 78 |
-| `APPLY` | fit_score ≥ 67 |
-| `REVIEW_HIGH` | fit_score ≥ 58 |
-| `REVIEW_LOW` | fit_score ≥ 30 |
-| `SKIP` | fit_score < 30 or hard filter triggered |
+- Windows: `~/JobpipeData`
+- macOS: `~/Library/Application Support/JobPipe`
+- Linux: `$XDG_DATA_HOME/jobpipe` or `~/.local/share/jobpipe`
+- Override anywhere with `JOBPIPE_DATA_ROOT`
 
-Thresholds live in `configs/pipeline.v1.yaml` and are applied at export time — no re-run needed after changes.
+This data root holds local state such as `.env`, `profile_pack.md`, `resume.json`, Gmail credentials/tokens, `jobs_state.json`, `jobs_delta.jsonl`, `out_runs/`, `reports/ledger.sqlite`, and the exported dashboard. The repo keeps code, templates, configs, and docs.
 
----
+## Quick Start
 
-## Per-job artifacts
+Requirements:
+- Python 3.11+
+- `.venv` with project dependencies installed
+- `OPENAI_API_KEY` in the data-root `.env`
+- Google Sheet CSV access for the NAV feed
 
-Every job that passes initial filters produces a full artifact trail:
-
-```
-out_runs/<run_id>/<job_id>/
-  00_input.json          Normalized job snapshot
-  01_triage.json         AI triage signal + noise_level
-  03_parsed.json         Structured requirements
-  04_profile_match.json  fit_score + dimension breakdown
-  05_pivot.json          pivot_score + rationale
-  06_moderator.json      Final decision + reasoning
-  07_application_pack.json  Cover letter draft + CV highlights (APPLY+ only)
-```
-
-Every decision is traceable. No hidden logic.
-
----
-
-## Setup
-
-**Requirements:** Python 3.11+, OpenAI API key, Google Sheets access (for NAV feed)
+Run the standard flows:
 
 ```powershell
-# Create virtual environment and install dependencies
-python -m venv .venv
-.venv\Scripts\pip install -e .
-
-# Configure environment
-copy .env.example .env
-# Fill in OPENAI_API_KEY and JOBPIPE_CSV_URL in .env
-
-# Configure your candidate profile
-copy profile_pack.example.md profile_pack.md
-# Edit profile_pack.md with your own roles, geo preferences, and background
+.\go.ps1
+.\go.ps1 -DryRun
+.\go.ps1 -NoOpen
 ```
 
-### Gmail integration (optional)
+Useful direct commands:
 
 ```powershell
-# One-time OAuth setup
-python -m jobpipe.cli.scan_gmail --setup
-
-# Scan inbox and update application status
-python -m jobpipe.cli.scan_gmail
+.venv\Scripts\python.exe compile_check.py
+.venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.sync_ledger
+.venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
+start $HOME\JobpipeData\exports\dashboard.html
 ```
 
-Requires Gmail API credentials from Google Cloud Console — see `docs/gmail_filter_spec.md`.
+## Dashboard Modes
 
----
+Two supported dashboard modes exist, but they now share one payload contract and the same tracked template:
 
-## Running the pipeline
+1. `<data-root>/exports/dashboard.html`
+   Static self-contained export from SQLite. Read-only.
+2. `python -m jobpipe.cli.dashboard_server`
+   Local interactive mode for direct status updates, notes, CV-builder draft persistence, and application-workspace flows.
+
+Both modes now render from the canonical `build_payload()` output in `jobpipe/cli/export_dashboard.py`.
+
+## Smoke Test
+
+Use this after dashboard/export/server changes:
 
 ```powershell
-.\go.ps1              # Full run: pull → process → sync → open dashboard
-.\go.ps1 -DryRun      # Test mode: 2 jobs only, no browser
-.\go.ps1 -NoOpen      # Full run, skip auto-opening browser
+.venv\Scripts\python.exe compile_check.py
+.venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
+.venv\Scripts\python.exe -m jobpipe.cli.dashboard_server --no-open
 ```
 
-Manual steps are available in `CLAUDE.md` for finer control.
+Manual checks:
+- open `http://127.0.0.1:5100/`
+- confirm `/api/data` loads
+- confirm a note save or CV-draft save survives refresh in local mode
+- rebuild `<data-root>/exports/dashboard.html` and confirm the static export still opens cleanly
 
----
+## Core Docs
 
-## Application tracking
+- [CLAUDE.md](./CLAUDE.md)
+- [PRODUCT_VISION.md](./PRODUCT_VISION.md)
+- [AGENT_STATUS.md](./AGENT_STATUS.md)
+- [AUDIT.md](./AUDIT.md)
+- [docs/architecture-plan.md](./docs/architecture-plan.md)
+- [docs/mvp-task-plan.md](./docs/mvp-task-plan.md)
+- [DASHBOARD_SPEC.md](./DASHBOARD_SPEC.md)
 
-```powershell
-python -m jobpipe.cli.mark_status JOB_ID shortlisted
-python -m jobpipe.cli.mark_status JOB_ID applied
-python -m jobpipe.cli.mark_status JOB_ID interview
-python -m jobpipe.cli.mark_status JOB_ID rejected --notes "Form letter"
-python -m jobpipe.cli.mark_status JOB_ID dismissed
-python -m jobpipe.cli.mark_status --list
-```
+## Documentation Discipline
 
----
+This repo should stay on a small canonical doc set. Do not create ad hoc dated audits, loose research dumps, duplicate agent guides, or extra "next steps" files when the information belongs in an existing source of truth.
 
-## Adapting to your own job search
+Use these files instead:
 
-Jobpipe is built around a `profile_pack.md` file that defines your target roles, geographic constraints, keyword signals, and career evidence. The pipeline uses this file as the truth source for all triage and scoring decisions.
+- `README.md`: repo entrypoint and operator quickstart
+- `CLAUDE.md`: operating rules and workflow guardrails
+- `AGENT_STATUS.md`: current state, handoffs, cross-agent requests
+- `AUDIT.md`: bugs, quality issues, and audit history
+- `PRODUCT_VISION.md`: product goals and roadmap
+- `docs/architecture-plan.md`: architecture and red-line contract
+- `docs/mvp-task-plan.md`: one ordered execution plan
+- `DASHBOARD_SPEC.md`: dashboard and payload contract
 
-Start from `profile_pack.example.md` and replace with your own:
-- Target role titles and seniority level
-- Geographic whitelist (postal code ranges)
-- Hard-no role types
-- Keyword tiers (role anchors, domain signals, noise signals)
-- Career evidence bullets in STAR format
+Specialized docs are allowed only when they map to a concrete subsystem with durable operational value, for example `APPS_SCRIPT_CHANGES.md` or `docs/gmail_filter_spec.md`.
 
-The rest of the pipeline adapts automatically.
+## Current Focus
 
----
+The current project direction is:
+- preserve the red line from source data to decision to dashboard
+- keep the dashboard contract hardened and truthful under live updates
+- keep the local-first data boundary consistent across runtime, docs, and versioning
+- keep the OSS track portable and valuable without hosted infrastructure
+- clean the repo surface before commit so only intentional first-class assets remain
 
-## Key files
+## Historical Note
 
-| File | Purpose |
-|---|---|
-| `go.ps1` | One-shot runner |
-| `configs/pipeline.v1.yaml` | Models, thresholds, regex patterns |
-| `profile_pack.example.md` | Candidate profile template |
-| `jobpipe/stages/` | Pipeline stage implementations |
-| `jobpipe/cli/` | CLI entry points |
-| `apps_script/` | Google Apps Script for NAV feed ingestion |
-| `CLAUDE.md` | Full architecture and operating guide |
-
----
-
-## License
-
-MIT © Lars Værland
+Earlier Supabase-first and backend-heavy planning docs are not the active architecture anymore. The current repo is the file-based `jobpipe/` pipeline described above. Historical notes are kept only for reference.

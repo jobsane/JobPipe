@@ -1,144 +1,339 @@
-# JobPipe Dashboard — Design Spec
+# Dashboard Spec
 
-## Data source
+Last updated: 2026-04-18
 
-Primary: `reports/ledger.sqlite` — two tables:
+## Product Job
 
-### `ledger` table (4,255 rows — one row per unique job, latest state)
-Key columns:
-- `job_id` (TEXT, PK) — unique job identifier
-- `title` (TEXT) — job title
-- `employer` (TEXT) — company name
-- `work_city`, `work_county`, `work_postalCode` (TEXT) — location
-- `applicationDue` (TEXT) — deadline (ISO date or empty)
-- `source_url`, `application_url` (TEXT) — links to job ad
-- `triage_decision` (TEXT) — SKIP | REVIEW | APPLY_CANDIDATE
-- `triage_confidence` (REAL, 0–1)
-- `triage_explanation` (TEXT) — why triage decided what it did
-- `triage_signals` (TEXT) — comma-separated signal tags (e.g. "geo_postal_skip", "safety:target_title")
-- `fit_score` (INTEGER, 0–100) — profile match score (NULL if triage SKIP'd)
-- `pivot_score` (INTEGER, 0–100) — career pivot potential score
-- `final_decision` (TEXT) — **APPLY_STRONGLY | APPLY | REVIEW_HIGH | REVIEW_LOW | SKIP**
-- `final_confidence` (REAL, 0–1)
-- `recommendation_reason` (TEXT) — moderator's reasoning
-- `cv_focus` (TEXT) — what to emphasize in CV
-- `run_id` (TEXT) — which pipeline run produced this result
-- `run_seen_at` (TEXT) — timestamp of the run
-- `updated_at` (TEXT) — last update timestamp
-- `description_snip` (TEXT) — first ~500 chars of job description
-- `raw_index_json`, `raw_match_json`, `raw_pivot_json`, `raw_moderator_json` (TEXT) — full JSON from each stage
+The dashboard must answer two questions quickly:
 
-### `events` table (4,704 rows — one row per run × job)
-Same core fields as ledger but tracks every run, useful for history/trends.
+1. What should Lars do right now?
+2. Why did this job survive or fail the pipeline?
 
-### Current distribution (as of 2026-04-13)
-- Total unique jobs: 7,898
-- Total events (runs): 8,242
-- Actionable (non-SKIP): 65
-- Note: thresholds raised 2026-04-13 (apply_fit 62->67, apply_strong 75->78, review_min 25->30). export_dashboard.py re-applies current thresholds at export time so historical jobs are always re-classified against the latest config.
+Everything else is secondary.
 
----
+## Current Runtime Modes
 
-## Pipeline stages (the funnel)
+### 1. Static export
 
-Jobs flow through these stages in order:
-
-1. **Geo filter** (pre-AI, zero-cost) — hard-blocks by Norwegian postal code. Signal: `geo_postal_skip`
-2. **Hard-no title filter** (pre-AI, regex) — blocks retail/sales/clinical titles. Signal: `hard_no_title`
-3. **Triage** (LLM, gpt-4.1-nano) — AI first-pass. Output: SKIP / REVIEW / APPLY_CANDIDATE
-4. **Safety overrides** (post-triage regex) — can force REVIEW on SKIPs if target-title/strong-positive/weak-positive signals are present. Signals: `safety:target_title`, `safety:very_strong`, `safety:weak`
-5. **Reverse triage** (LLM, gpt-4.1-mini) — reconsiders low-confidence SKIPs. Only runs when triage=SKIP and confidence < threshold and NOT geo-skip
-6. **Parse** (LLM) — extracts structured requirements from job ad
-7. **Profile match** (LLM) — scores fit 0–100 against candidate profile
-8. **Pivot** (LLM) — scores career-pivot potential 0–100
-9. **Moderate** (deterministic, no LLM) — combines fit + pivot into final decision using thresholds
-
-### Final decision thresholds (from pipeline.v1.yaml)
-- fit < 25 → SKIP (hard floor, regardless of pivot)
-- fit >= 75 AND strong signals → APPLY_STRONGLY
-- fit >= 62 → APPLY
-- fit >= 55 → REVIEW_HIGH
-- fit >= 25 → REVIEW_LOW
-
----
-
-## Dashboard sections (recommended)
-
-### 1. Action list (TOP PRIORITY — this is what Lars opens the dashboard for)
-Table of jobs where `final_decision` IN (APPLY_STRONGLY, APPLY, REVIEW_HIGH), sorted by fit_score DESC.
-
-Columns: title, employer, fit_score, pivot_score, final_decision, applicationDue, application_url (as clickable link), cv_focus, recommendation_reason
-
-Color-code rows: APPLY_STRONGLY=green, APPLY=blue, REVIEW_HIGH=amber
-
-Show count badge: "14 APPLY_STRONGLY, 11 APPLY, 0 REVIEW_HIGH"
-
-Clicking a row should expand to show: triage_explanation, match overlaps/gaps (from raw_match_json), pivot reasoning (from raw_pivot_json), full recommendation_reason
-
-### 2. Pipeline funnel
-Visual showing job counts at each stage:
-- Total jobs in → Geo-passed → Hard-no passed → Triage passed → Final non-SKIP
-
-Show as horizontal bar chart or Sankey diagram. Key metric: **triage pass rate** (% of jobs that survive triage). Target: 5–15%.
-
-To compute this from the ledger:
-- Geo-blocked: WHERE triage_signals LIKE '%geo_postal_skip%' OR triage_signals LIKE '%geo_skip%'
-- Hard-no blocked: WHERE triage_signals LIKE '%hard_no_title%'
-- AI-SKIP: WHERE triage_decision = 'SKIP' AND above conditions not met
-- Passed triage: WHERE triage_decision != 'SKIP'
-
-### 3. SKIP breakdown (donut/pie)
-Why jobs were filtered:
-- Geo-blocked (postal code outside allowed area)
-- Hard-no title (regex matched retail/sales/clinical)
-- AI-decided SKIP (LLM said not relevant)
-- Safety-overridden then SKIP'd at moderator (passed triage via safety but fit_score too low)
-
-### 4. Score distribution
-Histogram or scatter plot of `fit_score` vs `pivot_score` for all jobs that passed triage. Color by final_decision. This shows whether the scoring is well-calibrated or if everything clusters in one zone.
-
-### 5. Run history (timeline)
-Line chart of runs over time (from events table, grouped by run_id → run_seen_at):
-- Jobs processed per run
-- Pass rate per run
-- Number of APPLY+ decisions per run
-
-Shows the effect of tuning changes over time.
-
-### 6. Top employers
-Bar chart of employers that appear most often in APPLY+ decisions. Helps Lars see which organizations consistently match his profile.
-
-### 7. Expiring soon
-Filtered view of action-list items where `applicationDue` is within the next 7 days. Urgent banner.
-
----
-
-## Technical notes
-
-### Generating the data export
-Add a step to the pipeline's RunAll.cmd:
+Built by:
 
 ```powershell
-python -m jobpipe.cli.sync_ledger --out .\out_runs --sqlite .\reports\ledger.sqlite
-python -c "
-import sqlite3, json
-db = sqlite3.connect('reports/ledger.sqlite')
-db.row_factory = sqlite3.Row
-jobs = [dict(r) for r in db.execute('SELECT * FROM ledger ORDER BY fit_score DESC')]
-events = [dict(r) for r in db.execute('SELECT run_id, job_id, run_mtime, seen_at, final_decision, fit_score, pivot_score, triage_decision FROM events ORDER BY run_mtime')]
-with open('reports/dashboard_data.json', 'w') as f:
-    json.dump({'jobs': jobs, 'events': events, 'generated_at': __import__('datetime').datetime.now().isoformat()}, f, default=str)
-"
+.venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
 ```
 
-### Triage signals parsing
-The `triage_signals` column is a JSON array stored as text. Parse it to categorize SKIPs:
-- Contains "geo_postal_skip" or "geo_skip" → geo-blocked
-- Contains "hard_no_title" → hard-no title
-- Contains "safety:" prefix → was overridden by safety system
-- Otherwise → AI-decided
+Output:
+- `<data-root>/exports/dashboard.html` by default
+- any alternate `--out` target, including repo-local exports when explicitly requested
 
-### Raw JSON columns
-`raw_match_json` contains the full ProfileMatchOut (overlaps, gaps, hard_blockers). Parse and display in the expanded row view for each job.
-`raw_pivot_json` contains PivotOut (pivot_type, why_it_matters, potential_risk).
-`raw_moderator_json` contains ModeratorOut (recommendation_reason, cv_focus, feedback_flags).
+Behavior:
+- read-only
+- payload is embedded inline at export time
+- no local mutation endpoints
+
+### 2. Local interactive mode
+
+Started by:
+
+```powershell
+.venv\Scripts\python.exe -m jobpipe.cli.dashboard_server
+```
+
+Serves:
+- the same tracked dashboard template rendered directly from live `build_payload()` output
+- application status updates
+- notes
+- application workspace
+- `resume.json`
+
+Behavior:
+- no dependency on a previously exported `reports/dashboard.html`
+- detail-pane status buttons write through `/api/status`
+- detail-pane notes write through `/api/notes`
+- generated documents download through the server route instead of raw filesystem links
+- `/api/data` returns the same payload contract as static export
+
+## Current Verified State
+
+As of the 2026-04-18 Topic 6 hardening pass:
+
+- jobs in ledger: 7,684
+- events: 8,980
+- actionable jobs: 87
+- payload size: about 14.1 MB
+- payload schema version: `jobpipe.dashboard.v2`
+- source taxonomy rows in ledger: 7,499
+- taxonomy rows without source identity after carry-through rebuild: 0
+- pack-ready rows in ledger: 26
+- grouped actionable queue rows in Jobs/Workspace views: 85
+- payload soft budget: 16 MiB
+- payload meta now reports actual size and event pruning state on every build
+
+The exporter is still fast enough for local use. The remaining pressure is payload growth over time, JS-only queue grouping, and the still-separate deep drafting surface.
+
+## Payload Budget And Pruning
+
+The dashboard payload now has explicit guardrails:
+
+- soft budget: `16 MiB`
+- event hard cap: `10,000` rows
+- event floor after pruning: `2,000` rows
+- pruning target: oldest event history first
+
+Rules:
+
+1. Keep the full `jobs` list because the dashboard/debug surfaces still depend on it.
+2. Cap `events` at the newest `10,000` rows.
+3. If the payload still exceeds the soft budget, prune additional oldest events in chunks until the payload drops under budget or reaches the `2,000`-event floor.
+4. Report the result in `payload_meta` so static export and local server mode can both expose truthful size/pruning state.
+
+## Current Gaps
+
+1. some actionable rows still have no fixed deadline because the source data itself does not expose one.
+2. queue dedupe/grouping is currently a UI concern; the raw payload and pipeline metrics still keep source-level duplicates for traceability.
+3. the local CV builder now persists to `<data-root>/reports/profile_builder_state.json`; that solves the repo-boundary issue, but the draft still intentionally does not write back into tracked source files.
+4. the application workspace now has a first-class dashboard entry page, but deep drafting still opens the dedicated `/apply/<job_id>` surface.
+
+## Required Payload Shape
+
+The dashboard should receive one canonical payload from `build_payload()`, and both static/exported outputs should be built from the same tracked template:
+
+```json
+{
+  "generated_at": "2026-04-17T12:34:56Z",
+  "schema_version": "jobpipe.dashboard.v2",
+  "payload_meta": {},
+  "thresholds": {},
+  "config_snapshot": {},
+  "profile": {},
+  "jobs": [],
+  "events": []
+}
+```
+
+## Job Record Requirements
+
+Every job record should carry these groups of fields.
+
+### Identity
+
+- `job_id`
+- `run_id`
+- `job_source`
+- `job_status`
+- `suggested_by_platform`
+- `title`
+- `normalized_title`
+- `employer`
+
+### Timing
+
+- `run_seen_at`
+- `updated_at`
+- `applicationDue`
+- `closed_at`
+
+### Action links
+
+- `source_url`
+- `application_url`
+
+### Location
+
+- `work_city`
+- `work_county`
+- `work_postalCode`
+
+### Source taxonomy
+
+- `occ_level1`
+- `occ_level2`
+- `cat_type`
+- `cat_code`
+- `cat_name`
+- `cat_score`
+- `sector`
+
+### Decision pipeline
+
+- `triage_decision`
+- `triage_confidence`
+- `triage_signals`
+- `triage_explanation`
+- `skip_reason`
+- `fit_score`
+- `pivot_score`
+- `final_decision`
+- `final_confidence`
+- `recommendation_reason`
+
+### Detail/debug
+
+- overlaps
+- gaps
+- hard blockers
+- profile-match dimensions
+- pivot rationale
+- moderator guidance
+
+### Application tracking
+
+- `app_status`
+- `app_stages`
+- `app_outcome`
+- `app_notes`
+- `app_updated_at`
+- `app_source`
+
+### Pack summary
+
+- `generated_documents`
+- `no_score_reason_label`
+- `pack_ready`
+- `pack_generated_at`
+- `pack_has_cover_letter`
+- `pack_highlight_count`
+- `pack_docx_ready`
+
+## Profile Payload Requirements
+
+The dashboard needs a first-class profile object built from:
+- `<data-root>/profile_pack.md`
+- `<data-root>/reports/resume.json`
+
+It should expose:
+- basics: name, label, summary, location
+- builder state: persisted local CV edits when present
+- target roles
+- target geography
+- strengths and evidence highlights
+- reusable CV highlights
+- skills
+- current education / modules
+
+This is the data source for the live Profile & CV builder/preview page.
+
+## Event Payload Requirements
+
+Events should support:
+- run volume
+- pass rate
+- APPLY volume
+- source mix
+- calibration over time
+
+Minimum event fields:
+- `run_id`
+- `job_id`
+- `run_mtime`
+- `seen_at`
+- `job_source`
+- `job_status`
+- `skip_reason`
+- `triage_decision`
+- `final_decision`
+- `fit_score`
+- `pivot_score`
+
+## Smoke Test
+
+Run this after dashboard/export/server changes:
+
+```powershell
+.venv\Scripts\python.exe compile_check.py
+.venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
+.venv\Scripts\python.exe -m jobpipe.cli.dashboard_server --no-open
+```
+
+Manual pass:
+- open `<data-root>/exports/dashboard.html`
+- open `http://127.0.0.1:5100/`
+- confirm `/api/data` returns the payload
+- confirm a saved note or CV draft survives refresh in local mode
+
+## Pages
+
+### 1. Jobs
+
+Purpose:
+- daily action list
+- status updates
+- deadline triage
+- pack-ready visibility
+
+Must show:
+- decision
+- status
+- title/employer/location
+- fit/pivot
+- deadline
+- source/apply link
+- pack-ready state
+- source filter for queue-facing review
+- visible data-gap disclosure when a row is missing employer, deadline, location, apply link, or taxonomy
+
+### 2. Pipeline
+
+Purpose:
+- understand what the pipe is doing
+
+Must show:
+- funnel based on explicit `skip_reason`
+- skip breakdown
+- score distributions
+- threshold overlays from payload thresholds
+- token-waste view
+
+### 3. Profile & CV
+
+Purpose:
+- keep the source-of-truth candidate material inside the product
+- allow fast local tailoring without leaving the dashboard
+
+Must show:
+- editable local CV fields seeded from tracked source data
+- persisted local builder draft when available
+- live CV preview
+- resume summary
+- experience
+- reusable highlights
+- current study modules
+- target roles and signals from `<data-root>/profile_pack.md`
+
+### 4. Application Workspace
+
+Purpose:
+- write, refine, and export job-specific application material
+
+Current implementation:
+- `reports/apply_template.html`
+
+Future requirement:
+- keep the dedicated drafting route, but persist its local state more intentionally and tie it more closely to queue grouping/dedupe.
+
+### 5. Debug / Data
+
+Purpose:
+- inspect completeness and failures quickly
+
+Should show:
+- payload version
+- field completeness
+- latest run id
+- pack generation status
+- server/static mode
+- per-source quality summary so sparse sources such as favorites are visible instead of being mistaken for scoring drift
+
+## Validation Rules
+
+The dashboard is correct only if:
+
+- funnel counts equal ledger `skip_reason` counts
+- geo-block KPI equals explicit `skip_reason='geo'` count
+- threshold lines use exported thresholds
+- config-sensitive views read `config_snapshot` rather than hardcoded assumptions
+- jobs do not disappear because the UI guessed wrong
+- the same tracked template can rebuild both repo output and any user-facing `--out` target
+- profile/CV data is visible without leaving the main product surface
+- queue-facing views may group duplicate source variants without changing raw pipeline totals
+- static mode and local server mode read the same payload contract

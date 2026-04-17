@@ -10,6 +10,22 @@ Before writing any code or making any changes, read these three files in order:
 
 After making changes: **update your sections in AGENT_STATUS.md and AUDIT.md**.
 
+## Documentation discipline
+
+Keep documentation inside the canonical files. Do not create extra dated audits, duplicate agent guides, loose research dumps, or backup planning notes unless the user explicitly asks for a new artifact.
+
+Canonical set:
+- `README.md` — repo entrypoint and operator quickstart
+- `CLAUDE.md` — repo operating guide
+- `AGENT_STATUS.md` — current workstream state and handoffs
+- `AUDIT.md` — defects, data-quality issues, debt, and audit history
+- `PRODUCT_VISION.md` — strategy, success metrics, and roadmap
+- `docs/architecture-plan.md` — architecture and red-line contract
+- `docs/mvp-task-plan.md` — ordered implementation plan
+- `DASHBOARD_SPEC.md` — dashboard and payload contract
+
+Only keep specialized docs when they support a specific subsystem with ongoing operational value, such as `APPS_SCRIPT_CHANGES.md` or `docs/gmail_filter_spec.md`.
+
 ---
 
 ## What this repo is
@@ -31,8 +47,8 @@ An AI-powered job hunting pipeline that pulls jobs from a Google Sheet (sourced 
 NAV API (pam-stilling-feed)
     ↓ Apps Script (trigger-based, ~hourly, 50 jobs/run)
 Google Sheet (JobFeed tab, ~35,850 rows × 59 cols)
-    ↓ pull_sheets_csv.py (pulls delta, writes jobs_delta.jsonl)
-jobs_delta.jsonl
+    ↓ pull_sheets_csv.py (pulls delta, writes <data-root>/jobs_delta.jsonl)
+<data-root>/jobs_delta.jsonl
     ↓ run_feed.py / drain_queue.py
     ├─ [FREE]  Geo postal filter    → SKIP if outside 0xxx/1xxx/3xxx/4xxx
     ├─ [FREE]  Hard-no title regex  → SKIP on irrelevant titles
@@ -45,11 +61,11 @@ jobs_delta.jsonl
     └─ [DEEP]  Application pack     → deepagents + FilesystemBackend, only for APPLY / APPLY_STRONGLY
     # Reverse triage disabled — redundant given current triage accuracy. Re-enable in YAML if needed.
     ↓
-out_runs/<run_id>/<job_id>/         per-job JSON artifacts
+<data-root>/out_runs/<run_id>/<job_id>/         per-job JSON artifacts
     ↓ sync_ledger.py
-reports/ledger.sqlite               deduplicated, latest state per job
+<data-root>/reports/ledger.sqlite               deduplicated, latest state per job
     ↓ export_dashboard.py
-reports/dashboard.html              self-contained HTML, opens in browser
+<data-root>/exports/dashboard.html              self-contained HTML, opens in browser
 ```
 
 ---
@@ -58,8 +74,8 @@ reports/dashboard.html              self-contained HTML, opens in browser
 
 | Workstream | Owns |
 |---|---|
-| Pipeline chat | `jobpipe/stages/`, `jobpipe/core/`, `configs/`, `profile_pack.md` |
-| Dashboard chat | `reports/dashboard_template.html`, `reports/dashboard.html`, `jobpipe/cli/export_dashboard.py` |
+| Pipeline chat | `jobpipe/stages/`, `jobpipe/core/`, `configs/`, `<data-root>/profile_pack.md` |
+| Dashboard chat | `reports/dashboard_template.html`, `<data-root>/exports/dashboard.html`, `jobpipe/cli/export_dashboard.py` |
 | API import chat | Apps Script code, `jobpipe/cli/pull_sheets_csv.py` |
 | Shared (all) | `jobpipe/cli/sync_ledger.py`, `AGENT_STATUS.md`, `AUDIT.md`, `PRODUCT_VISION.md`, `DASHBOARD_SPEC.md` |
 
@@ -106,7 +122,7 @@ def stage_factory(...) -> tuple[should_run_fn, run_fn]:
 | `apply_strong_fit` | 78 | Minimum for APPLY_STRONGLY |
 | `pivot_boost_apply` | 78 | Pivot score needed to boost a borderline job to APPLY |
 | `reverse_triage_min_conf` | 0.60 | Confidence threshold to trigger reverse triage (disabled) |
-| `semantic_filter_threshold` | 0.45 | Cosine similarity floor before LLM triage (multilingual-MiniLM) |
+| `semantic_filter_threshold` | 0.30 | Cosine similarity floor before LLM triage (multilingual-MiniLM) |
 
 Final decisions: `SKIP`, `REVIEW_LOW`, `REVIEW_HIGH`, `APPLY`, `APPLY_STRONGLY`
 
@@ -150,31 +166,37 @@ When modifying a stage, preserve existing output fields. Add new fields freely. 
 ```
 `go.ps1` always uses `.venv\Scripts\python.exe` — no system Python issues.
 
+Local user state now lives under a stable JobPipe data root outside the repo:
+- Windows: `~/JobpipeData`
+- macOS: `~/Library/Application Support/JobPipe`
+- Linux: `$XDG_DATA_HOME/jobpipe` or `~/.local/share/jobpipe`
+- Override with `JOBPIPE_DATA_ROOT`
+
 ### Manual steps (advanced)
 Always use `.venv\Scripts\python.exe` to ensure deepagents and all deps are available.
 
 #### Pull delta from Sheet
 ```powershell
-.venv\Scripts\python.exe -m jobpipe.cli.pull_sheets_csv --out .\jobs_delta.jsonl --state .\jobs_state.json --only-changed
+.venv\Scripts\python.exe -m jobpipe.cli.pull_sheets_csv --only-changed
 ```
 
 #### Run pipeline (bounded)
 ```powershell
 $env:OPENAI_AGENTS_DISABLE_TRACING="1"
-.venv\Scripts\python.exe -m jobpipe.cli.run_feed --jobs .\jobs_delta.jsonl --profile .\profile_pack.md --config .\configs\pipeline.v1.yaml --out .\out_runs --max 100 --overwrite
+.venv\Scripts\python.exe -m jobpipe.cli.run_feed --jobs $HOME\JobpipeData\jobs_delta.jsonl --max 100 --overwrite
 ```
 
 #### Drain queue (pull + run until done)
 ```powershell
 $env:OPENAI_AGENTS_DISABLE_TRACING="1"
-.venv\Scripts\python.exe -m jobpipe.cli.drain_queue --profile .\profile_pack.md --config .\configs\pipeline.v1.yaml --out .\out_runs --state .\jobs_state.json --batch-size 100 --overwrite
+.venv\Scripts\python.exe -m jobpipe.cli.drain_queue --batch-size 100 --overwrite
 ```
 
 ### Sync ledger + regenerate dashboard
 ```powershell
-python -m jobpipe.cli.sync_ledger --out .\out_runs --sqlite .\reports\ledger.sqlite --csv .\reports\ledger_latest.csv
+python -m jobpipe.cli.sync_ledger
 python -m jobpipe.cli.export_dashboard
-start reports\dashboard.html
+start $HOME\JobpipeData\exports\dashboard.html
 ```
 
 ### Mark application status (manual)
@@ -198,8 +220,8 @@ python -m jobpipe.cli.scan_gmail --dry-run        # preview matches, no writes
 python -m jobpipe.cli.scan_gmail                  # scan last 90 days, write updates
 python -m jobpipe.cli.scan_gmail --days 30 -v     # verbose, last 30 days
 ```
-Gmail credentials: `reports/gmail_credentials.json` (download from Google Cloud Console)
-Gmail token: `reports/gmail_token.json` (auto-created after --setup)
+Gmail credentials: `<data-root>/reports/gmail_credentials.json` (download from Google Cloud Console)
+Gmail token: `<data-root>/reports/gmail_token.json` (auto-created after --setup)
 Never overwrites manual entries. Only upgrades status (applied → interview → rejected).
 
 ### Compile check (run before every commit)
@@ -236,7 +258,7 @@ Always test with `-DryRun` (2 jobs) before a full run.
 - `ledger` — latest state per `job_id` (upserted on each sync)
 - `events` — run history (one row per job per run)
 
-`drain_queue.py` skips jobs already in the ledger by default. Use `--ledger-sqlite .\reports\ledger.sqlite` to specify a non-default path.
+`drain_queue.py` skips jobs already in the ledger by default. Use `--ledger-sqlite <data-root>\reports\ledger.sqlite` to specify a non-default path.
 
 ### Data freshness
 Pipeline runs are currently manual. After each run:
@@ -251,16 +273,16 @@ Pipeline runs are currently manual. After each run:
 | File | Purpose |
 |---|---|
 | `configs/pipeline.v1.yaml` | Pipeline config — models, stages, thresholds, regex |
-| `profile_pack.md` | Candidate profile — truth source for triage and matching |
-| `jobs_delta.jsonl` | Input to pipeline — pulled from Google Sheet |
-| `jobs_state.json` | Change tracking state for delta pull |
-| `reports/ledger.sqlite` | Deduplicated job ledger (tables: `ledger`, `events`) |
-| `reports/ledger_latest.csv` | CSV export of ledger for quick inspection |
+| `<data-root>/profile_pack.md` | Candidate profile — truth source for triage and matching |
+| `<data-root>/jobs_delta.jsonl` | Input to pipeline — pulled from Google Sheet |
+| `<data-root>/jobs_state.json` | Change tracking state for delta pull |
+| `<data-root>/reports/ledger.sqlite` | Deduplicated job ledger (tables: `ledger`, `events`) |
+| `<data-root>/reports/ledger_latest.csv` | CSV export of ledger for quick inspection |
 | `reports/dashboard_template.html` | Dashboard HTML template (use `/*__DASHBOARD_DATA__*/` placeholder) |
-| `reports/dashboard.html` | Built dashboard — self-contained, embeds data inline |
-| `reports/application_state.json` | Application tracking sidecar — manual + Gmail-detected statuses |
-| `reports/gmail_credentials.json` | Gmail OAuth2 client credentials (download from Google Cloud Console) |
-| `reports/gmail_token.json` | Gmail OAuth2 token — auto-created by `scan_gmail --setup` |
+| `<data-root>/exports/dashboard.html` | Built dashboard — self-contained, embeds data inline |
+| `<data-root>/reports/application_state.json` | Application tracking sidecar — manual + Gmail-detected statuses |
+| `<data-root>/reports/gmail_credentials.json` | Gmail OAuth2 client credentials (download from Google Cloud Console) |
+| `<data-root>/reports/gmail_token.json` | Gmail OAuth2 token — auto-created by `scan_gmail --setup` |
 
 ---
 
@@ -269,7 +291,7 @@ Pipeline runs are currently manual. After each run:
 - Geo classification in the dashboard may miscount — some jobs flagged as "geo-blocked" are actually moderator SKIPs at fit<30 with missing stage files. Needs explicit `skip_reason` signal.
 - `triage_signals` empty for some older ledger jobs — sync_ledger didn't read `01_triage.json` during those runs.
 - `scan_gmail.py` requires Gmail API credentials setup before first use — see CLI commands above.
-- Semantic filter multilingual model (paraphrase-multilingual-MiniLM-L12-v2) needs calibration — threshold currently 0.45 (conservative). Calibrate after running on 50+ jobs: check `sim:X.XX` tags in `01_triage.json`, find separation point, raise toward 0.55-0.60.
+- Semantic filter multilingual model (paraphrase-multilingual-MiniLM-L12-v2) still needs calibration follow-up — threshold is currently 0.30 after verified false negatives at 0.45. Recheck `sim:X.XX` tags in `01_triage.json` after a fresh 50+ job sample and only raise it if known-good jobs still survive.
 - `go.ps1 --dry-run` (double-dash) is silently ignored by PowerShell — use `.\go.ps1 -DryRun` instead.
 
 ---

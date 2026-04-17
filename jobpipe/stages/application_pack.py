@@ -7,42 +7,75 @@ from pathlib import Path
 from agents import Agent
 
 from jobpipe.core.schema import JobContext, ApplicationPackOut
+from jobpipe.core.paths import get_jobpipe_paths
 from jobpipe.stages._common import run_agent
 
 logger = logging.getLogger(__name__)
 
-# Path to the candidate's JSON Resume (standard jsonresume.org format)
-_RESUME_JSON_PATH = Path(__file__).parents[2] / "reports" / "resume.json"
+PACK_INSTRUCTIONS = """Du er en norsk søknadsassistent for Lars Værland.
+Du mottar kontekst som JSON og produserer en komplett søknadspakke.
 
-PACK_INSTRUCTIONS = """Du er en norsk søknadsassistent. Du mottar kontekst som JSON og
-produserer en komplett søknadspakke for kandidaten.
+━━━ STILREGLER — ABSOLUTTE KRAV ━━━
 
-Du har tilgang til:
+1. SØKNADSBREV (cover_letter_text):
+   - Lengde: 230-260 ord. Tell nøyaktig — ikke kortere, ikke lengre.
+   - Skriv et KOMPLETT, klart-til-å-sende søknadsbrev på norsk.
+   - Bruk ALDRI tankestrek (—). Bruk komma, kolon eller ny setning i stedet.
+   - Ikke start brevet med "Jeg" — varièr setningsoppbygging.
+   - IKKE si at du er "motivert", "brenner for" eller "drømmer om" stillingen.
+     Demonstrer motivasjon gjennom konkrete handlinger og resultater i stedet.
+   - IKKE bruk klisjéer: "lidenskap", "dedikert", "team player", "drømmejobb".
+   - Skriv handlingsorientert: "Ledet", "Bygde", "Reduserte", ikke "Har erfaring med".
+   - Brevet skal ha tre avsnitt:
+       Avsnitt 1 (3-4 setninger): Koble kandidatens bakgrunn direkte til stillingens
+         kjernutfordring. Konkret kontekst, ikke generell introduksjon.
+       Avsnitt 2 (4-5 setninger): To-tre konkrete eksempler fra erfaring som beviser
+         at kandidaten leverer det stillingen krever. Bruk tall/resultater der det finnes.
+       Avsnitt 3 (2-3 setninger): Avslutning uten klisjé. Si noe konkret om hva
+         kandidaten vil bidra med, og inviter til samtale.
+
+2. CV-HIGHLIGHTS (cv_highlights):
+   - Velg 4-6 bullets fra resume_work.highlights og/eller resume_projects.
+   - Hvert punkt MÅ:
+       a) Speile terminologien fra jobbkravene (ikke kandidatens originale ordlyd)
+       b) Stå alene og gi mening uten kontekst
+       c) Inneholde et verb + kontekst + (helst) resultat
+   - IKKE oppfinn erfaring. Bruk kun det som finnes i resume_work/resume_projects.
+   - IKKE kopier bullets ordrett — omformuler lett for å matche stillingen.
+   - cv_highlights og cv_experience_refs MÅ ha nøyaktig samme antall elementer.
+
+3. TONE:
+   - Selvsikker men ikke skrytende. Faktabasert, ikke selvskryt.
+   - Norsk, ikke oversatt engelsk. Unngå "leverere på", "drive", "stakeholders".
+   - Offentlig sektor: mer vekt på tjenesteutvikling, innbyggerverdi, prosessforbedring.
+   - Privat sektor: mer vekt på vekst, ROI, produkt-marked-fit.
+
+━━━ KONTEKST DU FÅR ━━━
 - job_header: stillingstittel og arbeidsgiver
 - job_parsed: strukturerte jobbkrav (ansvar, must-have, nice-to-have)
 - profile_match: fit_score, overlaps, gaps, hard_blockers
 - pivot: pivot_score og pivot-vurdering
 - moderator: endelig beslutning og cv_focus-anbefalinger
-- profile_pack: kandidatens profil og mål (narrativ)
-- resume_work: kandidatens arbeidshistorie med highlights (JSON Resume-format)
-- resume_projects: kandidatens prosjektportefølje
+- profile_pack: kandidatens profil, mål og nøkkelerfaring (narrativ)
+- resume_work: arbeidshistorie med highlights (JSON Resume-format)
+- resume_projects: prosjektportefølje
 
-For cv_highlights: velg 4-6 bullets fra resume_work.highlights og/eller resume_projects
-som matcher jobbkravene best. Omformuler lett for å speile stillingens terminologi —
-men IKKE oppfinn erfaring. Hvert punkt skal stå alene og si noe konkret.
-
-cv_highlights og cv_experience_refs MÅ ha nøyaktig samme antall elementer.
-
-Vær troverdig og kompakt. Skriv handlingsorientert norsk.
+━━━ PRIORITERING ━━━
+Overlaps fra profile_match er de sterkeste kortene. Bygg brevet rundt dem.
+Gap_mitigations skal adressere de viktigste gapene uten å be om unnskyldning.
+cover_letter_angle er din interne analyse av vinkelen — cover_letter_text er
+det faktiske brevet basert på den analysen.
 """
 
 
 def _load_resume_context() -> dict:
     """Load JSON Resume and extract work + projects for the prompt."""
-    if not _RESUME_JSON_PATH.exists():
+    paths = get_jobpipe_paths()
+    resume_path = paths.resume_json_path if paths.resume_json_path.exists() else paths.resume_fixed_json_path
+    if not resume_path.exists():
         return {"resume_work": [], "resume_projects": []}
     try:
-        with open(_RESUME_JSON_PATH, encoding="utf-8") as f:
+        with open(resume_path, encoding="utf-8") as f:
             data = json.load(f)
         # Compact work entries: keep name, position, dates, summary, highlights
         work = []
@@ -62,7 +95,7 @@ def _load_resume_context() -> dict:
         ]
         return {"resume_work": work, "resume_projects": projects}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[application_pack] could not load resume.json: %s", exc)
+        logger.warning("[application_pack] could not load resume.json from %s: %s", resume_path, exc)
         return {"resume_work": [], "resume_projects": []}
 
 

@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from jobpipe.core.io import load_env_file, read_jsonl_lines, write_jsonl_lines, stable_job_id
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
+_DEFAULT_PATHS = get_jobpipe_paths()
 
 
 def run(cmd: list[str]) -> None:
@@ -108,16 +111,51 @@ def main(argv: Optional[list[str]] = None) -> None:
     )
     ap.add_argument("--csv-url", default="", help="Published CSV URL for the EXPORT sheet (optional if JOBPIPE_CSV_URL is set).")
     ap.add_argument("--sheet-url", default="", help="Google Sheets edit URL (optional alternative to --csv-url).")
-    ap.add_argument("--env-file", default=".env", help="Optional .env file (default: .env).")
-    ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
-    ap.add_argument("--config", default="", help="Path to pipeline YAML (optional).")
-    ap.add_argument("--out", default="./out_runs", help="Output folder for runs (default: ./out_runs)")
-    ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
+        "--env-file",
+        default="",
+        help=f"Optional .env file (default: {_DEFAULT_PATHS.env_file}).",
+    )
+    ap.add_argument(
+        "--profile",
+        default="",
+        help=f"Path to profile_pack.md (default: {_DEFAULT_PATHS.profile_pack_path})",
+    )
+    ap.add_argument(
+        "--config",
+        default="",
+        help=f"Path to pipeline YAML (default: {_DEFAULT_PATHS.default_config_path}).",
+    )
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
+    ap.add_argument(
+        "--out",
+        default="",
+        help=f"Output folder for runs (default: {_DEFAULT_PATHS.out_runs_dir})",
+    )
+    ap.add_argument(
+        "--reports",
+        default="",
+        help=f"Reports folder (default: {_DEFAULT_PATHS.reports_dir})",
+    )
 
-    ap.add_argument("--state", default="./jobs_state.json", help="State JSON used by pull_sheets_csv (default: ./jobs_state.json)")
-    ap.add_argument("--delta", default="./jobs_delta.jsonl", help="Delta JSONL path (default: ./jobs_delta.jsonl)")
+    ap.add_argument(
+        "--state",
+        default="",
+        help=f"State JSON used by pull_sheets_csv (default: {_DEFAULT_PATHS.jobs_state_path})",
+    )
+    ap.add_argument(
+        "--delta",
+        default="",
+        help=f"Delta JSONL path (default: {_DEFAULT_PATHS.jobs_delta_path})",
+    )
 
     ap.add_argument("--batch-size", type=int, default=50, help="How many jobs to process per batch (default: 50)")
+    ap.add_argument("--max-total-jobs", type=int, default=0, help="Stop after processing this many jobs in total (0 = no cap).")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing per-job stage JSONs if they exist.")
     ap.add_argument("--reset-state", action="store_true", help="Delete the state file before starting (forces a full first pass).")
     ap.add_argument("--no-only-changed", action="store_true", help="Pull ALL rows each loop (ignores delta; expensive).")
@@ -133,15 +171,29 @@ def main(argv: Optional[list[str]] = None) -> None:
     # --- Ledger filtering ---
     ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in SQLite ledger (default: on).")
     ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable ledger filtering.")
-    ap.add_argument("--ledger-sqlite", default="", help="SQLite ledger path (default: reports/ledger.sqlite or JOBPIPE_LEDGER_SQLITE).")
+    ap.add_argument(
+        "--ledger-sqlite",
+        default="",
+        help=f"SQLite ledger path (default: {_DEFAULT_PATHS.ledger_sqlite_path} or JOBPIPE_LEDGER_SQLITE).",
+    )
     ap.add_argument("--sync-ledger-before", action="store_true", default=True, help="Sync ledger from out_runs before pulling (default: on).")
     ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
     ap.add_argument("--sync-ledger-after", action="store_true", default=True, help="Sync ledger from out_runs after processing (default: on).")
     ap.add_argument("--no-sync-ledger-after", dest="sync_ledger_after", action="store_false", help="Disable ledger sync after run.")
 
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=True)
 
-    load_env_file(Path(args.env_file))
+    env_file = Path(args.env_file) if args.env_file else paths.env_file
+    profile_path = Path(args.profile) if args.profile else paths.profile_pack_path
+    config_path = Path(args.config) if args.config else paths.default_config_path
+    out_dir = Path(args.out) if args.out else paths.out_runs_dir
+    reports_dir = Path(args.reports) if args.reports else paths.reports_dir
+    state_path = Path(args.state) if args.state else paths.jobs_state_path
+    delta_path = Path(args.delta) if args.delta else paths.jobs_delta_path
+
+    load_env_file(env_file)
 
     csv_url = (args.csv_url or os.environ.get("JOBPIPE_CSV_URL", "")).strip()
     sheet_url = (args.sheet_url or os.environ.get("JOBPIPE_SHEET_URL", "")).strip()
@@ -149,27 +201,35 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise SystemExit("Provide --csv-url or --sheet-url, or set JOBPIPE_CSV_URL/JOBPIPE_SHEET_URL in .env")
 
     py = sys.executable
-    out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    reports_dir = Path(args.reports)
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     ledger_sqlite = (args.ledger_sqlite or os.environ.get("JOBPIPE_LEDGER_SQLITE", "")).strip()
     ledger_path = Path(ledger_sqlite) if ledger_sqlite else (reports_dir / "ledger.sqlite")
 
-    state_path = Path(args.state)
     if args.reset_state and state_path.exists():
         state_path.unlink()
 
-    delta_path = Path(args.delta)
     expired_path = delta_path.parent / "jobs_expired.jsonl"
-    tmp_dir = Path(".jobpipe_tmp")
+    tmp_dir = paths.tmp_dir
     tmp_dir.mkdir(exist_ok=True)
 
     # Optional: keep ledger up to date before we decide what's "processed"
     if args.sync_ledger_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path)]
+        sync_cmd = [
+            py,
+            "-m",
+            "jobpipe.cli.sync_ledger",
+            "--data-root",
+            str(paths.data_root),
+            "--out",
+            str(out_dir),
+            "--reports",
+            str(reports_dir),
+            "--sqlite",
+            str(ledger_path),
+        ]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
@@ -183,12 +243,16 @@ def main(argv: Optional[list[str]] = None) -> None:
     total_batches = 0
 
     while True:
+        if args.max_total_jobs and total_rows_processed >= args.max_total_jobs:
+            print(f"[drain_queue] max_total_jobs reached ({args.max_total_jobs}). Stopping.")
+            break
+
         loops += 1
         if loops > args.max_loops:
             print(f"[drain_queue] max_loops reached ({args.max_loops}). Stopping.")
             break
 
-        pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv"]
+        pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv", "--data-root", str(paths.data_root)]
         if csv_url:
             pull_cmd += ["--csv-url", csv_url]
         else:
@@ -234,6 +298,15 @@ def main(argv: Optional[list[str]] = None) -> None:
             print("[drain_queue] All pulled jobs already in ledger -> done.")
             break
 
+        if args.max_total_jobs:
+            remaining = args.max_total_jobs - total_rows_processed
+            if remaining <= 0:
+                print(f"[drain_queue] max_total_jobs reached ({args.max_total_jobs}). Stopping.")
+                break
+            if len(lines) > remaining:
+                print(f"[drain_queue] trimming pulled rows from {len(lines)} to {remaining} due to max_total_jobs")
+                lines = lines[:remaining]
+
         # Process the pulled delta fully, even if it contains more than batch-size rows.
         bs = max(1, int(args.batch_size))
         for i in range(0, len(lines), bs):
@@ -245,17 +318,23 @@ def main(argv: Optional[list[str]] = None) -> None:
                 py,
                 "-m",
                 "jobpipe.cli.run_feed",
+                "--data-root",
+                str(paths.data_root),
+                "--env-file",
+                str(env_file),
                 "--jobs",
                 str(batch_file),
                 "--profile",
-                args.profile,
+                str(profile_path),
                 "--out",
                 str(out_dir),
                 "--max",
                 str(len(batch)),
             ]
-            if args.config:
-                run_cmd += ["--config", args.config]
+            if config_path:
+                run_cmd += ["--config", str(config_path)]
+            for overlay in args.config_overlay:
+                run_cmd += ["--config-overlay", overlay]
             if args.overwrite:
                 run_cmd += ["--overwrite"]
 
@@ -275,7 +354,19 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Update ledger at the end (so the next run won't reprocess even after reset-state)
     if args.sync_ledger_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path)]
+        sync_cmd = [
+            py,
+            "-m",
+            "jobpipe.cli.sync_ledger",
+            "--data-root",
+            str(paths.data_root),
+            "--out",
+            str(out_dir),
+            "--reports",
+            str(reports_dir),
+            "--sqlite",
+            str(ledger_path),
+        ]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)

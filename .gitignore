@@ -4,6 +4,8 @@ reports/gmail_token.json
 
 # Personal application tracking data
 reports/application_state.json
+reports/profile_builder_state.json
+reports/suggested_jobs.jsonl
 
 # Generated/large data files - too big and regenerable
 reports/ledger.sqlite
@@ -17,6 +19,8 @@ reports/shortlist_*.json
 jobs_delta.jsonl
 jobs_expired.jsonl
 jobs_state.json
+.jobpipe_tmp/
+configs/calibration/
 
 # Pipeline output artifacts (large, fully regenerable)
 out_runs/

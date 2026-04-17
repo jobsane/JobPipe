@@ -5,16 +5,21 @@
 #   .\go.ps1 -NoOpen             full run, skip auto-opening browser
 #   .\go.ps1 -WithSuggestions    scan Gmail for suggestions + fetch queued FINN jobs
 #                                + scrape FINN search by keyword (all daytime only, 09-19 Oslo)
+#   .\go.ps1 -ConfigOverlay <path>  apply one or more private overlay YAML files
 
 param(
     [switch]$DryRun,
     [switch]$NoOpen,
-    [switch]$WithSuggestions
+    [switch]$WithSuggestions,
+    [string[]]$ConfigOverlay,
+    [switch]$Serve        # Start local dashboard server (direct status updates, notes, generation)
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot          # ensure CWD = project root (editable install needs this)
 $py = "$PSScriptRoot\.venv\Scripts\python.exe"
+$dataRoot = if ($env:JOBPIPE_DATA_ROOT) { $env:JOBPIPE_DATA_ROOT } else { Join-Path $HOME "JobpipeData" }
+$dashboardPath = Join-Path $dataRoot "exports\dashboard.html"
 
 if (-not (Test-Path $py)) {
     Write-Error "Venv not found at $py - run: python -m venv .venv && .venv\Scripts\pip install -e ."
@@ -23,9 +28,18 @@ if (-not (Test-Path $py)) {
 
 $env:OPENAI_AGENTS_DISABLE_TRACING = "1"
 $maxJobs = if ($DryRun) { 2 } else { 100 }
+$overlayArgs = @()
+if ($ConfigOverlay) {
+    foreach ($overlay in $ConfigOverlay) {
+        if ($overlay) {
+            $overlayArgs += @("--config-overlay", $overlay)
+        }
+    }
+}
 
 Write-Host ""
 Write-Host "=== JobPipe ===" -ForegroundColor Cyan
+Write-Host "Data root: $dataRoot"
 if ($DryRun) {
     Write-Host "Mode: DRY RUN (max 2 jobs)"
 } else {
@@ -34,7 +48,22 @@ if ($DryRun) {
 if ($WithSuggestions) {
     Write-Host "Suggestions: ON (FINN/LinkedIn email scan + fetch)"
 }
+if ($overlayArgs.Count -gt 0) {
+    Write-Host "Config overlays: $($ConfigOverlay -join ', ')"
+}
+if ($Serve) {
+    Write-Host "Dashboard server: ON (http://localhost:5100)"
+}
 Write-Host ""
+
+# -Serve: start local dashboard server only (no pipeline run)
+if ($Serve) {
+    Write-Host "Starting dashboard server on http://localhost:5100..." -ForegroundColor Cyan
+    Write-Host "(Press Ctrl+C to stop)"
+    & $py -m jobpipe.cli.dashboard_server `
+        @overlayArgs
+    exit 0
+}
 
 # --- Optional: Suggestion intake (FINN/LinkedIn email scan + FINN search scrape) ---
 # Only when -WithSuggestions is passed. All three steps have built-in 09:00-19:00 Oslo
@@ -59,8 +88,8 @@ if ($WithSuggestions) {
     Write-Host ""
     Write-Host "[0c/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
     & $py -m jobpipe.cli.pull_finn_search `
-        --config .\configs\pipeline.v1.yaml `
-        --max 40
+        --max 40 `
+        @overlayArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "pull_finn_search failed (exit $LASTEXITCODE). Continuing."
     }
@@ -70,12 +99,10 @@ if ($WithSuggestions) {
 # 1. Pull + process
 Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
 & $py -m jobpipe.cli.drain_queue `
-    --profile .\profile_pack.md `
-    --config .\configs\pipeline.v1.yaml `
-    --out .\out_runs `
-    --state .\jobs_state.json `
     --batch-size $maxJobs `
-    --overwrite
+    --max-total-jobs $maxJobs `
+    --overwrite `
+    @overlayArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "drain_queue failed (exit $LASTEXITCODE)"
@@ -98,7 +125,7 @@ if ($LASTEXITCODE -ne 0) {
 # 3. Rebuild dashboard
 Write-Host ""
 Write-Host "[3/3] export_dashboard..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.export_dashboard
+& $py -m jobpipe.cli.export_dashboard @overlayArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "export_dashboard failed (exit $LASTEXITCODE)"
@@ -107,8 +134,13 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Green
+Write-Host ""
+Write-Host "Tips:" -ForegroundColor DarkGray
+Write-Host "  .\go.ps1 -Serve   # Start live server (localhost:5100) for direct status updates + notes" -ForegroundColor DarkGray
+Write-Host "  Dashboard export: $dashboardPath" -ForegroundColor DarkGray
+Write-Host ""
 
 if (-not $NoOpen -and -not $DryRun) {
     Write-Host "Opening dashboard..." -ForegroundColor Cyan
-    Start-Process ".\reports\dashboard.html"
+    Start-Process $dashboardPath
 }

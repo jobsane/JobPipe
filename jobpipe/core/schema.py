@@ -89,11 +89,13 @@ class ApplicationPackOut(BaseModel):
     top_value_props: List[str]
     evidence_map: List[str]  # "Job need -> your proof"
     gap_mitigations: List[str]
-    cover_letter_angle: str
+    cover_letter_angle: str        # Strategic angle / approach (internal, used as basis for the letter)
+    cover_letter_text: str = ""    # Complete, ready-to-send søknadsbrev (230-260 words, Norwegian)
     interview_prep: List[str]
     # --- Tailored CV highlights (additive) ---
     # AI-selected experience bullets from JSON Resume most relevant to this job.
     # Each entry is a standalone bullet ready to paste into a CV/cover letter.
+    # Must mirror job posting terminology. Must NOT invent experience.
     cv_highlights: List[str] = Field(default_factory=list)
     # Source references for traceability: e.g. "Brownells Europe (2015-2022)"
     cv_experience_refs: List[str] = Field(default_factory=list)

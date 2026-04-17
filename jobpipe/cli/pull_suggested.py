@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -57,9 +59,10 @@ except Exception:
     # Fallback: CET (UTC+1). Off by 1h during CEST (summer) — close enough for time guard.
     _OSLO_TZ = timezone(timedelta(hours=1))
 
-DEFAULT_SUGGESTED_PATH = Path("./reports/suggested_jobs.jsonl")
-DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_SUGGESTED_PATH = _DEFAULT_PATHS.suggested_jobs_path
+DEFAULT_OUT_PATH = _DEFAULT_PATHS.jobs_delta_path
+DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
 
 _DAYTIME_START = 9   # 09:00 Oslo — start of allowed window
 _DAYTIME_END = 19    # 19:00 Oslo — end of allowed window
@@ -331,19 +334,24 @@ def main(argv: Optional[List[str]] = None) -> None:
         epilog=__doc__,
     )
     ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument(
         "--suggested",
-        default=str(DEFAULT_SUGGESTED_PATH),
-        help="Path to suggested_jobs.jsonl (default: reports/suggested_jobs.jsonl)",
+        default="",
+        help=f"Path to suggested_jobs.jsonl (default: {DEFAULT_SUGGESTED_PATH})",
     )
     ap.add_argument(
         "--out",
-        default=str(DEFAULT_OUT_PATH),
-        help="Output JSONL path to append fetched jobs to (default: jobs_delta.jsonl)",
+        default="",
+        help=f"Output JSONL path to append fetched jobs to (default: {DEFAULT_OUT_PATH})",
     )
     ap.add_argument(
         "--ledger",
-        default=str(DEFAULT_LEDGER_PATH),
-        help="Ledger SQLite for deduplication",
+        default="",
+        help=f"Ledger SQLite for deduplication (default: {DEFAULT_LEDGER_PATH})",
     )
     ap.add_argument(
         "--max",
@@ -375,6 +383,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    suggested_path = Path(args.suggested) if args.suggested else paths.suggested_jobs_path
+    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     if not BS4_AVAILABLE:
         print(
@@ -396,7 +409,6 @@ def main(argv: Optional[List[str]] = None) -> None:
             sys.exit(0)
 
     # --- Load queue ---
-    suggested_path = Path(args.suggested)
     if not suggested_path.exists():
         print(
             f"No suggestion queue found at {suggested_path}.\n"
@@ -414,7 +426,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                 pass
 
     # Filter to FINN jobs that haven't been fetched yet and aren't in ledger
-    ledger_ids = _load_ledger_ids(Path(args.ledger))
+    ledger_ids = _load_ledger_ids(ledger_path)
     finn_pending = [
         j for j in queue
         if j.get("platform") == "finn"
@@ -492,7 +504,6 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # --- Write to jobs_delta.jsonl ---
     if fetched:
-        out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "a", encoding="utf-8") as f:
             for job in fetched:

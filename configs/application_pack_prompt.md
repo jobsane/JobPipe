@@ -1,4 +1,10 @@
 # Søknadspakke-prompt: CV-spissing og søknadsbrev
+
+Status:
+- legacy prompt reference, not the active runtime prompt source
+- the current application-pack stage runs from `jobpipe/stages/application_pack.py::PACK_INSTRUCTIONS`
+- any local files under `configs/calibration/` are user-local calibration material and are intentionally not part of the tracked runtime contract
+
 ## JobPipe — versjon 2.1
 ### Kalibrert mot Lars Værland, april 2026
 
