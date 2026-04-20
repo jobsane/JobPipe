@@ -1,6 +1,6 @@
 # Architecture Plan
 
-Last updated: 2026-04-19
+Last updated: 2026-04-20
 
 This is the canonical architecture note for the active system. Fold architecture updates into this file instead of creating dated architecture snapshots.
 
@@ -1678,6 +1678,12 @@ Rules:
 2. if a sibling change is local-only, checkpoint it in the sibling repo itself before updating the JobPipe pin file
 3. use the JobPipe commit plus `COMPANION_REVISIONS.json` as the auditable stack baseline
 4. do not treat the pin file as permission to widen the integration seam or vendor upstream code into JobPipe
+
+Current JobPipe-side verification seam:
+
+- `python -m jobpipe.cli.check_companion_revisions --strict`
+
+That command checks the pinned local path, git identity, branch, commit, and dirty state for each recorded companion repo before broader stack validation.
 
 Recommended local layout:
 

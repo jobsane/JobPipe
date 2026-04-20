@@ -2388,6 +2388,148 @@ Runtime progress (2026-04-20 — Topic 25 cleanup and checkpoint closeout):
   - `python compile_check.py`
 - Topic 25 closes with one deliberate continuation checkpoint in git, so the repo can resume from a validated baseline instead of an uncommitted backlog.
 
+## Topic 26. Companion Revision Drift Check
+
+Status: done on 2026-04-20
+
+Scope:
+- make the pinned sibling-repo baseline actually checkable from JobPipe
+- avoid relying on remembered sibling SHAs or manual git inspection before stack-level work
+
+Implementation targets:
+- add a JobPipe-side reader for `COMPANION_REVISIONS.json`
+- add one CLI command that checks local companion path, git identity, branch, commit, and dirty state
+- document how that command fits the polyrepo operating model
+
+Validation:
+- `python -m pytest tests/test_companion_revisions.py -q`
+- `python compile_check.py`
+- `python -m jobpipe.cli.check_companion_revisions --strict`
+
+Outcomes:
+- `jobpipe/core/companion_revisions.py` now owns the versioned manifest reader and local repo inspection logic
+- `python -m jobpipe.cli.check_companion_revisions --strict` now provides one repeatable stack-baseline drift check from inside JobPipe
+- the command reports:
+  - missing local repo paths
+  - non-git directories
+  - branch / commit / remote mismatches
+  - dirty sibling worktrees
+- the canonical docs now treat companion revision pins as:
+  - tracked JobPipe metadata
+  - validated by a JobPipe CLI check
+  - still separate from sibling source history
+
+## Topic 27. Canonical Doc Audit And Roadmap Reset
+
+Status: done on 2026-04-20
+
+Scope:
+- audit the canonical docs after Topics 22-26 so roadmap, architecture, and product vision agree again
+- define the next executable arc instead of leaving the repo with no active topic after the baseline cleanup
+
+Implementation targets:
+- reconcile stale "current focus" and roadmap bullets that still describe completed work as pending
+- update the canonical runbook to include the companion drift check where relevant
+- add the next numbered implementation topics in the intended execution order
+
+Validation:
+- manual review of the canonical doc set:
+  - `README.md`
+  - `CLAUDE.md`
+  - `PRODUCT_VISION.md`
+  - `docs/architecture-plan.md`
+  - `docs/mvp-task-plan.md`
+
+Outcomes:
+- the canonical docs now reflect the completed bounded shadow/advantage/outcome loop instead of describing it as wholly future work
+- the runbook now includes the companion revision drift check
+- the next numbered arc is explicit again, with one active next topic
+
+## Topic 28. Scheduled Run Reliability And Freshness Baseline
+
+Status: active
+
+Scope:
+- make the current stack reliable as a day-to-day operator system instead of a manually resumed engineering baseline
+- turn freshness and repeatability into first-class runtime truths
+
+Implementation targets:
+- define one repeatable scheduled-run flow for JobPipe
+- surface feed freshness / last-successful-run state in the control plane
+- integrate companion-revision drift checking into the operator runbook before stack-level validation
+- keep the scope inside JobPipe unless a sibling repo needs a minimal additive seam
+
+Validation:
+- one documented scheduled-run path exists and can be smoke-tested locally
+- freshness state is visible without opening raw files
+- the stack runbook can detect sibling drift before broader validation
+
+## Topic 29. Person-Model Spine And Resume Source Adapters
+
+Status: pending
+
+Scope:
+- replace parallel profile truth with one JobPipe-owned person/profile spine
+- adapt current profile sources into stable derived objects without deep sibling coupling
+
+Implementation targets:
+- define the first persisted `ProfileSnapshot` / `TargetingProfile` / `TriageProfile` / `AuthoringProfile` family
+- build adapters from `profile_pack.md`, `resume.json`, and Reactive Resume-compatible inputs
+- keep Reactive Resume as an external resume system, not a runtime dependency
+
+Validation:
+- one canonical derived profile family exists and is persisted or rebuilt deterministically
+- source provenance is explicit for every derived profile object
+
+## Topic 30. Derived-Profile Consumer Migration
+
+Status: pending
+
+Scope:
+- move real runtime consumers onto the new person/profile spine before adding more authoring complexity
+
+Implementation targets:
+- switch one deterministic consumer onto `TargetingProfile`
+- switch one scoring consumer onto `TriageProfile`
+- switch one authoring consumer onto `AuthoringProfile`
+
+Validation:
+- the selected consumers no longer depend primarily on raw `profile_pack.md` narrative text
+- tests prove the new derived objects are actually being read in those paths
+
+## Topic 31. Application-Pack Rewrite And Tailoring Plan
+
+Status: pending
+
+Scope:
+- upgrade the current application-pack stage from one broad draft object into a thinner, more controllable authoring pipeline
+- prefer structured selection and ordering over freeform rewriting
+
+Implementation targets:
+- define `TailoringPlan`-style selection outputs
+- rewrite the application-pack pipeline around thinner decision and authoring briefs
+- improve cover-letter/CV output quality through a multi-step authoring flow
+
+Validation:
+- one shortlisted job can produce a stronger bounded authoring package than the current single-pass pack flow
+- the new outputs remain explainable and traceable to approved source content
+
+## Topic 32. External Authoring Completion And Saveback Hardening
+
+Status: pending
+
+Scope:
+- complete the current external authoring launch/saveback seam without collapsing external tools into JobPipe
+
+Implementation targets:
+- finish the operational Reactive Resume handoff
+- finish deterministic export capture for CV / cover letter / screening answers
+- keep JobSync mirroring at the ref/provenance layer only
+
+Validation:
+- one full case can move from JobPipe shortlist to external authoring to saveback with deterministic refs and artifact outputs
+- no sibling repo absorbs JobPipe pipeline logic to make that happen
+
 ## Research Backlog
 
 Use this section for items that are strategically important but still too uncertain to schedule as direct implementation.

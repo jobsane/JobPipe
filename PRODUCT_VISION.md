@@ -544,7 +544,7 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 
 #### v1 in progress / next
 - [ ] **Application pack quality upgrade (agentic):** Replace single-shot gpt-4.1-mini call with a multi-step agentic pipeline using a capable model (o3 / gpt-4.1). The agent iterates on the cover letter and CV highlights across multiple reasoning steps — drafting, self-critiquing against job requirements, checking for authentic voice, and refining language. Target: output that requires minimal editing before sending. Hardest part of the pipeline to get right; highest ROI for interview conversion.
-- [ ] Advantageous match scoring: explicit signal when job is in a non-obvious sector or broader than title suggests
+- [x] Advantageous match scoring: explicit signal when job is in a non-obvious sector or broader than title suggests
 - [ ] Automated daily run (Windows Task Scheduler or Cowork scheduled task)
 - [ ] Fix buildIndex_() performance in Apps Script (raise MAX_ENTRIES_PER_RUN 50→200)
 - [ ] Gmail auto-labeling: route LinkedIn/Finn.no alerts to SOKNADSPILOT, skip inbox
@@ -561,6 +561,8 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 - [x] Add a Profile & CV page driven by `<data-root>/profile_pack.md` and `<data-root>/reports/resume.json`
 - [ ] Deadline alert: flag jobs expiring within 7 days in dashboard
 - [x] Define a local-first data root so credentials, profile data, ledgers, and exports survive repo versioning without re-setup
+- [x] Add a bounded experimentation, advantageous-match, and outcome-feedback loop inside JobPipe without auto-changing live ranking or config
+- [x] Add a companion-revision pin file plus drift-check command so the local polyrepo stack can be validated against one checkpoint
 
 ---
 
@@ -597,10 +599,14 @@ Key capabilities v3 would need:
 ## Now / Next / Later (operational)
 
 ### Now
-- [ ] **Application pack — agentic rewrite:** Multi-step agent (o3 / gpt-4.1) for cover letter and CV highlights. Self-critique loop, authentic Norwegian language, output ready to send with minimal editing.
+- [ ] **Application pack — agentic rewrite:** Multi-step authoring pipeline for cover letter and CV highlights, using the thinner decision/authoring briefs instead of the old broad packet shape.
 - [ ] Automated daily run setup (Cowork scheduled task)
 - [ ] Fix Apps Script buildIndex_() performance
-- [ ] Define the first real JobPipe derived-data spine:
+- [ ] Make scheduled operation auditable:
+  - companion drift preflight in the normal runbook
+  - feed freshness timestamp and stale-run visibility
+  - one repeatable local operator checklist for the full stack
+- [ ] Define the first real JobPipe person/profile spine:
   - `ProfileSnapshot`
   - `TargetingProfile`
   - `TriageProfile`
@@ -608,17 +614,11 @@ Key capabilities v3 would need:
   - `ApplicationCaseProjection`
 
 ### Next (weeks)
-- [ ] Mailbox/Finn lead-intake surface in JobPipe settings
-- [x] Replace the legacy JobPipe dashboard shell with a real app-style local control plane, reusing JobSync UI patterns where they fit
-- [x] Settings / Integrations surface for profile pack, targeting, secret presence, and connector state
-- [x] Minimal JobSync intake for promoted leads as `new`
-- [x] Application-packet contract for downstream JobSync and external authoring
 - [ ] LinkedIn email lead extraction
-- [ ] Advantageous match signal in triage + dashboard
 - [ ] Occupation code pre-filtering (NAV styrk08 codes)
 - [ ] Geo filter for city-name-based sources (LinkedIn leads have city, not postal code)
 - [ ] Replace direct early-stage dependence on `profile_pack.md` narrative text with a derived profile adapter layer fed by Reactive Resume-compatible source data and local targeting settings
-- [ ] Define the structured resume-tailoring model:
+- [ ] Define the structured resume-tailoring model and source adapters:
   - `ResumeMaster`
   - `RoleRecord`
   - `RoleVariant`
@@ -627,34 +627,26 @@ Key capabilities v3 would need:
   - `SkillAtom`
   - `NarrativeProfile`
   - `TailoringPlan`
-- [ ] Split the current broad `application_pack` shape into thinner AI-ready decision and authoring briefs
-- [ ] Modularize triage into deterministic gate, feature extraction, semantic scorer, classifier, moderator, and calibration layers
-- [ ] Add a stronger internal JobPipe data store for derived projections, experiments, and low-latency AI/integration reads
-- [ ] Reframe triage as a value-creation layer that determines:
-  - why Lars can win this role
-  - what objections must be neutralized
-  - what the CV should emphasize structurally
-  - what narrative angle should drive the cover letter
+- [ ] Migrate one deterministic consumer and one scoring consumer onto the new profile/person-model spine
 - [ ] Make the external authoring flow operationally complete without overcoupling:
   - Reactive Resume launch + AI-supported editing handoff
   - deterministic CV export capture
   - deterministic cover-letter and screening-answer export storage/registration
+- [ ] Add deadline and freshness signals that support day-to-day operation, not just offline debugging
 
 ### Later (months)
 - [ ] Full external-authoring automation across JobSync, Reactive Resume, and the cover-letter drafting workspace
 - [ ] Automated artifact saveback and per-case file linking
-- [ ] Feedback loop from application outcomes
+- [ ] Promote the bounded outcome-feedback loop into a reviewed config/change workflow without auto-tuning live runtime
 - [ ] Finn.no API investigation
 - [ ] Channel quality metrics
 - [ ] On-demand single job analysis
-- [ ] Make experimentation a first-class toolpack:
-  - shadow scoring
-  - threshold experiments
+- [ ] Broaden the experiment toolpack from the current bounded shadow/review loop into:
   - connector-policy comparison
-  - false-negative review sampling
-  - outcome-linked calibration
-- [ ] Add advantageous-match and applicant-pool scoring on top of the modularized triage features
-- [ ] Use outcome feedback to tune ranking and review order without turning JobSync into a second scoring engine
+  - larger replay datasets
+  - reviewed promotion writeback
+- [ ] Add applicant-pool scoring on top of the current advantageous-match signal once the person/profile spine is stable
+- [ ] Use outcome feedback to tune ranking and review order through reviewed promotion workflows without turning JobSync into a second scoring engine
 
 ## Research Backlog
 

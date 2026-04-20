@@ -317,6 +317,12 @@ Rule:
 .venv\Scripts\python.exe compile_check.py
 ```
 
+### Companion revision drift check
+```powershell
+.venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
+```
+Use this before stack-level validation when the current JobPipe checkpoint depends on sibling repos.
+
 ### Test with small batch first
 ```powershell
 .\go.ps1 -DryRun

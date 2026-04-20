@@ -90,6 +90,7 @@ Useful direct commands:
 ```powershell
 .venv\Scripts\python.exe compile_check.py
 .venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
 .venv\Scripts\python.exe -m jobpipe.cli.sync_mailbox_leads --dry-run
 .venv\Scripts\python.exe -m jobpipe.cli.sync_ledger
 .venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
@@ -335,6 +336,7 @@ Use this after dashboard/export/server changes:
 ```powershell
 .venv\Scripts\python.exe compile_check.py
 .venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
 .venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
 .venv\Scripts\python.exe -m jobpipe.cli.dashboard_server --no-open
 ```
@@ -406,10 +408,10 @@ This split is the preferred product-management structure for the repo. It keeps 
 
 The current project direction is:
 - preserve the red line from source data to decision to dashboard
-- keep the dashboard contract hardened and truthful under live updates
+- keep the companion stack auditable through pinned sibling revisions plus a local drift check
 - keep the local-first data boundary consistent across runtime, docs, and versioning
 - keep the OSS track portable and valuable without hosted infrastructure
-- clean the repo surface before commit so only intentional first-class assets remain
+- define the next execution arc around daily run reliability, the profile/person-model spine, and the application-pack rewrite
 
 ## Historical Note
 
