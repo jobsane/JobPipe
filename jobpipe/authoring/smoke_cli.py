@@ -236,6 +236,12 @@ def _add_arguments(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--candidate", default=None, help="candidate_id (default: default_candidate_id())")
     p.add_argument("--out", default=None, help="Write JSON to this path instead of stdout")
+    p.add_argument(
+        "--validate",
+        action="store_true",
+        default=False,
+        help="Run deterministic validation rules on the built context and report.",
+    )
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -245,6 +251,14 @@ def _run(args: argparse.Namespace) -> int:
         job_id=args.job,
         candidate_id=args.candidate,
     )
+    if args.validate:
+        from jobpipe.authoring.validation import validate_authoring_context
+
+        result = validate_authoring_context(ctx)
+        _print_validation_result(result)
+        if not result.passed:
+            return 2
+
     payload = _to_jsonable(ctx)
     text = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
     if args.out:
@@ -254,6 +268,20 @@ def _run(args: argparse.Namespace) -> int:
         sys.stdout.write(text)
         sys.stdout.write("\n")
     return 0
+
+
+def _print_validation_result(result) -> None:
+    summary = (
+        f"[validate] passed={result.passed}"
+        f"  score={result.score:.2f}"
+        f"  failures={len(result.failures)}"
+        f"  warnings={len(result.warnings)}"
+    )
+    print(summary, file=sys.stderr)
+    for failure in result.failures:
+        print(f"  FAIL: {failure}", file=sys.stderr)
+    for warning in result.warnings:
+        print(f"  WARN: {warning}", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> None:

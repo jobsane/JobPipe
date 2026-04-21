@@ -97,10 +97,37 @@ def _sentinel_context() -> AuthoringCaseContext:
         candidate_id="cand-1",
         job_id="job-1",
         evaluation_id="run-1:job-1",
-        job_summary={"title": "Test Role"},
-        decision_brief={"final_decision": "APPLY"},
-        selected_evidence=[],
-        narrative_brief=None,
+        job_summary={
+            "title": "Test Role",
+            "employer_name": "Example AS",
+            "sector": "Technology",
+            "application_due": "2026-05-01",
+            "source_url": "https://example.test/job-1",
+            "role_summary": "Own product discovery and delivery.",
+        },
+        decision_brief={
+            "final_decision": "APPLY",
+            "recommendation_reason": "Strong fit.",
+            "cv_focus": ["roadmap"],
+            "act_now": "pursue_now",
+            "can_do_score": 84,
+            "can_get_score": 76,
+            "should_want_score": 81,
+            "can_explain_score": 88,
+        },
+        selected_evidence=[
+            {"evidence_unit_id": "evidence-1", "canonical_text": "Led roadmap work."}
+        ],
+        narrative_brief={
+            "core_identity": ["Product leader"],
+            "future_direction": ["AI services"],
+            "motivation_themes": [],
+            "pivot_thesis": ["Credible move"],
+            "direction_fit_score": 82,
+            "motivation_fit_score": 79,
+            "story_strength_score": 88,
+            "motivation_brief": "The role fits.",
+        },
         artifact_plan=None,
     )
 
@@ -198,6 +225,7 @@ def test_cli_run_writes_stdout(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
         job="job-1",
         candidate="cand-1",
         out=None,
+        validate=False,
     )
 
     assert _run(args) == 0
@@ -219,6 +247,76 @@ def test_cli_run_writes_stdout(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
     assert _run(args) == 0
     expected = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
     assert out_path.read_text(encoding="utf-8") == expected
+
+
+def test_validate_flag_passes_on_good_context(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    work_tmp: Path,
+) -> None:
+    monkeypatch.setattr("jobpipe.authoring.smoke_cli.build_context_for_job", lambda **kwargs: _sentinel_context())
+    args = argparse.Namespace(
+        artifacts_root=str(work_tmp / "artifacts"),
+        run="run-1",
+        job="job-1",
+        candidate="cand-1",
+        out=None,
+        validate=True,
+    )
+
+    assert _run(args) == 0
+    captured = capsys.readouterr()
+    assert "passed=True" in captured.err
+    assert "FAIL:" not in captured.err
+
+
+def test_validate_flag_fails_on_bad_context(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    work_tmp: Path,
+) -> None:
+    good = _sentinel_context()
+    bad = AuthoringCaseContext(
+        candidate_id="",
+        job_id=good.job_id,
+        evaluation_id=good.evaluation_id,
+        job_summary=good.job_summary,
+        decision_brief=good.decision_brief,
+        selected_evidence=good.selected_evidence,
+        narrative_brief=good.narrative_brief,
+        artifact_plan=good.artifact_plan,
+    )
+    monkeypatch.setattr("jobpipe.authoring.smoke_cli.build_context_for_job", lambda **kwargs: bad)
+    args = argparse.Namespace(
+        artifacts_root=str(work_tmp / "artifacts"),
+        run="run-1",
+        job="job-1",
+        candidate="cand-1",
+        out=None,
+        validate=True,
+    )
+
+    assert _run(args) == 2
+    captured = capsys.readouterr()
+    assert "passed=False" in captured.err
+    assert "FAIL:" in captured.err
+
+
+def test_validate_flag_absent_returns_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    work_tmp: Path,
+) -> None:
+    monkeypatch.setattr("jobpipe.authoring.smoke_cli.build_context_for_job", lambda **kwargs: _sentinel_context())
+    args = argparse.Namespace(
+        artifacts_root=str(work_tmp / "artifacts"),
+        run="run-1",
+        job="job-1",
+        candidate="cand-1",
+        out=None,
+        validate=False,
+    )
+
+    assert _run(args) == 0
 
 
 def test_no_crewai_import() -> None:
