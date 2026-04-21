@@ -1,7 +1,7 @@
 {
   "active_goal": "Continue job catalog foundation work",
   "current_task_id": "T001",
-  "status": "planning",
+  "status": "decomposed",
   "lead_worker": "claude",
   "active_branch": "claude/job-catalog-foundation-v2",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -20,15 +20,34 @@
       "branch": "codex/job-catalog-foundation-v2"
     }
   },
+  "github_project_item": {
+    "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjqHU",
+    "database_id": 178497653,
+    "project_number": 6,
+    "project_url": "https://github.com/users/larsvaerland/projects/6",
+    "type": "draft_issue",
+    "title": "T001 Slice 1 - inspect-db read-only views for job_claims, job_selection_signals, job_selection_assessments",
+    "fields": {
+      "Status": "Ready",
+      "Priority": "P1",
+      "Size": "S",
+      "Type": "Task",
+      "Area": "Decisioning",
+      "Delegation": "Agent-ready"
+    }
+  },
   "last_handoff_file": "docs/execplans/T001.md",
   "last_tests_run": [],
   "last_test_status": "not_run",
   "open_risks": [
-    "The first real job catalog task has not yet been decomposed by the Claude coordinator.",
     "Do not start Codex implementation until Claude produces an approved one-step worker prompt."
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
-  "touched_files": [],
-  "updated_at": "2026-04-21T00:00:00+02:00"
+  "touched_files": [
+    "docs/execplans/T001.md",
+    "specs/T001-slice-1.md",
+    "docs/current-state.json"
+  ],
+  "updated_at": "2026-04-21T13:25:00+02:00"
 }
