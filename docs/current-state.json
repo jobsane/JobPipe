@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 active — Slices 1/2/3 merged. Slice 4 (#61 smoke CLI hook) planner brief approved by coordinator; ready for Codex handoff.",
+  "active_goal": "T002 authoring MVP Sprint 1 — Slices 1/2/3/4/5 complete. PR #98 (Slice 5 validation rules) open, awaiting merge. Sprint 1 done after merge.",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-4",
-  "status": "slice_4_merged_slice_5_pending",
+  "current_slice": "T002-slice-5",
+  "status": "slice_5_pr_open_awaiting_merge",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -46,13 +46,13 @@
   "last_tests_run": [
     {
       "ran_at": "2026-04-21",
-      "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv)",
+      "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv), codex worktree",
       "commands": [
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_authoring_validation.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp",
         "python compile_check.py",
-        "python -m jobpipe.cli.main inspect-db --help",
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp tests/test_inspect_primary_db_claims.py -q"
+        "python -c \"from jobpipe.authoring.validation import validate_authoring_context; print('ok')\""
       ],
-      "result": "4 passed; compile_check OK (71 files); help lists new --show choices and --job-id"
+      "result": "14 passed; compile_check OK (77 files); import ok"
     }
   ],
   "last_test_status": "passed",
@@ -228,13 +228,13 @@
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
     "artifacts": [
       "docs/decisions.md - Op 2 + Option C decisions as durable record",
-      "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
-      "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
-      "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
-      "docs/ai-playbook.md §Sprint Loops - standing loops for planner, Codex, coordinator",
-      "docs/ai-playbook.md §Cheap Delegation - explicit delegation matrix for each role",
-      "docs/execplans/T002.md §Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
-      "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
+      "docs/ai-playbook.md ┬ºPR target branch - PRs target main post-Op2",
+      "docs/ai-playbook.md ┬ºSlice Brief Self-Review - planner self-validates before handing up",
+      "docs/ai-playbook.md ┬ºCodex Worker Prompt Template - reusable Codex prompt shell",
+      "docs/ai-playbook.md ┬ºSprint Loops - standing loops for planner, Codex, coordinator",
+      "docs/ai-playbook.md ┬ºCheap Delegation - explicit delegation matrix for each role",
+      "docs/execplans/T002.md ┬ºSprint 1 - ordered slice list #58, #59, #60, #61, #63",
+      "docs/execplans/T002.md ┬ºSlice-pickup protocol - planner claims slices 2..N without re-routing",
       "docs/integrations/README.md - upstream role + seam map",
       "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
     ],
@@ -261,8 +261,16 @@
     "status": "slices_1_2_3_merged_slice_4_planner_approved",
     "planner_branch": "claude/T002-authoring-mvp",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec.",
-    "current_slice": "#61",
-    "current_slice_brief": "docs/execplans/T002-slice-4.md"
+    "current_slice": 5,
+    "current_slice_brief": "docs/execplans/T002-slice-4.md",
+    "slices": {
+      "5": {
+        "issue": "#63",
+        "status": "pr_open",
+        "pr": 98,
+        "codex_commit": "4dc86ac"
+      }
+    }
   },
   "current_slice_status": {
     "active_slice": 5,
@@ -308,7 +316,7 @@
     "project_item_status": "Done",
     "acceptance_met": "11/11",
     "validation": "11 tests passed; compile_check OK (75 files); no crewai/autogen/langchain imports; Pydantic v2 .model_dump() used.",
-    "notes": "Pure constructor. keyword-only candidate_id (required) and evaluation_id (default None). _enum_val applied to both final_decision and act_now. ValueError guards for absent moderator/parsed include job_id. Slice 1 docstring drift documented in the brief's Field-source correction note; NOT re-opened — separate follow-up issue recommended for docs hygiene."
+    "notes": "Pure constructor. keyword-only candidate_id (required) and evaluation_id (default None). _enum_val applied to both final_decision and act_now. ValueError guards for absent moderator/parsed include job_id. Slice 1 docstring drift documented in the brief's Field-source correction note; NOT re-opened ΓÇö separate follow-up issue recommended for docs hygiene."
   },
   "t002_authoring_mvp": {
     "t002_slice_4": {
@@ -372,5 +380,23 @@
         "purpose": "Each worker reads WHO_AM_I.md first to prevent cross-worktree branch checkouts and role confusion."
       }
     }
+  },
+  "t002_slice_5": {
+    "issue": "#63",
+    "status": "pr_open",
+    "pr": 98,
+    "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/98",
+    "codex_commit": "4dc86ac",
+    "branch": "codex/T002-authoring-mvp",
+    "project_item": "PVTI_lAHOCSFbLc4BJUdazgqmusE",
+    "project_status": "In progress",
+    "files": [
+      "jobpipe/authoring/validation.py",
+      "tests/test_authoring_validation.py"
+    ],
+    "test_result": "14/14 passed (pytest 9.0.3, Python 3.14.0)",
+    "compile_check": "OK — 77 files parsed cleanly",
+    "crewai_check": "clean",
+    "grep_exe_note": "git-for-windows grep.exe signal-pipe error in sandbox — test_no_crewai_import (Python subprocess scan) passed exit=1 empty stdout; git-native banned-token scan also clean."
   }
 }
