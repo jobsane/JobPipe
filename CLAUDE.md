@@ -39,6 +39,16 @@ Do not drift into recruiter-product scope, ATS parity, broad automation suites,
 generic AI copilot behavior, or open-core ambiguity inside the current public
 repo.
 
+## GitHub Project Board
+
+- GitHub Project #6 is the canonical execution board.
+- Do not treat local notes as the final task system when a Project #6 item
+  exists.
+- If no Project #6 item exists for implementable work, ask before proceeding
+  or create one if explicitly permitted.
+- Coordinator routing output must include `GITHUB PROJECT ITEM STATUS` per
+  `docs/ai-playbook.md`.
+
 ## Escalate
 
 Stop and ask before auth, billing, migrations, deployment, destructive changes,

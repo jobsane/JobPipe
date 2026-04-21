@@ -42,3 +42,15 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: GitHub Project #6 remains the active execution board for backlog placement and sprint tracking.
 - Why: The repo docs should stay high-level and should not duplicate the full backlog tree.
 - Consequence: Durable product or roadmap consequences may be mirrored into repo docs, but active backlog state should stay in GitHub Project #6.
+
+- Date: 2026-04-21
+- Task: Op 2 (OSS unification)
+- Decision: Force-update `origin/main` from `b8bc34c` to the PR #90 merge commit `9446998`, preserving the old `main` tip as annotated tag `oss-main-pre-unify`. Path B (archive + force-update) over Path A (merge --allow-unrelated-histories). PR #90 merged first as a merge commit to preserve review history (Option A ordering).
+- Why: `origin/main` and the real codebase had unrelated histories. Preserving both lineages permanently in main would make the public OSS story permanently confusing. No multi-user or paid work exists yet, so the force-update cost is low and one-time. The archive tag preserves provenance.
+- Consequence: From now on, PRs target `main` directly. The `codex/job-catalog-foundation*` private lanes are retired. Any external clone of the old main must hard-reset. Rollback command is recorded in `docs/current-state.json` under `op2_lane.rollback_command`.
+
+- Date: 2026-04-21
+- Task: T002 (authoring MVP)
+- Decision: Option C (hybrid) for the author/revise layer. Deterministic contracts (`AuthoringCaseContext`, `GeneratedApplicationPackage`, `DocumentValidationResult`) stay JobPipe-native and must not import any agent framework. crewAI (if adopted later) enters only behind a JobPipe-owned adapter inside the author/revise module, which has a typed, framework-agnostic interface.
+- Why: Data is the product. JobPipe is the engine. Locking contracts to any one agent framework (crewAI or otherwise) would trade the product's differentiator for short-term velocity. Keeping the runtime layer swappable preserves the replaceability principle we apply to reactive-resume and jobsync.
+- Consequence: Any slice that imports `crewai` into the contract layer is a routing violation and must be rejected in review. The "no `crewai` import in contract modules or their tests" rule must appear as acceptance criteria on every T002 slice that touches contracts.

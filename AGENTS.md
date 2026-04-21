@@ -49,6 +49,15 @@ Do not drift into recruiter-product scope, ATS parity, broad workflow automation
 generic AI copilot behavior, speculative feature sprawl, or open-core ambiguity
 inside the public repo.
 
+## GitHub Project Board
+
+- GitHub Project #6 is the canonical execution board.
+- Do not start implementation without a Project #6 item linked from the
+  approved one-step worker prompt.
+- If a referenced Project #6 item is missing or stale, stop and report to the
+  coordinator before coding.
+- Detailed rules live in `docs/ai-playbook.md`.
+
 ## Escalate
 
 Stop and ask before touching auth, billing, migrations, deployment, destructive
