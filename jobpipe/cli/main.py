@@ -25,6 +25,7 @@ DEFAULT_ENV_PATH = repo_root() / ".env"
 
 MODULE_COMMANDS = {
     "bootstrap-state-db": "jobpipe.cli.bootstrap_state_db",
+    "build-authoring-context": "jobpipe.authoring.smoke_cli",
     "drain-queue": "jobpipe.cli.drain_queue",
     "export-dashboard": "jobpipe.cli.export_dashboard",
     "export-jobsync": "jobpipe.cli.export_jobsync",
