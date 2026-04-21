@@ -28,6 +28,40 @@ or unexpected drift before proceeding.
 - Codex implements approved changes, keeps diffs narrow, and reports exact test
   results.
 
+## Worker And Model Routing
+
+Model tier defaults, tuned for cost/effect against JobPipe operation scope.
+
+| Operation | Worker | Model tier | Extended thinking |
+|---|---|---|---|
+| Coordinator routing, decomposition, cross-doc audit | Claude Desktop (planner) | Opus | On |
+| Spec / PRD / acceptance-criteria drafting | Claude Desktop or Claude Code | Opus when fuzzy, Sonnet when scoped | On for review, off for first draft |
+| Code review of a Codex PR | Claude Desktop or Claude Code | Sonnet | On |
+| Docs-only cleanup, drift reconciliation | Claude Desktop or Codex | Sonnet | Off |
+| Approved-slice implementation | Codex | GPT-5 default; GPT-5 mini only for rename/format diffs | n/a |
+| Debugging with nonlocal cause | Codex | o-series reasoning | n/a |
+| Commit messages, PR bodies, standups, stakeholder notes | Either | Sonnet; Haiku for mechanical formatting | Off |
+
+Defaults:
+
+- Start on Sonnet for clearly scoped work. Step up to Opus when the redo cost
+  of a wrong answer exceeds the token cost.
+- Turn on extended thinking for coordinator routing, cross-doc audit, code
+  review, and acceptance-criteria writing. Off for drafting, summarizing, and
+  formatting.
+- Step down to Haiku only on mechanical transforms with a cheap oracle (test,
+  schema, diff check) that will catch errors fast.
+
+Hard lines - no tier drop, always Opus with extended thinking:
+
+- auth, billing, migrations, deployment, secrets, destructive deletes
+- pipeline semantics, scoring, selection logic
+- OSS/Workbench boundary changes
+- model-cost changes
+
+These surfaces are also escalation gates under `## Approval Gates`; this
+section only states that a cheaper tier must not be used on them.
+
 ## Branch And Worktree Rules
 
 - One task should have one lead worker and one owned branch.
