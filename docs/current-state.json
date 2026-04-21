@@ -1,46 +1,34 @@
 {
-  "active_goal": "Consolidate dual-client AI instruction placement for JobPipe",
+  "active_goal": "Continue job catalog foundation work",
   "current_task_id": "T001",
-  "status": "in_progress",
-  "lead_worker": "codex",
-  "active_branch": "codex/job-catalog-foundation",
+  "status": "planning",
+  "lead_worker": "claude",
+  "active_branch": "claude/job-catalog-foundation-v2",
+  "coordinator_branch": "ops/orchestrator-v2",
+  "implementation_branch": "codex/job-catalog-foundation-v2",
   "worktrees": {
     "orchestrator": {
-      "path": "../Jobpipe-orchestrator",
-      "branch": "ops/orchestrator"
+      "path": "../Jobpipe-orchestrator-v2",
+      "branch": "ops/orchestrator-v2"
     },
     "claude": {
-      "path": "../Jobpipe-claude",
-      "branch": "claude/T001-job-catalog"
+      "path": "../Jobpipe-claude-v2",
+      "branch": "claude/job-catalog-foundation-v2"
     },
     "codex": {
-      "path": "../Jobpipe-codex",
-      "branch": "codex/T001-job-catalog"
+      "path": "../Jobpipe-codex-v2",
+      "branch": "codex/job-catalog-foundation-v2"
     }
   },
   "last_handoff_file": "docs/execplans/T001.md",
   "last_tests_run": [],
   "last_test_status": "not_run",
   "open_risks": [
-    "New worktrees were created from the previous commit and do not contain this uncommitted instruction setup until it is committed and propagated.",
-    "AUDIT.md and AGENT_STATUS.md remain historical recovery material and should not be treated as active canonical instruction sources."
+    "The first real job catalog task has not yet been decomposed by the Claude coordinator.",
+    "Do not start Codex implementation until Claude produces an approved one-step worker prompt."
   ],
   "blocked_on": [],
-  "needs_founder_decision": [
-    "Whether to archive or delete orchestration prompt templates after role and skill files are accepted.",
-    "Whether to convert the placeholder .mcp.json to an example file until real MCP servers are configured."
-  ],
-  "touched_files": [
-    "AGENTS.md",
-    "CLAUDE.md",
-    "docs/ai-playbook.md",
-    "docs/current-state.json",
-    "docs/decisions.md",
-    "docs/execplans/T001.md",
-    ".codex/agents/",
-    ".agents/skills/",
-    ".claude/agents/",
-    ".claude/skills/"
-  ],
+  "needs_founder_decision": [],
+  "touched_files": [],
   "updated_at": "2026-04-21T00:00:00+02:00"
 }
