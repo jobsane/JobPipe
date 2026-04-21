@@ -1,11 +1,13 @@
 {
   "active_goal": "Continue job catalog foundation work",
   "current_task_id": "T001",
-  "status": "planning",
-  "lead_worker": "claude",
-  "active_branch": "claude/job-catalog-foundation-v2",
+  "current_slice": "T001-slice-1",
+  "status": "implementation_in_progress",
+  "lead_worker": "codex",
+  "active_branch": "codex/job-catalog-foundation-v2",
   "coordinator_branch": "ops/orchestrator-v2",
   "implementation_branch": "codex/job-catalog-foundation-v2",
+  "planner_branch": "claude/job-catalog-foundation-v2",
   "worktrees": {
     "orchestrator": {
       "path": "../Jobpipe-orchestrator-v2",
@@ -21,14 +23,55 @@
     }
   },
   "last_handoff_file": "docs/execplans/T001.md",
+  "last_handoff_at": "2026-04-21T00:00:00+02:00",
+  "last_coordinator_approval": {
+    "slice": "T001-slice-1",
+    "approved_at": "2026-04-21",
+    "approved_by": "coordinator",
+    "planner_commit": "7d6909d",
+    "planner_branch": "claude/job-catalog-foundation-v2",
+    "notes": "Codex worker prompt stamped approved. Escalation gates in the prompt remain in force during implementation."
+  },
   "last_tests_run": [],
   "last_test_status": "not_run",
+  "github_project_item": {
+    "slice": "T001-slice-1",
+    "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjqHU",
+    "project_number": 6,
+    "project_url": "https://github.com/users/larsvaerland/projects/6",
+    "type": "draft_issue",
+    "title": "T001 Slice 1 - Inspect persisted claim layer",
+    "fields": {
+      "status": "In Progress",
+      "priority": "P1",
+      "size": "S",
+      "type": "Task",
+      "area": "Decisioning",
+      "delegation": "Agent-ready"
+    }
+  },
+  "tier_routing_draft": {
+    "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjuzg",
+    "project_number": 6,
+    "project_url": "https://github.com/users/larsvaerland/projects/6",
+    "type": "draft_issue",
+    "title": "Worker And Model Routing governance",
+    "fields": {
+      "status": "Ready",
+      "priority": "P2",
+      "size": "XS",
+      "type": "Task",
+      "area": "Governance",
+      "delegation": "Research only"
+    },
+    "notes": "Playbook section landed on ops/orchestrator-v2 as commit c42e8d6."
+  },
   "open_risks": [
-    "The first real job catalog task has not yet been decomposed by the Claude coordinator.",
-    "Do not start Codex implementation until Claude produces an approved one-step worker prompt."
+    "Codex implementation is in flight on codex/job-catalog-foundation-v2; changes to schema, derive.py, persistence.py, cli/main.py, pipeline stages, or any new runtime dependency must stop and escalate to the coordinator.",
+    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice."
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
   "touched_files": [],
-  "updated_at": "2026-04-21T00:00:00+02:00"
+  "updated_at": "2026-04-21T15:30:00+02:00"
 }
