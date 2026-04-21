@@ -1,5 +1,5 @@
 {
-  "active_goal": "Land T001 Slice 1 via PR #90; plan Op 2 OSS unification + upstream-fork integration strategy",
+  "active_goal": "PR #90 in review on private lane; Op 2 slice 1 plan doc landed; T002 authoring MVP (Option C) queued behind PR #90 merge",
   "current_task_id": "T001",
   "current_slice": "T001-slice-1",
   "status": "review_in_progress",
@@ -92,21 +92,90 @@
     },
     "notes": "Playbook section landed on ops/orchestrator-v2 as commit c42e8d6."
   },
+  "op2_lane": {
+    "name": "Op 2: OSS unification + upstream-fork integration model",
+    "status": "plan_only",
+    "plan_doc": "docs/opsplans/op2-oss-unification.md",
+    "plan_commit": "fe61ba0",
+    "path_decision": "B",
+    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA. Path A rejected because preserving unrelated lineage drags a branching history into the 'one clean codebase' OSS story. Slice 3 (force-update) remains RED GATE and needs an explicit go-ahead.",
+    "slices": {
+      "slice_1_plan_doc": "done (commit fe61ba0 on ops/orchestrator-v2)",
+      "slice_2_archive_tag": "pending founder go-ahead after PR #90 merges",
+      "slice_3_force_update_main": "RED GATE - pending founder sign-off, runs after slice 2",
+      "slice_4_integrations_readme": "pending - can run parallel with or after slice 3"
+    },
+    "upstream_fork_model": {
+      "principle": "Use upstream repos as intended by GitHub. Slim seams, replaceable adapters, minimum integration. JobPipe is the engine; the forked/external repos are noise-reducing surfaces up until the candidate presses apply.",
+      "reactive_resume": {
+        "role": "GUI/editor for structured resumes + structured JSON interchange surface",
+        "integration": "upstream-as-intended via JSON round-trip CLIs (jobpipe import-reactive-resume, jobpipe export-reactive-resume-plan, jobpipe record-reactive-resume-document)",
+        "seam_spec": "specs/reactive-resume-integration-seam.md",
+        "canonical_ownership": "stays in JobPipe (evidence selection, claim targeting, narrative constraints)"
+      },
+      "jobsync": {
+        "role": "candidate-facing workflow/decision surface - what to apply to, application status tracking",
+        "integration": "upstream-as-intended via event-based CLIs (jobpipe export-jobsync, jobpipe record-jobsync-event)",
+        "seam_spec": "specs/jobsync-integration-seam.md",
+        "canonical_ownership": "stays in JobPipe (job evaluation state, claims, selection logic, evidence and narrative semantics)"
+      },
+      "crewai": {
+        "role": "prospective agent runtime for cooperative author/revise loop on cover letters + CV tailoring",
+        "integration": "not yet integrated. Fork at larsvaerland/crewAI tracks crewaiinc/crewai upstream. Enters inside the author/revise agent layer only after JobPipe produces the deterministic tailored_cv_plan.",
+        "status": "prospective - waits on T002 authoring MVP",
+        "canonical_ownership": "stays in JobPipe - deterministic contracts (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult) remain JobPipe-native and agent-runtime-swappable"
+      }
+    }
+  },
+  "authoring_mvp_lane": {
+    "name": "T002: AI document authoring MVP (cover letter + tailored CV)",
+    "status": "queued_behind_pr_90_merge",
+    "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
+    "position_decision": "C",
+    "position_decision_notes": "Option C (hybrid): deterministic contracts + validation stay JobPipe-native. crewAI enters only inside the author/revise agent layer. Contracts must be agent-runtime-swappable so the product is not locked to a specific agent framework. Data is the product, the engine is JobPipe, agent frameworks are pluggable.",
+    "contracts": {
+      "AuthoringCaseContext": "immutable frozen dataclass - candidate + job + evidence bundle going into author",
+      "GeneratedApplicationPackage": "pydantic model - cover_letter_draft + tailored_cv_projection + evidence_refs + gap_notes + validation",
+      "DocumentValidationResult": "pydantic model - passed + score + failures + warnings"
+    },
+    "first_slice": "Issue #58 - audit existing application_pack paths, define AuthoringCaseContext",
+    "followup_slices": ["#59", "#60", "#61", "#63"],
+    "parked_issues": ["#82", "#83", "#84", "#85", "#86", "#87", "#88", "#89"],
+    "parked_reason": "Supabase / crewAI runtime / hosted shell explicitly out of scope for MVP per governing spec"
+  },
   "open_risks": [
-    "origin/main and codex/job-catalog-foundation have unrelated histories. Slice 1 shipped via the private integration lane to avoid a destructive reconciliation under pressure. Op 2 (OSS unification) must decide merge-vs-reset before any PR targets main directly.",
+    "origin/main and codex/job-catalog-foundation have unrelated histories. Slice 1 shipped via the private integration lane to avoid a destructive reconciliation under pressure. Op 2 slice 3 (RED GATE force-update) resolves this but requires explicit founder sign-off per plan doc.",
     "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice after PR #90 lands.",
     "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
-    "Upstream integration strategy for the 3 forked repos is not yet captured in repo docs; Op 2 should surface the integration boundary before code-level reconciliation."
+    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for."
   ],
   "blocked_on": [],
   "needs_founder_decision": [
-    "Op 2 path selection: (A) merge --allow-unrelated-histories to preserve public main history, or (B) archive main as refs/tags/oss-main-pre-unify and force-push the real codebase to main. User lean appears to be (B) since paid/multi-user work has not yet started and the private lane is effectively the intended OSS state.",
-    "Upstream fork integration model: which 3 forks, what role each plays (vendored dependency vs submodule vs fork-with-patches), and how they feed into the JobPipe runtime. Needed before Op 2 can be scoped concretely."
+    "Op 2 slice 2 (archive tag oss-main-pre-unify) - safe, reversible - awaits 'go' after PR #90 merges.",
+    "Op 2 slice 3 (force-update origin/main) - RED GATE, irreversible in OSS audit-trail sense - awaits explicit 'go' after slice 2."
+  ],
+  "recent_decisions": [
+    {
+      "decided_at": "2026-04-21",
+      "decision": "Op 2 path B (archive + force-update) over path A (merge --allow-unrelated-histories)",
+      "rationale": "Path A preserves unrelated main lineage in permanent history. Path B gives a clean single-lineage OSS story with a preserved archive tag for provenance. Paid/multi-user work has not yet started; private lane is the intended OSS state."
+    },
+    {
+      "decided_at": "2026-04-21",
+      "decision": "T002 Option C (hybrid) for crewAI positioning",
+      "rationale": "Deterministic contracts + validation stay JobPipe-native; crewAI enters inside the author/revise agent layer only. Preserves 'data is the product, JobPipe is the engine' invariant. Keeps the agent runtime pluggable so the product is not locked to any single framework."
+    },
+    {
+      "decided_at": "2026-04-21",
+      "decision": "Upstream fork model: use reactive-resume and jobsync upstream-as-intended via slim JSON/event seams. crewAI fork is prospective and waits on T002.",
+      "rationale": "Slim seams keep JobPipe modular. If any upstream goes stale or something better appears, the adapter is replaceable. Minimum integration = minimum maintenance burden."
+    }
   ],
   "touched_files": [
     "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (via PR #90)",
     "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (via PR #90)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (via PR #90)"
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (via PR #90)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)"
   ],
-  "updated_at": "2026-04-21T16:45:00+02:00"
+  "updated_at": "2026-04-21T17:00:00+02:00"
 }
