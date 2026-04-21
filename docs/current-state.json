@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 — Slices 1/2/3/4/5 complete. PR #98 (Slice 5 validation rules) open, awaiting merge. Sprint 1 done after merge.",
+  "active_goal": "T002 Sprint 1 complete — all 5 slices merged. Next: plan Sprint 2 (CLI flag, crewAI author/revise loop).",
   "current_task_id": "T002",
   "current_slice": "T002-slice-5",
-  "status": "slice_5_pr_open_awaiting_merge",
+  "status": "sprint_1_complete",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -212,6 +212,11 @@
       "decided_at": "2026-04-21",
       "decision": "Upstream fork model: use reactive-resume and jobsync upstream-as-intended via slim JSON/event seams. crewAI fork is prospective and waits on T002.",
       "rationale": "Slim seams keep JobPipe modular. If any upstream goes stale or something better appears, the adapter is replaceable. Minimum integration = minimum maintenance burden."
+    },
+    {
+      "decided_at": "2026-04-22",
+      "decision": "T002 Sprint 1 closed — 5 slices, 5 PRs, all merged to main.",
+      "rationale": "Deterministic contract layer (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult, validate_authoring_context) is complete and Option C compliant. No crewAI import in any slice."
     }
   ],
   "touched_files": [
@@ -258,7 +263,7 @@
       "#63"
     ],
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "slices_1_2_3_merged_slice_4_planner_approved",
+    "status": "complete",
     "planner_branch": "claude/T002-authoring-mvp",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec.",
     "current_slice": 5,
@@ -266,11 +271,13 @@
     "slices": {
       "5": {
         "issue": "#63",
-        "status": "pr_open",
+        "status": "merged",
         "pr": 98,
-        "codex_commit": "4dc86ac"
+        "codex_commit": "4dc86ac",
+        "merge_commit": "b5c8e5ee3b4f9ed60d179e5cf9a2bc60defb2f0b"
       }
-    }
+    },
+    "completed_at": "2026-04-22"
   },
   "current_slice_status": {
     "active_slice": 5,
@@ -383,13 +390,13 @@
   },
   "t002_slice_5": {
     "issue": "#63",
-    "status": "pr_open",
+    "status": "merged",
     "pr": 98,
     "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/98",
     "codex_commit": "4dc86ac",
     "branch": "codex/T002-authoring-mvp",
     "project_item": "PVTI_lAHOCSFbLc4BJUdazgqmusE",
-    "project_status": "In progress",
+    "project_status": "Done",
     "files": [
       "jobpipe/authoring/validation.py",
       "tests/test_authoring_validation.py"
@@ -397,6 +404,8 @@
     "test_result": "14/14 passed (pytest 9.0.3, Python 3.14.0)",
     "compile_check": "OK — 77 files parsed cleanly",
     "crewai_check": "clean",
-    "grep_exe_note": "git-for-windows grep.exe signal-pipe error in sandbox — test_no_crewai_import (Python subprocess scan) passed exit=1 empty stdout; git-native banned-token scan also clean."
+    "grep_exe_note": "git-for-windows grep.exe signal-pipe error in sandbox — test_no_crewai_import (Python subprocess scan) passed exit=1 empty stdout; git-native banned-token scan also clean.",
+    "merge_commit": "b5c8e5ee3b4f9ed60d179e5cf9a2bc60defb2f0b",
+    "merged_at": "2026-04-21T22:00:11Z"
   }
 }
