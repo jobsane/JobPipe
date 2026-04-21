@@ -131,10 +131,15 @@ Register `author-package` subcommand using the same pattern as `build-authoring-
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_author_persist.py tests/test_author_cli.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp
 python compile_check.py
 python -c "from jobpipe.authoring.persist import persist_generated_package; from jobpipe.authoring.author_cli import add_arguments; print('import ok')"
-python -m jobpipe author-package --help
+python -m jobpipe.cli.main author-package --help
 ```
 
 All tests must pass. compile_check must pass. `--help` must show `--job`, `--model`, `--no-persist`, `--validate`.
+
+Note: there is no `jobpipe/__main__.py`. The correct invocation is always
+`python -m jobpipe.cli.main <subcommand>`. Registration in `main.py` is a
+one-line addition to `MODULE_COMMANDS`:
+`"author-package": "jobpipe.authoring.author_cli"`
 
 ---
 
@@ -167,7 +172,7 @@ Monkeypatch targets: `jobpipe.authoring.author_cli.SimpleAgentAuthor`, `jobpipe.
 After this slice merges, the full Sprint 2 exit test is:
 
 ```
-python -m jobpipe author-package --job <any_valid_job_id> --no-persist
+python -m jobpipe.cli.main author-package --job <any_valid_job_id> --no-persist
 ```
 
 Must produce valid JSON with `job_id`, `cover_letter_draft` (non-empty string), `tailored_cv_projection` (dict), `evidence_refs` (list), `gap_notes` (list). Report whether this ran successfully.
