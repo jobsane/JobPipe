@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 2 active — author/revise module. Slice 6 merged. Next: Slice 7 (AuthorAdapter protocol + SimpleAgentAuthor cover-letter + CV projection). No crewAI.",
+  "active_goal": "T002 Sprint 2 active — Slice 7 merged. Next: Slice 8 (persist_generated_package + author-package CLI). No crewAI.",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-7",
-  "status": "sprint_2_slice_6_merged_slice_7_ready",
+  "current_slice": "T002-slice-8",
+  "status": "sprint_2_slice_7_merged_slice_8_ready",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -46,12 +46,11 @@
   "last_tests_run": [
     {
       "ran_at": "2026-04-22",
-      "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv), codex worktree",
-      "slice": "T002-slice-6",
+      "slice": "T002-slice-7",
       "commands": [
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_authoring_smoke_cli.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp"
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_author_adapter.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp"
       ],
-      "result": "11 passed"
+      "result": "5 passed in 1.92s; compile_check OK (79 files); import ok"
     }
   ],
   "last_test_status": "passed",
@@ -187,7 +186,8 @@
     "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
     "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for.",
     "Post-unification: any clone of the old origin/main (tip b8bc34c) will require git fetch --prune + hard reset to match the new main. Archive tag oss-main-pre-unify preserves the old tip for provenance.",
-    "Slice 1 `jobpipe/authoring/case_context.py` docstring incorrectly describes candidate_id/evaluation_id as `meta[\"candidate_id\"]` / `meta.get(\"evaluation_id\")`. `RunMeta` has neither field. Slice 3 brief establishes the correct source-of-truth (keyword-only builder args). Follow-up docs-hygiene issue needed; not blocking."
+    "Slice 1 `jobpipe/authoring/case_context.py` docstring incorrectly describes candidate_id/evaluation_id as `meta[\"candidate_id\"]` / `meta.get(\"evaluation_id\")`. `RunMeta` has neither field. Slice 3 brief establishes the correct source-of-truth (keyword-only builder args). Follow-up docs-hygiene issue needed; not blocking.",
+    "Slice 7 surprise: application_pack.py uses final_output_as(ApplicationPackOut) but brief specified result.final_output. Tests passed with final_output. Verify which API is correct before Slice 8 uses run_agent result."
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
@@ -263,7 +263,7 @@
       },
       "7": {
         "issue": "#66/#67/#71",
-        "status": "queued",
+        "status": "merged",
         "description": "AuthorAdapter protocol + SimpleAgentAuthor"
       },
       "8": {
@@ -272,29 +272,29 @@
         "description": "persist_generated_package + author-package CLI"
       }
     },
-    "current_slice": 7
+    "current_slice": 8
   },
   "current_slice_status": {
-    "active_slice": 7,
+    "active_slice": 8,
     "active_issues": [
-      "#66",
-      "#67",
-      "#71"
+      "#64",
+      "#75",
+      "#77"
     ],
-    "active_title": "AuthorAdapter protocol + SimpleAgentAuthor (cover-letter + CV projection)",
+    "active_title": "persist_generated_package + author-package CLI",
     "task": "T002",
     "branch": "codex/T002-authoring-mvp",
-    "phase": "ready_for_codex",
-    "codex_status": "pre_staged",
-    "coordinator_status": "prompt_ready",
+    "phase": "ready_for_brief",
+    "codex_status": "idle",
+    "coordinator_status": "writing_brief",
     "previous_slice_merged": {
-      "slice": 6,
-      "pr": 99,
-      "merge_commit": "bc9edbe8",
+      "slice": 7,
+      "pr": 100,
+      "merge_commit": "e73b001",
       "merged_at": "2026-04-21"
     }
   },
-  "updated_at": "2026-04-22T00:30:00+02:00",
+  "updated_at": "2026-04-22T00:45:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
@@ -423,5 +423,30 @@
     ],
     "test_result": "11/11 passed",
     "crewai_check": "clean"
+  },
+  "t002_slice_7": {
+    "issues": [
+      "#66",
+      "#67",
+      "#71"
+    ],
+    "status": "merged",
+    "pr": 100,
+    "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/100",
+    "codex_commit": "cb0f63d",
+    "branch": "codex/T002-authoring-mvp",
+    "merge_commit": "e73b00100eceef4cbf55f8664aa691e43d0dbf35",
+    "merged_at": "2026-04-21T22:30:59Z",
+    "project_item": "PVTI_lAHOCSFbLc4BJUdazgqnKaI",
+    "project_status": "Done",
+    "files_created": [
+      "jobpipe/authoring/adapter.py",
+      "jobpipe/authoring/simple_agent_author.py",
+      "tests/test_author_adapter.py"
+    ],
+    "test_result": "5/5 passed",
+    "compile_check": "OK — 79 files",
+    "crewai_check": "clean",
+    "surprise": "application_pack.py uses final_output_as(ApplicationPackOut) not result.final_output; brief required result.final_output and tests passed. Drift noted — open_risks updated."
   }
 }
