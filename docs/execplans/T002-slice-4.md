@@ -48,6 +48,83 @@ the primary validation.
 
 ---
 
+## Coordinator correction applied in round 2 (signature escalation fix)
+
+Codex correctly halted at the escalation gate on 2026-04-21 after finding
+that the planner's round-3 template assumed the following context-builder
+signatures:
+
+```
+build_decision_context(job_ctx)
+build_candidate_evidence_context(job_ctx, resume)
+build_candidate_narrative_context(job_ctx, decision_ctx, evidence_ctx, resume)
+```
+
+The **actual** signatures on `origin/main` (verified against
+`jobpipe/decision/derive.py`, `jobpipe/decision/evidence.py`,
+`jobpipe/decision/narrative.py`) are:
+
+```python
+build_decision_context(
+    job: Mapping[str, Any],
+    *,
+    candidate_profile: Mapping[str, Any] | None = None,
+) -> DecisionContext
+
+build_candidate_evidence_context(
+    job: Mapping[str, Any],
+    resume_json: Mapping[str, Any],
+    *,
+    candidate_id: str = "default",
+    focus_terms: Iterable[str] = (),
+    limit: int = 6,
+) -> CandidateEvidenceContext
+
+build_candidate_narrative_context(
+    job: Mapping[str, Any],
+    profile_pack: str,
+    evidence_units: list[CandidateEvidenceUnit],
+    selected_evidence_units: list[CandidateEvidenceSelection],
+    *,
+    candidate_id: str = "default",
+    decision_table: JobDecisionTable | None = None,
+) -> CandidateNarrativeContext
+```
+
+The builders take raw `Mapping[str, Any]` job views and plain resume/profile
+dicts — **not** `JobContext` objects.
+
+**Resolution.** The smoke CLI now delegates derived-context assembly to the
+production helper already used by the `application_pack` stage:
+
+```python
+from jobpipe.stages.application_pack import (
+    _build_application_pack_contexts,
+    _load_resume_context,
+)
+```
+
+This guarantees the smoke path produces the same three derived contexts
+(`DecisionContext`, `CandidateEvidenceContext`, `CandidateNarrativeContext`)
+that production produces from the same `JobContext`, and eliminates
+signature drift risk. `_build_application_pack_contexts(ctx, resume_ctx)`
+internally calls `_application_pack_job_view(ctx)` to derive the
+`Mapping[str, Any]` job view, then threads it into the three builders with
+the correct arguments.
+
+**Underscore-prefix import is intentional.** These helpers are private by
+convention but not by enforcement. Importing them here is explicitly
+cheaper than duplicating 60+ lines of `job_view` / `focus_terms` /
+resume-compaction logic and risking divergence from production. If a future
+refactor promotes them to public API, this import path stays valid.
+
+**What Codex should do differently this round.** Use the updated module
+template below verbatim. Do not try to validate builder signatures against
+the round-1/round-3 draft — the round-2-corrected template below is the
+authoritative reference.
+
+---
+
 ## One-sentence objective
 
 Ship a one-shot CLI command `jobpipe build-authoring-context --job <job_id>`
@@ -190,18 +267,19 @@ from jobpipe.authoring.case_context import AuthoringCaseContext
 from jobpipe.core.candidate_data import (
     default_candidate_id,
     load_candidate_profile_pack,
-    load_candidate_resume_json,
-)
-from jobpipe.decision import (
-    build_candidate_evidence_context,
-    build_candidate_narrative_context,
-    build_decision_context,
 )
 from jobpipe.model.schema import (
     JobContext,
     JobParse,
     ModeratorOut,
+    PivotOut,
+    ProfileMatchOut,
     RunMeta,
+    TriageOut,
+)
+from jobpipe.stages.application_pack import (
+    _build_application_pack_contexts,
+    _load_resume_context,
 )
 
 
@@ -256,17 +334,21 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
-def _compact_resume(resume: dict[str, Any]) -> dict[str, Any]:
-    """Mirror of jobpipe.stages.application_pack._load_resume_context compaction.
+def _try_validate(cls: Any, data: dict[str, Any] | None):
+    """Validate with a pydantic model; return None if data is empty/falsy."""
+    if not data:
+        return None
+    return cls.model_validate(data)
 
-    Keep the top-level shape that the narrative builder expects; this helper
-    exists only to avoid passing a 50kB resume blob into the narrative context
-    when a small subset will do. If the upstream shape is already compact,
-    this is a no-op.
-    """
-    # Deliberately conservative: return a shallow copy. If real runs prove we
-    # need further trimming, Slice 5 (#63) is the right place to add it.
-    return dict(resume)
+
+def _optional_stage(job_dir: Path, *candidates: str) -> dict[str, Any]:
+    """Like _load_stage, but returns {} instead of raising on missing."""
+    for name in candidates:
+        path = job_dir / name
+        if path.is_file():
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+    return {}
 
 
 def build_context_for_job(
@@ -276,17 +358,27 @@ def build_context_for_job(
     job_id: str,
     candidate_id: str | None = None,
 ) -> AuthoringCaseContext:
-    """Assemble all four contexts from artifacts and call the builder."""
+    """Assemble AuthoringCaseContext from canonical run artifacts.
+
+    Reuses the production assembly helper `_build_application_pack_contexts`
+    from `jobpipe.stages.application_pack` so the smoke CLI produces the
+    same three derived contexts (decision / evidence / narrative) that the
+    real application_pack stage produces. This avoids drift between the
+    smoke path and the production path.
+    """
     job_dir = _resolve_job_dir(artifacts_root, run_id, job_id)
     effective_run_id = run_id or job_dir.parent.name
     effective_candidate_id = candidate_id or default_candidate_id()
 
     # --- Load raw stage JSON --------------------------------------------------
+    # Required:
     input_data     = _load_stage(job_dir, "00_input.json")
     parsed_data    = _load_stage(job_dir, "02_parsed.json",        "03_parsed.json")
-    pm_data        = _load_stage(job_dir, "03_profile_match.json", "04_profile_match.json")
-    pivot_data     = _load_stage(job_dir, "04_pivot.json",         "05_pivot.json")
     moderator_data = _load_stage(job_dir, "05_moderator.json",     "06_moderator.json")
+    # Optional (the job_view helper tolerates None for these):
+    triage_data    = _optional_stage(job_dir, "01_triage.json")
+    pm_data        = _optional_stage(job_dir, "03_profile_match.json", "04_profile_match.json")
+    pivot_data     = _optional_stage(job_dir, "04_pivot.json",         "05_pivot.json")
 
     if not moderator_data:
         raise ValueError(
@@ -299,12 +391,12 @@ def build_context_for_job(
 
     # --- Candidate static inputs ---------------------------------------------
     profile_pack_text = load_candidate_profile_pack(candidate_id=effective_candidate_id)
-    resume_json = load_candidate_resume_json(candidate_id=effective_candidate_id)
-    resume_view = _compact_resume(resume_json)
+    resume_ctx = _load_resume_context()  # canonical compacted shape
 
     # --- Assemble JobContext --------------------------------------------------
-    # COORDINATOR-FIXED: moderator must be validated, not None. Builder guards
-    # on job_ctx.moderator is None and job_ctx.parsed is None.
+    # Builder guards: job_ctx.moderator and job_ctx.parsed MUST be present.
+    # Triage / profile_match / pivot stay validated when present because
+    # _application_pack_job_view reads their attributes with `if ctx.X`.
     job_ctx = JobContext.model_construct(
         meta=RunMeta(
             run_id=effective_run_id,
@@ -314,25 +406,22 @@ def build_context_for_job(
         job_id=job_id,
         job=input_data,
         profile_pack=profile_pack_text,
-        triage=None,
+        triage=_try_validate(TriageOut, triage_data),
         reverse_triage=None,
         parsed=JobParse.model_validate(parsed_data),
-        profile_match=pm_data,
-        pivot=pivot_data,
+        profile_match=_try_validate(ProfileMatchOut, pm_data),
+        pivot=_try_validate(PivotOut, pivot_data),
         moderator=ModeratorOut.model_validate(moderator_data),
         notes={},
     )
 
-    # --- Build the three derived contexts ------------------------------------
-    decision_ctx = build_decision_context(job_ctx)
-    evidence_ctx = build_candidate_evidence_context(job_ctx, resume_view)
-    # Narrative is optional; build it if the three priors exist, else pass None.
-    try:
-        narrative_ctx = build_candidate_narrative_context(
-            job_ctx, decision_ctx, evidence_ctx, resume_view
-        )
-    except Exception:  # pragma: no cover — covered by Slice 5 validation
-        narrative_ctx = None
+    # --- Build the three derived contexts via the PRODUCTION helper ---------
+    # _build_application_pack_contexts(ctx, resume_ctx) -> (decision, evidence, narrative)
+    # using the correct Mapping[str, Any] / profile_pack str / evidence-unit-list
+    # call shape. This is the same function application_pack_stage uses in prod.
+    decision_ctx, evidence_ctx, narrative_ctx = _build_application_pack_contexts(
+        job_ctx, resume_ctx
+    )
 
     # --- Call the pure constructor -------------------------------------------
     evaluation_id = f"{effective_run_id}:{job_id}"
@@ -437,10 +526,18 @@ anything agent-runtime-shaped.
    second contains `job_id`; asserts the second is picked.
 6. **`test_build_context_for_job_happy_path`** — stage the full canonical
    layout with minimal valid JSON for each stage; monkeypatch
-   `load_candidate_profile_pack` and `load_candidate_resume_json`;
-   monkeypatch `build_authoring_case_context` to assert it receives a
-   `JobContext` with `moderator` not None and `parsed` not None; return a
-   sentinel `AuthoringCaseContext`.
+   `jobpipe.authoring.smoke_cli.load_candidate_profile_pack` to return a
+   minimal profile_pack string; monkeypatch
+   `jobpipe.authoring.smoke_cli._load_resume_context` to return
+   `{"resume_work": [], "resume_projects": [], "resume_education": []}`;
+   monkeypatch `jobpipe.authoring.smoke_cli._build_application_pack_contexts`
+   to return a tuple of three sentinel `MagicMock` objects (stand-ins for
+   `DecisionContext`, `CandidateEvidenceContext`, `CandidateNarrativeContext`);
+   monkeypatch `jobpipe.authoring.smoke_cli.build_authoring_case_context` to
+   assert it receives a `JobContext` with `moderator` not None and `parsed`
+   not None and the three sentinel contexts positionally; return a sentinel
+   `AuthoringCaseContext`. The point of this test is the plumbing, not the
+   derived-context math — that is covered by Slice 5.
 7. **`test_cli_run_writes_stdout`** — call `_run` with a fake `Namespace`;
    capture stdout with `capsys`; assert the printed text is valid JSON with
    the expected top-level keys of `AuthoringCaseContext`
@@ -521,13 +618,20 @@ All 11 must be true for this slice to be considered done.
   slice calls it with the verified keyword-only `candidate_id=` form
   (verified in `jobpipe/core/candidate_data.py:55`). If the signature
   changes, Codex must stop and escalate — do not positional-pass.
-- **Risk: `_compact_resume` is too shallow for real narrative builders.**
-  Mitigation: conservative shallow copy; Slice 5 owns the real compaction.
-- **Risk: `build_decision_context` signature assumed.** Mitigation: Codex
-  must verify `jobpipe/decision/__init__.py` exports the three builders and
-  their argument shapes before wiring; if the signature is not
-  `(job_ctx)` / `(job_ctx, resume)` / `(job_ctx, decision, evidence, resume)`,
-  stop and escalate.
+- **Risk: resume compaction drifts from narrative builders' expectations.**
+  Mitigation: we reuse `jobpipe.stages.application_pack._load_resume_context`
+  directly. Whatever shape production narrative uses, the smoke CLI gets
+  too — no parallel implementation to maintain.
+- **Risk: context-builder signatures drift.** RESOLVED in round 2 — we no
+  longer call the three builders directly. We delegate to
+  `_build_application_pack_contexts(ctx, resume_ctx)` which encapsulates
+  the correct call shapes against `Mapping[str, Any]` job views. If that
+  helper's signature itself changes, Codex must stop and escalate.
+- **Risk: underscore-prefix imports signal intent to rewrite.** Mitigation:
+  the coordinator has explicitly chosen reuse-over-duplicate here; the
+  correction note in round 2 documents why. If a future refactor promotes
+  these helpers to public API, only the import path changes — behavior is
+  preserved.
 
 ---
 
@@ -537,17 +641,4 @@ All 11 must be true for this slice to be considered done.
    git checkout codex/T002-authoring-mvp && git reset --hard origin/main &&
    git push --force-with-lease origin codex/T002-authoring-mvp`.
 2. Coordinator delivers the Codex worker prompt (separate artifact).
-3. Codex implements; commits; pushes to `codex/T002-authoring-mvp`.
-4. Codex reports: files changed, test run output, compile_check output,
-   grep result.
-5. Coordinator reviews, opens PR, merges via squash, flips Project #6 item
-   to Done, advances `docs/current-state.json` to Slice 5.
-
----
-
-## Planner stamp
-
-- **Planner:** Claude Sonnet (round 3)
-- **Coordinator:** Claude Opus
-- **Coordinator correction:** `moderator=None` → `ModeratorOut.model_validate(moderator_data)` (applied inline above).
-- **Status:** Approved for Codex handoff — 2026-04-21.
+3. Codex implements; co
