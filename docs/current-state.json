@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 2 active — author/revise module. 3 slices: Slice 6 (--validate CLI), Slice 7 (author adapter + generation), Slice 8 (persistence + author CLI). No crewAI.",
+  "active_goal": "T002 Sprint 2 active — author/revise module. Slice 6 merged. Next: Slice 7 (AuthorAdapter protocol + SimpleAgentAuthor cover-letter + CV projection). No crewAI.",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-6",
-  "status": "sprint_2_scoped_slice_6_ready",
+  "current_slice": "T002-slice-7",
+  "status": "sprint_2_slice_6_merged_slice_7_ready",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -45,14 +45,13 @@
   },
   "last_tests_run": [
     {
-      "ran_at": "2026-04-21",
+      "ran_at": "2026-04-22",
       "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv), codex worktree",
+      "slice": "T002-slice-6",
       "commands": [
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_authoring_validation.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp",
-        "python compile_check.py",
-        "python -c \"from jobpipe.authoring.validation import validate_authoring_context; print('ok')\""
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_authoring_smoke_cli.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp"
       ],
-      "result": "14 passed; compile_check OK (77 files); import ok"
+      "result": "11 passed"
     }
   ],
   "last_test_status": "passed",
@@ -259,7 +258,7 @@
     "slices": {
       "6": {
         "issue": "#63-followup",
-        "status": "ready",
+        "status": "merged",
         "description": "--validate flag on build-authoring-context CLI"
       },
       "7": {
@@ -273,26 +272,29 @@
         "description": "persist_generated_package + author-package CLI"
       }
     },
-    "current_slice": 6
+    "current_slice": 7
   },
   "current_slice_status": {
-    "active_slice": 5,
-    "active_issue": 63,
-    "active_title": "Deterministic validation rules on the produced context",
+    "active_slice": 7,
+    "active_issues": [
+      "#66",
+      "#67",
+      "#71"
+    ],
+    "active_title": "AuthorAdapter protocol + SimpleAgentAuthor (cover-letter + CV projection)",
     "task": "T002",
     "branch": "codex/T002-authoring-mvp",
-    "phase": "awaiting_planner_brief",
-    "planner_status": "not_started",
-    "codex_status": "idle_pre_staged",
-    "coordinator_status": "ready_to_route",
+    "phase": "ready_for_codex",
+    "codex_status": "pre_staged",
+    "coordinator_status": "prompt_ready",
     "previous_slice_merged": {
-      "slice": 4,
-      "pr": 95,
-      "merge_commit": "ffbfc4d",
+      "slice": 6,
+      "pr": 99,
+      "merge_commit": "bc9edbe8",
       "merged_at": "2026-04-21"
     }
   },
-  "updated_at": "2026-04-21T22:30:00+02:00",
+  "updated_at": "2026-04-22T00:30:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
@@ -403,5 +405,23 @@
     "grep_exe_note": "git-for-windows grep.exe signal-pipe error in sandbox — test_no_crewai_import (Python subprocess scan) passed exit=1 empty stdout; git-native banned-token scan also clean.",
     "merge_commit": "b5c8e5ee3b4f9ed60d179e5cf9a2bc60defb2f0b",
     "merged_at": "2026-04-21T22:00:11Z"
+  },
+  "t002_slice_6": {
+    "issue": "#63-followup (--validate flag)",
+    "status": "merged",
+    "pr": 99,
+    "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/99",
+    "codex_commit": "f2d0b5ab",
+    "branch": "codex/T002-authoring-mvp",
+    "merge_commit": "bc9edbe8a9fab647cbce7b084e1ce191c7b479f5",
+    "merged_at": "2026-04-21T22:21:49Z",
+    "project_item": "PVTI_lAHOCSFbLc4BJUdazgqnIgE",
+    "project_status": "Done",
+    "files_modified": [
+      "jobpipe/authoring/smoke_cli.py",
+      "tests/test_authoring_smoke_cli.py"
+    ],
+    "test_result": "11/11 passed",
+    "crewai_check": "clean"
   }
 }
