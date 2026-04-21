@@ -1,5 +1,5 @@
 {
-  "active_goal": "PR #90 merged + Op 2 complete (main reunified to private lane); T002 authoring MVP (Option C, Issue #58) is now the next lane",
+  "active_goal": "Scaffolding set for cheap Sonnet+Codex execution. T002 authoring MVP (Option C, Issue #58) is the next lane; planner worker owns slice drafting from here.",
   "current_task_id": "T002",
   "current_slice": "T002-slice-1",
   "status": "ready_for_next_lane",
@@ -188,7 +188,28 @@
     "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (merged via PR #90, now on origin/main)",
     "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (merged via PR #90, now on origin/main)",
     "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\integrations\\README.md (commit 8cb7560)"
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\integrations\\README.md (commit 8cb7560)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\execplans\\T002.md (pending commit)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\decisions.md (pending commit)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\ai-playbook.md (pending commit)"
   ],
-  "updated_at": "2026-04-21T17:15:00+02:00"
+  "coordinator_leverage_scaffolding": {
+    "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
+    "artifacts": [
+      "docs/decisions.md - Op 2 + Option C decisions as durable record",
+      "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
+      "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
+      "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
+      "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
+      "docs/integrations/README.md - upstream role + seam map",
+      "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
+    ],
+    "coordinator_still_owns": [
+      "Review gate stamps before Codex runs",
+      "Approval Gate judgment calls (auth, billing, migrations, deployment, secrets, destructive deletes, pipeline semantics, scoring/selection, OSS/Workbench boundary, model-cost)",
+      "Cross-task architectural decisions not yet in decisions.md",
+      "Routing a new task from scratch (T003+)"
+    ]
+  },
+  "updated_at": "2026-04-21T17:45:00+02:00"
 }

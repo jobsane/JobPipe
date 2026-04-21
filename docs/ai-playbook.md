@@ -198,3 +198,97 @@ Coordinator output schema (use for all routing turns):
 
 Detailed governance lives in
 `specs/github-workflow-governance-audit-2026-04-21.md`.
+
+## PR target branch
+
+Since Op 2 (2026-04-21, see `docs/decisions.md`), PRs target `main` directly.
+The `codex/job-catalog-foundation*` private lanes are retired. Do not open PRs
+against those branches.
+
+## Slice Brief Self-Review (planner runs before handing up to coordinator)
+
+Before the planner worker sends a slice brief + Codex prompt to the
+coordinator, the planner must pass every item below. If any item fails, fix
+the brief before sending. Sending a brief that fails these is a routing
+violation.
+
+1. **Scope**: one slice, single-file or two-file diff preferred. Anything
+   larger requires an explicit "why smaller won't work" sentence.
+2. **Canonical-source map**: every field the slice introduces is mapped to
+   its existing canonical source (or explicitly marked "new canonical field").
+   No parallel truth models.
+3. **Escalation gates named**: the brief lists every Approval Gate from
+   `docs/ai-playbook.md` §Approval Gates the slice could plausibly touch, and
+   asserts none are tripped. If one is tripped, stop — coordinator decides.
+4. **Contract purity (T002 only)**: if the slice touches authoring contracts,
+   acceptance criteria include "no `crewai` import in module or tests," with
+   an automated check (import assertion or CI grep).
+5. **Tests**: targeted test named, pattern matches existing proven tests in
+   the same area. Python 3.14 + anyio workaround is respected where relevant
+   (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -p no:debugging -p no:cacheprovider`).
+6. **Reversibility**: single commit, clean revert path, no migration, no
+   runtime state changes. If not reversible, flag as Yellow/Red and escalate.
+7. **GitHub Project link**: the slice has a Project #6 item (draft or
+   issue). Coordinator output schema (`GITHUB PROJECT ITEM STATUS`) is
+   populated.
+8. **Prompt self-containedness**: the Codex prompt contains everything Codex
+   needs — file paths, acceptance criteria, escalation gates, out-of-scope
+   list, test commands. Codex should not need to re-read multi-file planning
+   context to implement.
+
+If all eight pass, hand up. If one fails, fix or escalate.
+
+## Codex Worker Prompt Template
+
+The planner uses this as the starting shape for every Codex prompt. T001
+Slice 1's prompt is the reference implementation.
+
+```
+CONTEXT
+- Task: <T-ID> slice <N>
+- Governing spec(s): <path>
+- GitHub Project item: <id or number>
+- Branch: codex/<task-id>-<slug>
+- Base: main
+
+GOAL
+- <one sentence, no ambiguity>
+
+IN SCOPE
+- <exact files to create or touch>
+- <exact shapes to produce>
+
+OUT OF SCOPE (explicit no-go list)
+- <do not touch these files>
+- <do not add these dependencies>
+- <do not expand into these parked issues>
+
+CONSTRAINTS
+- <e.g., no `crewai` import in contract modules>
+- <e.g., Python 3.14 + anyio test workaround applies>
+- <e.g., reuse canonical source X, do not parallel-model>
+
+ACCEPTANCE CRITERIA
+- <test name(s) pass>
+- `python compile_check.py` succeeds
+- <automated rule check, e.g., grep/import assertion>
+- <output shape matches governing spec field table>
+
+VALIDATION COMMANDS (run exactly these)
+- <command 1>
+- <command 2>
+
+ESCALATION GATES
+- Stop and ask the coordinator before: <list specific to this task>
+- Stop and ask before any Approval Gate from docs/ai-playbook.md
+  §Approval Gates
+
+DELIVERABLE
+- One commit on branch codex/<task-id>-<slug>
+- PR into main, linked to Project #6 item
+- Report: commands run, test output, files touched, any surprises
+```
+
+The planner should not invent new sections. If a section does not apply,
+write `N/A` under it rather than delete it — reviewers scan the same shape
+across slices.
