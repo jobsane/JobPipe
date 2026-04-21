@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 2 active — Slice 7 merged. Next: Slice 8 (persist_generated_package + author-package CLI). No crewAI.",
+  "active_goal": "T002 Sprint 2 CLOSED — all 3 slices merged. Sprint exit: author-package CLI wired and tested. Live exit test pending first APPLY-decision run. Next: Sprint 3 scoping (author/revise loop, cover letter DOCX, or crewAI eval — coordinator decision).",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-8",
-  "status": "sprint_2_slice_7_merged_slice_8_ready",
+  "current_slice": "T002-sprint-2-closed",
+  "status": "sprint_2_closed_awaiting_sprint_3_scope",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -46,11 +46,11 @@
   "last_tests_run": [
     {
       "ran_at": "2026-04-22",
-      "slice": "T002-slice-7",
+      "slice": "T002-slice-8",
       "commands": [
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_author_adapter.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp"
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/test_author_persist.py tests/test_author_cli.py -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp"
       ],
-      "result": "5 passed in 1.92s; compile_check OK (79 files); import ok"
+      "result": "10 passed in 3.94s; compile_check OK (81 files); import ok; --help verified"
     }
   ],
   "last_test_status": "passed",
@@ -216,6 +216,11 @@
       "decided_at": "2026-04-22",
       "decision": "T002 Sprint 1 closed — 5 slices, 5 PRs, all merged to main.",
       "rationale": "Deterministic contract layer (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult, validate_authoring_context) is complete and Option C compliant. No crewAI import in any slice."
+    },
+    {
+      "decided_at": "2026-04-22",
+      "decision": "T002 Sprint 2 closed — 3 slices (6/7/8), 3 PRs (#99/#100/#101), all merged to main.",
+      "rationale": "AuthorAdapter + SimpleAgentAuthor + persist + CLI complete. Option C compliant. No crewAI import in any slice. Sprint exit test verified structurally; live data test deferred to first APPLY-decision pipeline run."
     }
   ],
   "touched_files": [
@@ -268,33 +273,19 @@
       },
       "8": {
         "issue": "#64/#75/#77",
-        "status": "queued",
+        "status": "merged",
         "description": "persist_generated_package + author-package CLI"
       }
     },
-    "current_slice": 8
+    "current_slice": "closed"
   },
   "current_slice_status": {
-    "active_slice": 8,
-    "active_issues": [
-      "#64",
-      "#75",
-      "#77"
-    ],
-    "active_title": "persist_generated_package + author-package CLI",
+    "active_slice": null,
     "task": "T002",
-    "branch": "codex/T002-authoring-mvp",
-    "phase": "ready_for_brief",
-    "codex_status": "idle",
-    "coordinator_status": "writing_brief",
-    "previous_slice_merged": {
-      "slice": 7,
-      "pr": 100,
-      "merge_commit": "e73b001",
-      "merged_at": "2026-04-21"
-    }
+    "phase": "sprint_2_closed",
+    "notes": "Sprint 2 exit: all 3 slices merged. author-package CLI registered and tested. Live exit test pending APPLY-decision data. Coordinator to scope Sprint 3."
   },
-  "updated_at": "2026-04-22T00:45:00+02:00",
+  "updated_at": "2026-04-22T01:00:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
@@ -448,5 +439,34 @@
     "compile_check": "OK — 79 files",
     "crewai_check": "clean",
     "surprise": "application_pack.py uses final_output_as(ApplicationPackOut) not result.final_output; brief required result.final_output and tests passed. Drift noted — open_risks updated."
+  },
+  "t002_slice_8": {
+    "issues": [
+      "#64",
+      "#75",
+      "#77"
+    ],
+    "status": "merged",
+    "pr": 101,
+    "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/101",
+    "codex_commit": "278f532",
+    "branch": "codex/T002-authoring-mvp",
+    "merge_commit": "cd2270de7f33c3654cbd9c014fecba23be4c975c",
+    "merged_at": "2026-04-21T22:52:26Z",
+    "project_item": "PVTI_lAHOCSFbLc4BJUdazgqnOVE",
+    "project_status": "Done",
+    "files_created": [
+      "jobpipe/authoring/persist.py",
+      "jobpipe/authoring/author_cli.py",
+      "tests/test_author_persist.py",
+      "tests/test_author_cli.py"
+    ],
+    "files_modified": [
+      "jobpipe/cli/main.py"
+    ],
+    "test_result": "10/10 passed (5 persist + 5 cli)",
+    "compile_check": "OK — 81 files",
+    "crewai_check": "clean",
+    "sprint_exit_test": "CLI wired correctly (--help verified). Live exit test skipped — no APPLY-decision job in dev DB. Pending first full pipeline run."
   }
 }
