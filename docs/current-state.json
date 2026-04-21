@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 1 complete — all 5 slices merged. Next: plan Sprint 2 (CLI flag, crewAI author/revise loop).",
+  "active_goal": "T002 Sprint 2 active — author/revise module. 3 slices: Slice 6 (--validate CLI), Slice 7 (author adapter + generation), Slice 8 (persistence + author CLI). No crewAI.",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-5",
-  "status": "sprint_1_complete",
+  "current_slice": "T002-slice-6",
+  "status": "sprint_2_scoped_slice_6_ready",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -253,31 +253,27 @@
   },
   "active_sprint": {
     "task": "T002",
-    "sprint_number": 1,
-    "sprint_goal": "Deterministic contract layer + first authoring plumbing below the agent runtime. Option C compliant. No crewAI imports.",
-    "ordered_slices": [
-      "#58",
-      "#59",
-      "#60",
-      "#61",
-      "#63"
-    ],
-    "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "complete",
-    "planner_branch": "claude/T002-authoring-mvp",
-    "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec.",
-    "current_slice": 5,
-    "current_slice_brief": "docs/execplans/T002-slice-4.md",
+    "sprint_number": 2,
+    "sprint_goal": "First end-to-end authoring pass: cover-letter draft + CV projection from AuthoringCaseContext, via agents.Agent adapter, with persistence. No crewAI.",
+    "crewai_decision": "deferred — stays in #86 backlog until local MVP works end-to-end",
     "slices": {
-      "5": {
-        "issue": "#63",
-        "status": "merged",
-        "pr": 98,
-        "codex_commit": "4dc86ac",
-        "merge_commit": "b5c8e5ee3b4f9ed60d179e5cf9a2bc60defb2f0b"
+      "6": {
+        "issue": "#63-followup",
+        "status": "ready",
+        "description": "--validate flag on build-authoring-context CLI"
+      },
+      "7": {
+        "issue": "#66/#67/#71",
+        "status": "queued",
+        "description": "AuthorAdapter protocol + SimpleAgentAuthor"
+      },
+      "8": {
+        "issue": "#64/#75/#77",
+        "status": "queued",
+        "description": "persist_generated_package + author-package CLI"
       }
     },
-    "completed_at": "2026-04-22"
+    "current_slice": 6
   },
   "current_slice_status": {
     "active_slice": 5,
