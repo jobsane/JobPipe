@@ -1,13 +1,13 @@
 {
-  "active_goal": "Scaffolding set for cheap Sonnet+Codex execution. T002 authoring MVP (Option C, Issue #58) is the next lane; planner worker owns slice drafting from here.",
+  "active_goal": "T002 authoring MVP Sprint 1 active — Slice 1 (#58) approved and ready for Codex.",
   "current_task_id": "T002",
   "current_slice": "T002-slice-1",
-  "status": "ready_for_next_lane",
+  "status": "slice_1_ready_for_codex",
   "lead_worker": "claude",
-  "active_branch": "codex/job-catalog-foundation-v2",
+  "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
-  "implementation_branch": "codex/job-catalog-foundation-v2",
-  "planner_branch": "claude/job-catalog-foundation-v2",
+  "implementation_branch": "codex/T002-authoring-mvp",
+  "planner_branch": "claude/T002-authoring-mvp",
   "worktrees": {
     "orchestrator": {
       "path": "../Jobpipe-orchestrator-v2",
@@ -15,12 +15,22 @@
     },
     "claude": {
       "path": "../Jobpipe-claude-v2",
-      "branch": "claude/job-catalog-foundation-v2"
+      "branch": "claude/T002-authoring-mvp"
     },
     "codex": {
       "path": "../Jobpipe-codex-v2",
-      "branch": "codex/job-catalog-foundation-v2"
+      "branch": "codex/T002-authoring-mvp"
     }
+  },
+  "current_slice_status": {
+    "issue": "#58",
+    "title": "Audit current application_pack inputs and define AuthoringCaseContext",
+    "slice_brief": "docs/execplans/T002-slice-1.md",
+    "planner_status": "approved",
+    "codex_status": "not_started",
+    "planner_stamp": "2026-04-21",
+    "coordinator_stamp": "2026-04-21",
+    "risk_label": "green"
   },
   "last_handoff_file": "docs/execplans/T001.md",
   "last_handoff_at": "2026-04-21T00:00:00+02:00",
@@ -221,9 +231,11 @@
     "sprint_goal": "Deterministic contract layer + first authoring plumbing below the agent runtime. Option C compliant. No crewAI imports.",
     "ordered_slices": ["#58", "#59", "#60", "#61", "#63"],
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "ready_for_planner_pickup",
+    "status": "slice_1_approved_handed_to_codex",
     "planner_branch": "claude/T002-authoring-mvp",
+    "current_slice": "#58",
+    "current_slice_brief": "docs/execplans/T002-slice-1.md",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec."
   },
-  "updated_at": "2026-04-21T18:00:00+02:00"
+  "updated_at": "2026-04-21T20:00:00+02:00"
 }
