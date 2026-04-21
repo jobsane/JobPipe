@@ -235,8 +235,79 @@ violation.
    needs — file paths, acceptance criteria, escalation gates, out-of-scope
    list, test commands. Codex should not need to re-read multi-file planning
    context to implement.
+9. **Signatures Verified block present**: every brief whose module template
+   calls functions, constructors, or attributes from the codebase must carry
+   a `## Signatures Verified Against origin/main @ <SHA>` block at the
+   bottom, per `## Planner Signature Verification Contract` below. Planner
+   must have actually opened each listed file. No block, or block without a
+   commit SHA, or block listing only some symbols the template uses — all
+   three are routing violations and the coordinator must reject the brief.
 
-If all eight pass, hand up. If one fails, fix or escalate.
+If all nine pass, hand up. If one fails, fix or escalate.
+
+## Planner Signature Verification Contract
+
+Added 2026-04-21 in response to T002 Slice 4 round 2: the planner's
+module template assumed three context-builder signatures that did not match
+`origin/main`. Codex correctly escalated at the signature-check gate;
+coordinator had to rewrite the template. Cost: one round trip, one forced
+brief rewrite.
+
+The rule that prevents this from happening again:
+
+**Every module template in a slice brief must be accompanied by a
+`## Signatures Verified Against origin/main @ <SHA>` block listing every
+public function, constructor, attribute, and import the template
+references — each with the source file, line number, and a one-line
+signature excerpt.**
+
+### Required block format
+
+```
+## Signatures Verified Against origin/main @ <SHA>
+
+Verified against `git show <SHA>:<path>` at planning time.
+
+| Symbol | Source | Line | Signature excerpt |
+|---|---|---|---|
+| build_authoring_case_context | jobpipe/authoring/builder.py | 47 | `(job_ctx, decision_ctx, evidence_ctx, narrative_ctx, *, candidate_id, evaluation_id=None)` |
+| build_decision_context | jobpipe/decision/derive.py | 12 | `(job: Mapping[str, Any], *, candidate_profile: Mapping[str, Any] \| None = None)` |
+| _build_application_pack_contexts | jobpipe/stages/application_pack.py | 151 | `(ctx: JobContext, resume_ctx: dict) -> tuple[DecisionContext, CandidateEvidenceContext, CandidateNarrativeContext]` |
+| JobContext.moderator | jobpipe/model/schema.py | 243 | `moderator: ModeratorOut \| None` |
+
+Planner confirms: each line above was read from `origin/main @ <SHA>` via
+`git show` or direct file read. No signature was inferred from prior briefs,
+chat transcripts, or memory.
+```
+
+### Three things the coordinator will check before approving
+
+1. **SHA present and matches tip of `origin/main`.** A stale SHA means the
+   planner verified against an older tree; if the tree has since moved, the
+   brief is out of date. Reject.
+2. **Every symbol in the module template appears in the table.** If the
+   template calls `foo.bar(x, y)` and the table lists `foo.bar` without
+   line or signature, reject. If the template calls `baz.quux(...)` and the
+   table doesn't mention `baz.quux`, reject.
+3. **Line numbers and signatures are actually correct.** Coordinator spot-
+   checks 2–3 entries against `origin/main` before approving. One
+   mismatch = reject the entire brief; do not hand-fix.
+
+### Why this is a hard contract, not a guideline
+
+The coordinator's job is routing and escalation arbitration, not planner
+reruns. Every round of "coordinator correction applied inline" is a sign
+the planner skipped verification and pushed the cost to the coordinator.
+That cost compounds: coordinator doesn't just fix the template, coordinator
+also has to stamp a correction round, update state, re-push, and re-brief
+the worker. The block above moves verification back where it belongs.
+
+Planner workers that cannot produce the block should either:
+(a) ask the coordinator for the SHA and the file excerpts up front, or
+(b) ask to downgrade the brief scope to something they can verify.
+
+Skipping the block and hoping the coordinator catches the drift is
+explicitly the failure mode this contract eliminates.
 
 ## Codex Worker Prompt Template
 
