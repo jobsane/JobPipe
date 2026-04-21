@@ -19,6 +19,29 @@ from jobpipe.core.primary_db import connect_primary_db
 
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
+SHOW_CHOICES = [
+    "summary",
+    "profile",
+    "applications",
+    "events",
+    "candidates",
+    "documents",
+    "calibration",
+    "feedback",
+    "suggestions",
+    "gaps",
+    "gap_assessments",
+    "jobs",
+    "source_records",
+    "runs",
+    "evaluations",
+    "job_events",
+    "job_claims",
+    "job_selection_signals",
+    "job_selection_assessments",
+]
+CLAIM_LAYER_VIEWS = {"job_claims", "job_selection_signals", "job_selection_assessments"}
+
 
 def _configure_stdout() -> None:
     if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -402,6 +425,115 @@ def _job_events_view(conn: sqlite3.Connection, candidate_id: str, limit: int) ->
     )
 
 
+def _job_exists(conn: sqlite3.Connection, job_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM jobs WHERE job_id = ? LIMIT 1", [job_id]).fetchone() is not None
+
+
+def _job_claims_view(conn: sqlite3.Connection, *, job_id: str | None, limit: int) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    limit_clause = ""
+    if job_id:
+        where = "WHERE job_id = ?"
+        params.append(job_id)
+    else:
+        limit_clause = "LIMIT ?"
+        params.append(limit)
+
+    rows = _rows(
+        conn,
+        f"""
+        SELECT job_id, claim_id, source_record_id, claim_type, claim_strength,
+               claim_subject_type, normalized_key, normalized_label, claim_text,
+               source_basis, source_section, evidence_span, confidence_score,
+               importance_score, claim_json, created_at, updated_at
+        FROM job_claims
+        {where}
+        ORDER BY importance_score DESC, updated_at DESC, job_id ASC, claim_id ASC
+        {limit_clause}
+        """,
+        params,
+    )
+    for row in rows:
+        try:
+            row["claim_json"] = json.loads(row.get("claim_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
+def _job_selection_signals_view(conn: sqlite3.Connection, *, job_id: str | None, limit: int) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    limit_clause = ""
+    if job_id:
+        where = "WHERE job_id = ?"
+        params.append(job_id)
+    else:
+        limit_clause = "LIMIT ?"
+        params.append(limit)
+
+    rows = _rows(
+        conn,
+        f"""
+        SELECT job_id, signal_id, signal_type, signal_label, selection_stage,
+               signal_strength, normalized_key, evidence_required,
+               confidence_score, importance_score, source_basis, signal_json,
+               created_at, updated_at
+        FROM job_selection_signals
+        {where}
+        ORDER BY importance_score DESC, updated_at DESC, job_id ASC, signal_id ASC
+        {limit_clause}
+        """,
+        params,
+    )
+    for row in rows:
+        try:
+            row["signal_json"] = json.loads(row.get("signal_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
+def _job_selection_assessments_view(conn: sqlite3.Connection, *, job_id: str | None, limit: int) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    limit_clause = ""
+    if job_id:
+        where = "WHERE job_id = ?"
+        params.append(job_id)
+    else:
+        limit_clause = "LIMIT ?"
+        params.append(limit)
+
+    rows = _rows(
+        conn,
+        f"""
+        SELECT candidate_id, job_id, evaluation_id, structural_pass,
+               screenability_score, title_continuity_score, domain_continuity_score,
+               ambiguity_risk_score, evidence_burden_score, selection_risk_level,
+               likely_rejection_vectors_json, mitigation_moves_json,
+               assessment_reason, assessment_json, updated_at
+        FROM job_selection_assessments
+        {where}
+        ORDER BY screenability_score DESC, updated_at DESC, job_id ASC, candidate_id ASC
+        {limit_clause}
+        """,
+        params,
+    )
+    for row in rows:
+        for field, fallback in (
+            ("likely_rejection_vectors_json", "[]"),
+            ("mitigation_moves_json", "[]"),
+            ("assessment_json", "{}"),
+        ):
+            try:
+                row[field] = json.loads(row.get(field) or fallback)
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+
 def _print_summary(data: dict[str, Any], db_path: Path) -> None:
     print("=== JobPipe Primary DB ===")
     print(f"DB: {db_path.resolve()}")
@@ -496,17 +628,23 @@ def main() -> None:
     ap.add_argument(
         "--show",
         action="append",
-        choices=["summary", "profile", "applications", "events", "candidates", "documents", "calibration", "feedback", "suggestions", "gaps", "gap_assessments", "jobs", "source_records", "runs", "evaluations", "job_events"],
+        choices=SHOW_CHOICES,
         help="Which view(s) to show. Default: summary",
     )
+    ap.add_argument("--job-id", default="", help="Optional job ID filter for claim-layer views")
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
     args = ap.parse_args()
 
     db_path = Path(args.db)
     views = args.show or ["summary"]
+    job_id = str(args.job_id or "").strip() or None
 
     conn = _connect(db_path)
     try:
+        if job_id and any(view in CLAIM_LAYER_VIEWS for view in views) and not _job_exists(conn, job_id):
+            print(f"error: job_id {job_id} not found in jobs", file=sys.stderr)
+            raise SystemExit(1)
+
         payload: dict[str, Any] = {}
         for view in views:
             if view == "summary":
@@ -541,6 +679,12 @@ def main() -> None:
                 payload["evaluations"] = _evaluations_view(conn, args.candidate_id, args.limit)
             elif view == "job_events":
                 payload["job_events"] = _job_events_view(conn, args.candidate_id, args.limit)
+            elif view == "job_claims":
+                payload["job_claims"] = _job_claims_view(conn, job_id=job_id, limit=args.limit)
+            elif view == "job_selection_signals":
+                payload["job_selection_signals"] = _job_selection_signals_view(conn, job_id=job_id, limit=args.limit)
+            elif view == "job_selection_assessments":
+                payload["job_selection_assessments"] = _job_selection_assessments_view(conn, job_id=job_id, limit=args.limit)
     finally:
         conn.close()
 
@@ -581,6 +725,24 @@ def main() -> None:
             _print_rows("Job Evaluations", payload.get("evaluations", []))
         elif view == "job_events":
             _print_rows("Job Run Events", payload.get("job_events", []))
+        elif view == "job_claims":
+            rows = payload.get("job_claims", [])
+            if job_id and not rows:
+                print(f"[job_claims] no rows for job_id {job_id}")
+            else:
+                _print_rows("Job Claims", rows)
+        elif view == "job_selection_signals":
+            rows = payload.get("job_selection_signals", [])
+            if job_id and not rows:
+                print(f"[job_selection_signals] no rows for job_id {job_id}")
+            else:
+                _print_rows("Job Selection Signals", rows)
+        elif view == "job_selection_assessments":
+            rows = payload.get("job_selection_assessments", [])
+            if job_id and not rows:
+                print(f"[job_selection_assessments] no rows for job_id {job_id}")
+            else:
+                _print_rows("Job Selection Assessments", rows)
         if view != views[-1]:
             print("")
 

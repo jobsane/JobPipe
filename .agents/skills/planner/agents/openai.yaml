@@ -1,0 +1,5 @@
+interface:
+  display_name: "Planner"
+  short_description: "Use for ambiguous tasks that need file mapping, staged plans, or risk analysis before implementation."
+policy:
+  allow_implicit_invocation: false

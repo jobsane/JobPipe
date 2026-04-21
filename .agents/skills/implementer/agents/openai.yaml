@@ -1,0 +1,5 @@
+interface:
+  display_name: "Implementer"
+  short_description: "Use for well-scoped implementation work after the plan is approved and the blast radius is understood."
+policy:
+  allow_implicit_invocation: true

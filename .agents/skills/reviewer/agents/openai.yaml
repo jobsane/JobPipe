@@ -1,0 +1,5 @@
+interface:
+  display_name: "Reviewer"
+  short_description: "Use after code changes to review for correctness, regressions, risky assumptions, and missing tests."
+policy:
+  allow_implicit_invocation: true

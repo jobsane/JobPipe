@@ -171,6 +171,7 @@ Inspect DB state:
 jobpipe inspect-db --show summary --show applications --show suggestions
 jobpipe inspect-db --show events --limit 20 --json
 jobpipe inspect-db --show feedback --show gaps --show gap_assessments --limit 20
+jobpipe inspect-db --show job_claims --show job_selection_signals --show job_selection_assessments --job-id JOB_ID
 ```
 
 Persona audit utilities:

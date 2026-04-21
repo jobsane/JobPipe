@@ -1,0 +1,23 @@
+Read:
+- CLAUDE.md
+- docs/vision.md
+- docs/ai-playbook.md
+- docs/current-state.json
+- docs/execplans/T001.md
+
+Task:
+Map the current implementation related to the task.
+Identify the smallest safe next change.
+Do not make broad edits unless explicitly told.
+Prefer understanding, scoping, and planning over coding.
+
+You must output exactly:
+
+TASK SUMMARY:
+FILES TO INSPECT:
+RISK LEVEL:
+PROPOSED PLAN:
+SMALLEST SAFE NEXT STEP:
+TESTS TO RUN:
+FOUNDER DECISION NEEDED:
+HANDOFF READY:

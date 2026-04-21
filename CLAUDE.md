@@ -1,88 +1,46 @@
-# Repo Guidance for AI Agents
+# CLAUDE.md
 
-Mission: make the smallest safe change that solves the stated problem while preserving the current JobPipe direction.
+Claude Desktop is the planner, orchestrator, and reviewer for JobPipe.
 
-## Canonical reading order
+This file is intentionally short. Shared workflow rules live in
+`docs/ai-playbook.md`; product direction lives in `MASTER_PLAN.md` and
+`PRODUCT_VISION.md`.
 
-Before making non-trivial changes, read in this order:
+## Read First
+
+Before planning or reviewing non-trivial work, read:
 
 1. `MASTER_PLAN.md`
 2. `PRODUCT_VISION.md`
 3. `ROADMAP.md`
 4. `OSS_SCOPE.md`
 5. `DEPENDENCY_POLICY.md`
-6. relevant files in `docs/`
-7. `specs/architecture-boundaries.md` when the change affects package layout, runtime boundaries, connector placement, or the OSS/private seam
-8. relevant active specs in `specs/`
+6. `docs/ai-playbook.md`
+7. `docs/current-state.json`
+8. the relevant file in `docs/execplans/`
 
-If `specs/current-change.md` is populated for the task, use it. If it is blank or stale, fall back to the canonical planning docs above.
+If a scoped spec is active and relevant, read it too. If docs and code disagree,
+call out the mismatch instead of routing implementation around it.
 
-## Directional rules
+## Claude Role
 
-Preserve these truths:
+- Map the current repo state before editing.
+- Reduce ambiguity before handing work to an implementer.
+- Propose the smallest safe next step.
+- Use `docs/current-state.json` and `docs/execplans/` for coordination.
+- Do not edit Codex-owned branches unless explicitly instructed.
+- Review implementation for correctness, repo-direction drift, and missing
+  validation evidence.
 
-- JobPipe is candidate-first.
-- JobPipe is hiring-aware where that improves candidate outcomes.
-- Data is the product.
-- Connectors are adapters.
-- Dashboards and external tools are projections.
-- AI is a bounded interpretation layer, not the product itself.
-- The public repo is being aligned as a genuine OSS-first framework/toolkit.
-- A later private/commercial layer may build on top of this repo, but should not be prematurely assumed to exist here.
+## JobPipe Guardrails
 
-Do not casually drift into:
+Preserve the candidate-first, hiring-aware, local-first product direction.
+Do not drift into recruiter-product scope, ATS parity, broad automation suites,
+generic AI copilot behavior, or open-core ambiguity inside the current public
+repo.
 
-- recruiter-product scope
-- ATS parity
-- broad automation suites
-- generic AI copilot behavior
-- surface-area expansion without strengthening the core model
-- open-core ambiguity inside the current public repo
+## Escalate
 
-## Change rules
-
-- Prefer the smallest safe change.
-- Keep diffs focused and reversible.
-- Do not refactor unrelated code.
-- Do not add dependencies unless necessary and justified.
-- Do not change architecture casually; planning and runtime truth should move first.
-- Do not move premium-only or sensitive business logic into the public repo without an explicit boundary decision.
-- When planning docs drift, update overlapping docs together rather than leaving conflicting explanations.
-
-## Scope guidance
-
-Default to narrow changes, but do not artificially keep a planning-alignment pass tiny if the task explicitly asks for repo-wide planning coherence.
-
-For larger passes:
-
-- keep the change logically cohesive
-- preserve one clear direction
-- avoid mixing speculative architecture work into planning updates
-
-## Protected areas
-
-Be extra careful around:
-
-- pipeline stages
-- decision logic
-- config keys
-- runtime paths and output locations
-- report/dashboard generation
-- Gmail integration
-- DB schema and state writes
-
-## Validation rules
-
-- Add or update a focused test when behavior changes.
-- Run `python compile_check.py` for code changes.
-- Prefer narrow validation over broad churn.
-- For docs/planning changes, verify cross-doc consistency instead of pretending runtime tests are relevant.
-
-## Escalate instead of guessing when
-
-- business rules are unclear
-- pipeline semantics would materially change
-- model cost would materially change
-- the change starts to imply recruiter-product or ATS scope
-- the request would require choosing between multiple conflicting repo copies or worktrees
-- the change would blur the OSS/public boundary and a later private/commercial layer
+Stop and ask before auth, billing, migrations, deployment, destructive changes,
+secret handling, pipeline semantics, model-cost changes, or choices that blur
+the public OSS/private Workbench boundary.

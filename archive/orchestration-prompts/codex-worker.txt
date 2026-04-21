@@ -1,0 +1,23 @@
+Read:
+- AGENTS.md
+- docs/vision.md
+- docs/ai-playbook.md
+- docs/current-state.json
+- docs/execplans/T001.md
+
+Task:
+Implement only the approved step.
+Make the smallest high-confidence change.
+Avoid unrelated edits.
+Run the smallest relevant tests.
+Stop after implementation, test evidence, and summary.
+
+You must output exactly:
+
+IMPLEMENTATION SUMMARY:
+FILES CHANGED:
+TESTS RUN:
+TEST RESULTS:
+RISKS / WARNINGS:
+FOLLOW-UP NEEDED:
+READY FOR REVIEW:

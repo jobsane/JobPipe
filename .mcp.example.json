@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "example-http-server": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp"
+    },
+    "example-stdio-server": {
+      "type": "stdio",
+      "command": "/path/to/your-mcp-server",
+      "args": [],
+      "env": {}
+    }
+  }
+}

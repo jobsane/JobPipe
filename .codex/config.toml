@@ -1,0 +1,28 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+model = "gpt-5.4"
+model_verbosity = "medium"
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+web_search = "cached"
+
+[sandbox_workspace_write]
+network_access = false
+writable_roots = ["."]
+
+# Optional project-local model instructions file if you want a single prompt file:
+# model_instructions_file = "../orchestration/orchestrator-prompt.txt"
+
+# Optional MCP examples. Leave disabled until you set real values.
+# [mcp_servers.project_docs]
+# enabled = false
+# url = "https://example.com/mcp"
+# required = false
+#
+# [mcp_servers.local_tools]
+# enabled = false
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+# cwd = "."
+# required = false
