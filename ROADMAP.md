@@ -135,6 +135,7 @@ These are not active roadmap items now and should not be treated as the current 
 
 1. evaluate whether Supabase should ever be used as an optional new database/deployment substrate on top of the same canonical JobPipe model
 2. review the deactivated NAV Supabase Edge ingestion script as a possible future intake backlog item only, not as the current canonical ingestion path
+3. evaluate GitHub-native agent delegation, issue-form discipline, and project automation as workflow-governance improvements; see [specs/github-workflow-governance-audit-2026-04-21.md](specs/github-workflow-governance-audit-2026-04-21.md)
 
 ## Explicit non-goals for now
 
