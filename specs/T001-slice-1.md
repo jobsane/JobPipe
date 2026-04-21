@@ -1,6 +1,6 @@
 # T001 Slice 1 — Inspect persisted claim layer
 
-Status: **proposed, pending coordinator approval.** Tracked on
+Status: **approved by coordinator 2026-04-21 — handed off to Codex on `codex/job-catalog-foundation-v2`.** Tracked on
 [GitHub Project #6](https://github.com/users/larsvaerland/projects/6) as draft
 item `PVTI_lAHOCSFbLc4BJUdazgqjqHU`.
 
@@ -175,5 +175,7 @@ interpreted as a separate instruction channel for Codex.
 
 ## Approval status
 
-Pending coordinator approval. Codex implementation must not start until the
-coordinator signs off on the slice and the proposed prompt.
+Approved by coordinator on 2026-04-21. Codex implementation handed off on
+`codex/job-catalog-foundation-v2`. Escalation gates in the proposed Codex
+worker prompt (see `docs/execplans/T001.md`) remain in force during
+implementation.
