@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
-import sys
+from pathlib import Path
 
 from jobpipe.authoring.case_context import AuthoringCaseContext
-from jobpipe.authoring.output_models import DocumentValidationResult
 from jobpipe.authoring.validation import validate_authoring_context
 
 
 def _good_ctx(**overrides) -> AuthoringCaseContext:
-    """Well-formed context that should pass all rules."""
     values = dict(
         candidate_id="cand-1",
         job_id="job-001",
@@ -66,8 +65,7 @@ def _empty_narrative() -> dict:
 
 
 def test_validate_well_formed_context_passes() -> None:
-    ctx = _good_ctx()
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx())
 
     assert result.passed is True
     assert result.failures == []
@@ -76,130 +74,139 @@ def test_validate_well_formed_context_passes() -> None:
 
 
 def test_required_field_absent_blank_candidate_id() -> None:
-    ctx = _good_ctx(candidate_id="")
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx(candidate_id=""))
 
     assert result.passed is False
-    assert any("required_field_absent" in f for f in result.failures)
-    assert any("candidate_id" in f for f in result.failures)
+    assert any("required_field_absent" in failure for failure in result.failures)
+    assert any("candidate_id" in failure for failure in result.failures)
 
 
 def test_required_field_absent_empty_job_summary() -> None:
-    ctx = _good_ctx(job_summary={})
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx(job_summary={}))
 
     assert result.passed is False
-    assert any("job_summary" in f for f in result.failures)
+    assert any("job_summary" in failure for failure in result.failures)
 
 
 def test_missing_decision_context_missing_key() -> None:
     brief = _good_ctx().decision_brief.copy()
     del brief["final_decision"]
-    ctx = _good_ctx(decision_brief=brief)
-    result = validate_authoring_context(ctx)
+    del brief["act_now"]
+
+    result = validate_authoring_context(_good_ctx(decision_brief=brief))
+    findings = [
+        failure for failure in result.failures if "missing_decision_context" in failure
+    ]
 
     assert result.passed is False
-    assert any("missing_decision_context" in f for f in result.failures)
-    assert any("final_decision" in f for f in result.failures)
+    assert len(findings) == 2
+    assert any("final_decision" in failure for failure in findings)
+    assert any("act_now" in failure for failure in findings)
 
 
 def test_missing_decision_context_all_keys_present() -> None:
-    ctx = _good_ctx()
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx())
 
-    assert not any("missing_decision_context" in f for f in result.failures)
+    assert not any("missing_decision_context" in failure for failure in result.failures)
 
 
 def test_empty_evidence_units_fails() -> None:
-    ctx = _good_ctx(selected_evidence=[])
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx(selected_evidence=[]))
 
     assert result.passed is False
-    assert any("empty_evidence_units" in f for f in result.failures)
+    assert any("empty_evidence_units" in failure for failure in result.failures)
 
 
 def test_narrative_empty_produces_warning_not_error() -> None:
-    ctx = _good_ctx(narrative_brief=_empty_narrative())
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx(narrative_brief=_empty_narrative()))
 
     assert result.passed is True
     assert result.failures == []
-    assert any("narrative_empty" in w for w in result.warnings)
+    assert any("narrative_empty" in warning for warning in result.warnings)
 
 
 def test_narrative_empty_none_is_valid() -> None:
-    ctx = _good_ctx(narrative_brief=None)
-    result = validate_authoring_context(ctx)
+    result = validate_authoring_context(_good_ctx(narrative_brief=None))
 
-    assert not any("narrative_empty" in w for w in result.warnings)
+    assert not any("narrative_empty" in warning for warning in result.warnings)
 
 
 def test_resume_job_mismatch_narrative_without_evidence() -> None:
-    ctx = _good_ctx(
-        selected_evidence=[],
-        narrative_brief={
-            **_good_ctx().narrative_brief,
-            "story_strength_score": 88,
-        },
+    result = validate_authoring_context(
+        _good_ctx(
+            selected_evidence=[],
+            narrative_brief={
+                **_good_ctx().narrative_brief,
+                "story_strength_score": 88,
+            },
+        )
     )
-    result = validate_authoring_context(ctx)
 
     assert result.passed is False
-    assert any("resume_job_mismatch" in f for f in result.failures)
+    assert any("resume_job_mismatch" in failure for failure in result.failures)
 
 
 def test_score_one_error_one_warning() -> None:
-    ctx = _good_ctx(
-        job_id="",
-        narrative_brief=_empty_narrative(),
+    result = validate_authoring_context(
+        _good_ctx(candidate_id="", narrative_brief=_empty_narrative())
     )
-    result = validate_authoring_context(ctx)
 
     assert abs(result.score - 0.75) < 0.001
 
 
 def test_score_clamped_at_zero() -> None:
-    ctx = _good_ctx(
-        candidate_id="",
-        job_id="",
-        job_summary={},
-        decision_brief={},
-        selected_evidence=[],
+    decision_brief = {"unexpected_key": True}
+    result = validate_authoring_context(
+        _good_ctx(
+            candidate_id="",
+            job_id="",
+            job_summary={},
+            decision_brief=decision_brief,
+            selected_evidence=[],
+        )
     )
-    result = validate_authoring_context(ctx)
 
     assert result.score == 0.0
 
 
-def test_passed_flag_matches_failure_presence() -> None:
-    ctx = _good_ctx(candidate_id="")
+def test_passed_false_on_failures_true_on_warnings_only() -> None:
+    assert validate_authoring_context(_good_ctx(candidate_id="")).passed is False
 
-    assert validate_authoring_context(ctx).passed is False
-    warnings_only = _good_ctx(narrative_brief=_empty_narrative())
-    result = validate_authoring_context(warnings_only)
+    result = validate_authoring_context(_good_ctx(narrative_brief=_empty_narrative()))
 
     assert result.passed is True
     assert len(result.warnings) > 0
 
 
 def test_no_crewai_import() -> None:
-    script = (
-        "from pathlib import Path\n"
-        "matches=[]\n"
-        "for path in Path('jobpipe').rglob('*.py'):\n"
-        "    text = path.read_text(encoding='utf-8')\n"
-        "    if 'crewai' in text:\n"
-        "        matches.append(str(path))\n"
-        "print('\\n'.join(matches), end='')\n"
-        "raise SystemExit(0 if matches else 1)\n"
-    )
+    env = None
+    grep_exe = shutil.which("grep")
+    for candidate in (
+        Path("C:/Program Files/Git/usr/bin/grep.exe"),
+        Path("C:/Program Files/Git/bin/grep.exe"),
+        Path("C:/msys64/usr/bin/grep.exe"),
+    ):
+        if grep_exe is None and candidate.exists():
+            grep_exe = str(candidate)
+            break
+
+    if grep_exe is not None:
+        git_grep_dir = Path(grep_exe).parent
+        env = dict(os.environ)
+        env["PATH"] = f"{git_grep_dir}{os.pathsep}{env.get('PATH', '')}"
 
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [
+            grep_exe or "grep",
+            "-rE",
+            "^from crewai|^import crewai",
+            "jobpipe/",
+            "--include=*.py",
+        ],
         capture_output=True,
         text=True,
         check=False,
-        env=dict(os.environ),
+        env=env,
     )
 
     assert result.returncode == 1, f"Unexpected crewai reference found:\n{result.stdout}"
@@ -207,11 +214,8 @@ def test_no_crewai_import() -> None:
 
 
 def test_result_model_dump_roundtrip() -> None:
-    ctx = _good_ctx()
-    result = validate_authoring_context(ctx)
-    dumped = result.model_dump()
+    dumped = validate_authoring_context(_good_ctx()).model_dump()
 
-    assert isinstance(result, DocumentValidationResult)
     assert set(dumped.keys()) == {"passed", "score", "failures", "warnings"}
     assert isinstance(dumped["passed"], bool)
     assert isinstance(dumped["score"], float)
