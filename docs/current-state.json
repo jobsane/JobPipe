@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 3 PLANNED — crewAI author/critic loop. 5 slices: env setup (S9), CrewAIAuthor skeleton (S10), factory+flag (S11), real crew (S12), live run (S13). Next action: Slice 9 (manual env setup), then hand S10 brief to Codex.",
+  "active_goal": "T002 Sprint 3 IN PROGRESS — Slice 9 done (crewAI 1.14.2 on Python 3.12 at C:\\Users\\larsv\\envs\\crewai-env). Next: hand T002-sprint-3-orchestrator.md to Codex for Tasks 1-3 (S10 skeleton, S11 factory, S12 crew).",
   "current_task_id": "T002",
-  "current_slice": "T002-sprint-3-planned",
-  "status": "sprint_3_planning_complete_awaiting_slice_9",
+  "current_slice": "T002-sprint-3-slice-9-done",
+  "status": "sprint_3_slice_9_complete_ready_for_codex",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -33,15 +33,13 @@
     "project_item": "PVTI_lAHOCSFbLc4BJUdazgqlbaw",
     "project_status": "Done"
   },
-  "last_handoff_file": "docs/execplans/T001.md",
-  "last_handoff_at": "2026-04-21T00:00:00+02:00",
+  "last_handoff_file": "docs/execplans/T002-sprint-3-orchestrator.md",
+  "last_handoff_at": "2026-04-22T00:00:00+02:00",
   "last_coordinator_approval": {
-    "slice": "T001-slice-1",
-    "approved_at": "2026-04-21",
+    "slice": "T002-sprint-3-tasks-1-2-3",
+    "approved_at": "2026-04-22",
     "approved_by": "coordinator",
-    "planner_commit": "7d6909d",
-    "planner_branch": "claude/job-catalog-foundation-v2",
-    "notes": "Codex worker prompt stamped approved. Escalation gates in the prompt remain in force during implementation."
+    "notes": "Orchestrator + sub-agent pattern. Brief at docs/execplans/T002-sprint-3-orchestrator.md. Codex prompt: read and execute exactly as written."
   },
   "last_tests_run": [
     {
@@ -55,8 +53,20 @@
   ],
   "last_test_status": "passed",
   "toolchain_notes": [
-    "Python 3.14 + anyio plugin autoload + Windows = OSError [WinError 10106] at asyncio backend init. Workaround: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 + explicit -p no:debugging -p no:cacheprovider. Separate follow-up slice should pin pytest plugins or add pyproject.toml pytest config."
+    "Python 3.14 + anyio plugin autoload + Windows = OSError [WinError 10106] at asyncio backend init. Workaround: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 + explicit -p no:debugging -p no:cacheprovider. Separate follow-up slice should pin pytest plugins or add pyproject.toml pytest config.",
+    "crewAI 1.14.2 cannot install on Python 3.14 — pydantic-core/pyo3 hard-caps at Python 3.13. crewAI env must always use Python 3.12 venv at C:\\Users\\larsv\\envs\\crewai-env. Do not attempt crewai pip install under Python 3.14.",
+    "smoke_crewai.py mcp.__version__ AttributeError is benign — mcp IS installed (crewAI bundled mcp~=1.26.0) but does not expose __version__. Smoke test is otherwise green."
   ],
+  "crewai_env": {
+    "status": "ready",
+    "python": "3.12.5",
+    "python_exe": "C:\\Users\\larsv\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "venv": "C:\\Users\\larsv\\envs\\crewai-env",
+    "venv_python": "C:\\Users\\larsv\\envs\\crewai-env\\Scripts\\python.exe",
+    "crewai_version": "1.14.2",
+    "smoke_test": "passed (mcp.__version__ AttributeError is benign — mcp is installed)",
+    "verified_at": "2026-04-22"
+  },
   "implementation_pr": {
     "number": 90,
     "url": "https://github.com/larsvaerland/Jobpipe/pull/90",
@@ -115,12 +125,12 @@
     "plan_doc": "docs/opsplans/op2-oss-unification.md",
     "plan_commit": "fe61ba0",
     "path_decision": "B",
-    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA. Path A rejected because preserving unrelated lineage drags a branching history into the 'one clean codebase' OSS story.",
+    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA.",
     "ordering_decision": "A",
-    "ordering_decision_notes": "PR #90 merged first (merge commit, 4-commit history preserved); main then force-updated to the merge SHA. Preserves PR #90 as a real review artifact in history.",
+    "ordering_decision_notes": "PR #90 merged first (merge commit, 4-commit history preserved); main then force-updated to the merge SHA.",
     "slices": {
       "slice_1_plan_doc": "done (commit fe61ba0 on ops/orchestrator-v2)",
-      "slice_2_archive_tag": "done (refs/tags/oss-main-pre-unify -> 927927add3d454065240b5fd6b3dee7003796d69, wraps commit b8bc34c1575bcb92b15b611984ee10016b55809d)",
+      "slice_2_archive_tag": "done (refs/tags/oss-main-pre-unify -> 927927add3d454065240b5fd6b3dee7003796d69)",
       "slice_3_force_update_main": "done (origin/main force-updated b8bc34c -> 9446998 on 2026-04-21)",
       "slice_4_integrations_readme": "done (commit 8cb7560 on ops/orchestrator-v2, docs/integrations/README.md)"
     },
@@ -130,117 +140,91 @@
     "archive_tag_wraps": "b8bc34c1575bcb92b15b611984ee10016b55809d",
     "rollback_command": "git push origin +b8bc34c1575bcb92b15b611984ee10016b55809d:refs/heads/main",
     "upstream_fork_model": {
-      "principle": "Use upstream repos as intended by GitHub. Slim seams, replaceable adapters, minimum integration. JobPipe is the engine; the forked/external repos are noise-reducing surfaces up until the candidate presses apply.",
+      "principle": "Use upstream repos as intended by GitHub. Slim seams, replaceable adapters, minimum integration.",
       "reactive_resume": {
-        "role": "GUI/editor for structured resumes + structured JSON interchange surface",
-        "integration": "upstream-as-intended via JSON round-trip CLIs (jobpipe import-reactive-resume, jobpipe export-reactive-resume-plan, jobpipe record-reactive-resume-document)",
+        "role": "GUI/editor for structured resumes + JSON interchange surface",
+        "integration": "upstream-as-intended via JSON round-trip CLIs",
         "seam_spec": "specs/reactive-resume-integration-seam.md",
         "canonical_ownership": "stays in JobPipe (evidence selection, claim targeting, narrative constraints)"
       },
       "jobsync": {
-        "role": "candidate-facing workflow/decision surface - what to apply to, application status tracking",
-        "integration": "upstream-as-intended via event-based CLIs (jobpipe export-jobsync, jobpipe record-jobsync-event)",
+        "role": "candidate-facing workflow/decision surface",
+        "integration": "upstream-as-intended via event-based CLIs",
         "seam_spec": "specs/jobsync-integration-seam.md",
-        "canonical_ownership": "stays in JobPipe (job evaluation state, claims, selection logic, evidence and narrative semantics)"
+        "canonical_ownership": "stays in JobPipe (job evaluation state, claims, selection logic)"
       },
       "crewai": {
-        "role": "prospective agent runtime for cooperative author/revise loop on cover letters + CV tailoring",
-        "integration": "not yet integrated. Fork at larsvaerland/crewAI tracks crewaiinc/crewai upstream. Enters inside the author/revise agent layer only after JobPipe produces the deterministic tailored_cv_plan.",
-        "status": "prospective - waits on T002 authoring MVP",
-        "canonical_ownership": "stays in JobPipe - deterministic contracts (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult) remain JobPipe-native and agent-runtime-swappable"
+        "role": "agent runtime for cooperative author/revise loop on cover letters + CV tailoring",
+        "integration": "isolated — jobpipe_crewai/ sibling module, AuthorAdapter Protocol seam, JSON in/out only",
+        "status": "Sprint 3 in progress — S9 env done, S10-S12 handed to Codex",
+        "canonical_ownership": "stays in JobPipe — contracts (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult) are JobPipe-native and agent-runtime-swappable"
       }
     }
   },
   "authoring_mvp_lane": {
     "name": "T002: AI document authoring MVP (cover letter + tailored CV)",
-    "status": "queued_behind_pr_90_merge",
+    "status": "sprint_3_in_progress",
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
     "position_decision": "C",
-    "position_decision_notes": "Option C (hybrid): deterministic contracts + validation stay JobPipe-native. crewAI enters only inside the author/revise agent layer. Contracts must be agent-runtime-swappable so the product is not locked to a specific agent framework. Data is the product, the engine is JobPipe, agent frameworks are pluggable.",
+    "position_decision_notes": "Option C (hybrid): deterministic contracts + validation stay JobPipe-native. crewAI enters only inside the author/revise agent layer. Data is the product, the engine is JobPipe, agent frameworks are pluggable.",
     "contracts": {
       "AuthoringCaseContext": "immutable frozen dataclass - candidate + job + evidence bundle going into author",
       "GeneratedApplicationPackage": "pydantic model - cover_letter_draft + tailored_cv_projection + evidence_refs + gap_notes + validation",
       "DocumentValidationResult": "pydantic model - passed + score + failures + warnings"
     },
-    "first_slice": "Issue #58 - audit existing application_pack paths, define AuthoringCaseContext",
-    "followup_slices": [
-      "#59",
-      "#60",
-      "#61",
-      "#63"
-    ],
-    "parked_issues": [
-      "#82",
-      "#83",
-      "#84",
-      "#85",
-      "#86",
-      "#87",
-      "#88",
-      "#89"
-    ],
-    "parked_reason": "Supabase / crewAI runtime / hosted shell explicitly out of scope for MVP per governing spec"
+    "sprint_3": {
+      "slice_9_env": "done — crewAI 1.14.2 on Python 3.12, venv at C:\\Users\\larsv\\envs\\crewai-env, verified 2026-04-22",
+      "slice_10_skeleton": "pending Codex (Task 1 in orchestrator brief)",
+      "slice_11_factory": "pending Codex (Task 2 in orchestrator brief)",
+      "slice_12_crew": "pending Codex (Task 3 in orchestrator brief)",
+      "slice_13_live_run": "pending coordinator + Lars (after Codex PR merges)"
+    }
   },
   "open_risks": [
-    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice.",
-    "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
-    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for.",
-    "Post-unification: any clone of the old origin/main (tip b8bc34c) will require git fetch --prune + hard reset to match the new main. Archive tag oss-main-pre-unify preserves the old tip for provenance.",
-    "Slice 1 `jobpipe/authoring/case_context.py` docstring incorrectly describes candidate_id/evaluation_id as `meta[\"candidate_id\"]` / `meta.get(\"evaluation_id\")`. `RunMeta` has neither field. Slice 3 brief establishes the correct source-of-truth (keyword-only builder args). Follow-up docs-hygiene issue needed; not blocking.",
-    "Slice 7 surprise: application_pack.py uses final_output_as(ApplicationPackOut) but brief specified result.final_output. Tests passed with final_output. Verify which API is correct before Slice 8 uses run_agent result."
+    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) — docs-hygiene follow-up needed.",
+    "Python 3.14 + anyio plugin autoload breaks pytest on Windows. Workaround: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 + explicit plugin flags. Follow-up: add pyproject.toml pytest config.",
+    "T002 Option C: author/revise contract layer must stay agent-runtime-swappable. Escalate if any Codex task puts crewai import inside jobpipe/.",
+    "Slice 7 surprise: application_pack.py uses final_output_as(ApplicationPackOut) but brief specified result.final_output. Tests passed with final_output — verify before next usage.",
+    "crewAI env is Python 3.12 only. Do not attempt pip install crewai under Python 3.14 — pydantic-core/pyo3 hard-blocks at 3.13."
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
   "recent_decisions": [
     {
       "decided_at": "2026-04-21",
-      "decision": "Op 2 executed end-to-end: PR #90 merged (merge commit 9446998), archive tag oss-main-pre-unify pushed, origin/main force-updated to 9446998, docs/integrations/README.md landed.",
-      "rationale": "All slices completed with founder sign-off at each RED GATE. Main now reflects the unified private-lane codebase; old main preserved under tag for provenance."
-    },
-    {
-      "decided_at": "2026-04-21",
-      "decision": "Op 2 path B (archive + force-update) over path A (merge --allow-unrelated-histories)",
-      "rationale": "Path A preserves unrelated main lineage in permanent history. Path B gives a clean single-lineage OSS story with a preserved archive tag for provenance. Paid/multi-user work has not yet started; private lane is the intended OSS state."
+      "decision": "Op 2 executed end-to-end: PR #90 merged, archive tag pushed, origin/main force-updated to 9446998, docs/integrations/README.md landed.",
+      "rationale": "All slices completed with founder sign-off. Main now reflects the unified private-lane codebase."
     },
     {
       "decided_at": "2026-04-21",
       "decision": "T002 Option C (hybrid) for crewAI positioning",
-      "rationale": "Deterministic contracts + validation stay JobPipe-native; crewAI enters inside the author/revise agent layer only. Preserves 'data is the product, JobPipe is the engine' invariant. Keeps the agent runtime pluggable so the product is not locked to any single framework."
-    },
-    {
-      "decided_at": "2026-04-21",
-      "decision": "Upstream fork model: use reactive-resume and jobsync upstream-as-intended via slim JSON/event seams. crewAI fork is prospective and waits on T002.",
-      "rationale": "Slim seams keep JobPipe modular. If any upstream goes stale or something better appears, the adapter is replaceable. Minimum integration = minimum maintenance burden."
+      "rationale": "Deterministic contracts + validation stay JobPipe-native; crewAI enters inside the author/revise agent layer only. Agent runtime is pluggable."
     },
     {
       "decided_at": "2026-04-22",
       "decision": "T002 Sprint 1 closed — 5 slices, 5 PRs, all merged to main.",
-      "rationale": "Deterministic contract layer (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult, validate_authoring_context) is complete and Option C compliant. No crewAI import in any slice."
+      "rationale": "Deterministic contract layer complete and Option C compliant. No crewAI import in any slice."
     },
     {
       "decided_at": "2026-04-22",
       "decision": "T002 Sprint 2 closed — 3 slices (6/7/8), 3 PRs (#99/#100/#101), all merged to main.",
-      "rationale": "AuthorAdapter + SimpleAgentAuthor + persist + CLI complete. Option C compliant. No crewAI import in any slice. Sprint exit test verified structurally; live data test deferred to first APPLY-decision pipeline run."
+      "rationale": "AuthorAdapter + SimpleAgentAuthor + persist + CLI complete. Option C compliant. Sprint exit test verified structurally; live data test deferred to first APPLY-decision run."
+    },
+    {
+      "decided_at": "2026-04-22",
+      "decision": "T002 Sprint 3 started — crewAI integration decision documented in specs/crewai-integration-decision.md. Orchestrator+sub-agent brief at docs/execplans/T002-sprint-3-orchestrator.md.",
+      "rationale": "crewAI 1.14.2 selected: vendor-agnostic via LiteLLM, MCP-native, isolated in Python 3.12 venv. Slice 9 env confirmed working. Codex handles Tasks 1-3 (S10/S11/S12) sequentially."
     }
-  ],
-  "touched_files": [
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\integrations\\README.md (commit 8cb7560)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\execplans\\T002.md (pending commit)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\decisions.md (pending commit)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\ai-playbook.md (pending commit)"
   ],
   "coordinator_leverage_scaffolding": {
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
     "artifacts": [
       "docs/decisions.md - Op 2 + Option C decisions as durable record",
-      "docs/ai-playbook.md ┬ºPR target branch - PRs target main post-Op2",
-      "docs/ai-playbook.md ┬ºSlice Brief Self-Review - planner self-validates before handing up",
-      "docs/ai-playbook.md ┬ºCodex Worker Prompt Template - reusable Codex prompt shell",
-      "docs/ai-playbook.md ┬ºSprint Loops - standing loops for planner, Codex, coordinator",
-      "docs/ai-playbook.md ┬ºCheap Delegation - explicit delegation matrix for each role",
-      "docs/execplans/T002.md ┬ºSprint 1 - ordered slice list #58, #59, #60, #61, #63",
-      "docs/execplans/T002.md ┬ºSlice-pickup protocol - planner claims 
+      "docs/ai-playbook.md - PR target branch, slice self-review, Codex worker prompt template, sprint loops, cheap delegation matrix",
+      "docs/execplans/T002.md - Sprint 1 ordered slice list + slice-pickup protocol",
+      "specs/crewai-integration-decision.md - full crewAI spike context, architecture, isolation rule, seam design",
+      "docs/execplans/T002-sprint-3.md - Sprint 3 coordinator plan (5 slices)",
+      "docs/execplans/T002-sprint-3-orchestrator.md - Codex orchestrator + sub-agent brief (Tasks 1-3)"
+    ]
+  }
+}
