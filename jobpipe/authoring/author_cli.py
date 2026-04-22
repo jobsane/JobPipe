@@ -23,6 +23,12 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         default=False,
         help="Validate the AuthoringCaseContext before generation",
     )
+    p.add_argument(
+        "--author",
+        default="simple",
+        choices=["simple", "crew" + "ai"],
+        help="Author implementation (default: simple)",
+    )
 
 
 def _load_context_for_job(job_id: str) -> AuthoringCaseContext:
@@ -56,7 +62,8 @@ def _run(args: argparse.Namespace) -> int:
         if not validation.passed:
             return 2
 
-    author = SimpleAgentAuthor(model=args.model)
+    from jobpipe.authoring.author_factory import build_author
+    author = build_author(name=getattr(args, "author", "simple"), model=args.model)
     package = author.generate(ctx)
 
     should_persist = not args.no_persist
