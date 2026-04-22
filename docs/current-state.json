@@ -1,13 +1,13 @@
 {
-  "active_goal": "T002 Sprint 3 closed — PR #107 merged (65b074d). S10/S11/S12 done. Pending: S13 live exit test (need APPLY-decision job + run --author crewai). Follow-up hygiene: #108 evidence_refs type, #109 test assertion fix, #110 dead code.",
+  "active_goal": "T002 Sprint 4: Slice A merged (PR #116, fa0deaa). Slice B (scripts/flow_author.py) handed to Codex — branch codex/T002-s4b-flow-author, crewai-env. PR #115 merged (unblocked B+C). S13 exit test still pending.",
   "current_task_id": "T002",
-  "current_slice": "T002-sprint-3-s13-exit-test",
-  "status": "sprint_3_implementation_merged_awaiting_exit_test",
-  "lead_worker": "claude",
-  "active_branch": "claude/T002-authoring-mvp",
+  "current_slice": "T002-sprint-4-slice-b",
+  "status": "sprint_4_slice_b_handed_to_codex",
+  "lead_worker": "codex",
+  "active_branch": "codex/T002-s4b-flow-author",
   "coordinator_branch": "ops/orchestrator-v2",
-  "implementation_branch": "codex/T002-authoring-mvp",
-  "planner_branch": "claude/T002-authoring-mvp",
+  "implementation_branch": "codex/T002-s4b-flow-author",
+  "planner_branch": "ops/orchestrator-v2",
   "worktrees": {
     "orchestrator": {
       "path": "../Jobpipe-orchestrator-v2",

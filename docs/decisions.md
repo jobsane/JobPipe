@@ -54,3 +54,73 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Option C (hybrid) for the author/revise layer. Deterministic contracts (`AuthoringCaseContext`, `GeneratedApplicationPackage`, `DocumentValidationResult`) stay JobPipe-native and must not import any agent framework. crewAI (if adopted later) enters only behind a JobPipe-owned adapter inside the author/revise module, which has a typed, framework-agnostic interface.
 - Why: Data is the product. JobPipe is the engine. Locking contracts to any one agent framework (crewAI or otherwise) would trade the product's differentiator for short-term velocity. Keeping the runtime layer swappable preserves the replaceability principle we apply to reactive-resume and jobsync.
 - Consequence: Any slice that imports `crewai` into the contract layer is a routing violation and must be rejected in review. The "no `crewai` import in contract modules or their tests" rule must appear as acceptance criteria on every T002 slice that touches contracts.
+
+---
+
+- Date: 2026-04-21
+- Task: T001 + Op 2
+- Decision: T001 complete. Op 2 (OSS unification) executed end-to-end: PR #90 merged (inspect-db claim-layer views), archive tag `oss-main-pre-unify` pushed, `origin/main` force-updated `b8bc34c` → `9446998`. Coordinator scaffolding landed via PR #91. WHO_AM_I split landed via PR #97.
+- Why: All T001 slices completed with founder sign-off. Main now reflects the unified private-lane codebase. Coordinator scaffolding (ai-playbook.md, current-state.json, execplans/) is live on main.
+- Consequence: PRs target `main` directly. `codex/job-catalog-foundation*` lanes retired. T002 authoring MVP is the active implementation track.
+
+---
+
+- Date: 2026-04-21
+- Task: T002 Sprint 1
+- Decision: Sprint 1 closed — 5 slices, 5 PRs, all merged to main. Contract layer complete.
+  - PR #92: Slice 1 — `AuthoringCaseContext` frozen dataclass
+  - PR #93: Slice 2 — `GeneratedApplicationPackage` + `DocumentValidationResult`
+  - PR #94: Slice 3 — `build_authoring_case_context` constructor
+  - PR #95: Slice 4 — `build-authoring-context` smoke CLI hook
+  - PR #98: Slice 5 — deterministic validation rules
+- Why: Deterministic contract layer is a prerequisite for any agent integration. Option C compliance verified: no `crewai` import in any slice.
+- Consequence: `jobpipe/authoring/` contract surface is stable. Sprint 2 (adapter + CLI) can proceed.
+
+---
+
+- Date: 2026-04-21
+- Task: T002 Sprint 2
+- Decision: Sprint 2 closed — 3 slices, 3 PRs, all merged to main. Adapter + CLI layer complete.
+  - PR #99: Slice 6 — `--validate` flag on `build-authoring-context`
+  - PR #100: Slice 7 — `AuthorAdapter` Protocol + `SimpleAgentAuthor`
+  - PR #101: Slice 8 — author package persistence and CLI (`author-package` command)
+- Why: Sprint exit test (10 passed, compile_check 81 files, --help verified) confirmed integration. Option C compliant throughout. Live data test deferred to first APPLY-decision run.
+- Consequence: `jobpipe/authoring/` adapter surface is stable. `author-package` CLI is live. Sprint 3 (crewAI integration) can proceed. Three hygiene issues opened (#108/#109/#110), none blocking.
+
+---
+
+- Date: 2026-04-22
+- Task: T002 Sprint 3
+- Decision: Sprint 3 started — crewAI 1.14.2 selected as agent runtime (vendor-agnostic via LiteLLM, MCP-native). Isolated in Python 3.12 venv at `C:\Users\larsv\envs\crewai-env`. Slice 9 env confirmed working; Codex handles Slices 10/11/12 via orchestrator+sub-agent brief.
+- Why: crewAI 1.14.2 is the lowest-friction option that satisfies: LiteLLM passthrough (model routing stays in JobPipe), MCP support, and Python 3.12 isolation from the Python 3.14 main env. Spec at `specs/crewai-integration-decision.md`.
+- Consequence: `jobpipe_crewai/` is the permanent crewAI isolation boundary. Any `import crewai` outside that directory is a routing violation.
+
+---
+
+- Date: 2026-04-22
+- Task: T002 Sprint 3
+- Decision: Sprint 3 implementation closed — all implementation PRs merged to main. CrewAI author/critic loop + JobPipeAuthoringFlow + orchestration crew are live.
+  - PR #107: crewAI author/critic loop (CrewAIAuthor, factory, 2-agent crew, isolated in `jobpipe_crewai/`)
+  - PR #113: T002 Slice 5 — deterministic validation rules re-landed (Sprint 3 fixup)
+  - PR #115: `JobPipeAuthoringFlow` — post-triage Flow + Crew orchestration (`#114`)
+- Why: All invariants hold: no `crewai` import in `jobpipe/`, 20 tests pass across Python 3.12 and 3.14, compile_check 82 files. PR #115 completes the Flow layer required for Sprint 4 entry points.
+- Consequence: S13 exit test (live APPLY-decision run) is the only remaining Sprint 3 exit criterion. Sprint 4 (docx rendering + flow entry point + finalize_step) is unblocked. Three hygiene issues (#108/#109/#110) are tracked but not blocking.
+
+---
+
+- Date: 2026-04-22
+- Task: Governance
+- Decision: Adopt tiered model routing from `specs/ai-toolchain-setup-2026-04-22.md`. Stop Opus on implementation review immediately. Fast-path rollout: Green XS slices use mini-prompt on issue, no execplan, no coordinator approval.
+- Why: Solo-founder pace. Reversible micro-decisions should not require full coordinator loops. Coordinator overhead should match decision complexity.
+- Consequence: `docs/ai-playbook.md` is the workflow source of truth. GitHub Issues + Project #6 serve as the append-only decision log. `docs/decisions.md` stays as the human-readable index of durable decisions only.
+
+---
+
+- Date: 2026-04-22
+- Task: T002 Sprint 4
+- Decision: Sprint 4 started. Three slices approved: S4-A (docx rendering), S4-B (flow_author.py CLI entry point), S4-C (finalize_step DB write-back). crewAI author/reviser included in Sprint 4, not a separate task. Orchestration crew (`#114`) built in Sprint 3 PR #115.
+  - S4-A: PR #116 open (commit fa0deaa) — `render_cover_letter_docx` via Node.js subprocess. In review.
+  - S4-B: Branch `codex/T002-s4b-flow-author` — handed to Codex 2026-04-22. Awaiting implementation.
+  - S4-C: `finalize_step` DB write-back — Ready after S4-B merges.
+- Why: Sprint 4 completes the document production pipeline: renders a real .docx, exposes a standalone crewAI entry point, and closes the write-back loop to the primary DB.
+- Consequence: Sprint 4 exit criterion = all three slices merged + live `run_authoring_flow` smoke test passes on an APPLY-decision job. S13 exit test (Sprint 3) must also be confirmed before Sprint 4 close.
