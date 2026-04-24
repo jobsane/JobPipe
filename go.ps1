@@ -84,7 +84,7 @@ if ($WithSuggestions) {
 # 1. Pull + process
 Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
 & $py -m jobpipe.cli.drain_queue `
-    --profile .\profile\profile_pack.md `
+    --profile C:\Users\larsv\JobpipeData\profile_pack.md `
     --config .\configs\pipeline.v1.yaml `
     --out .\out_runs `
     --state .\jobs_state.json `
