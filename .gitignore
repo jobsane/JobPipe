@@ -70,9 +70,18 @@ prototype/
 *.err
 *.tmp
 *_out.txt
+tmp_*.txt
 commit_msg.txt
 pipeline_error.json
 .jobpipe_tmp/
+
+# Local tooling / scratch scripts (orchestrator-side only)
+# If any of these become canonical, move into jobpipe/cli/ or scripts/ and un-ignore.
+/check_db.py
+/poll_stage1.py
+/make_calibration_artifact.py
+/crew.py
+/main.py
 
 # OS / IDE
 .DS_Store

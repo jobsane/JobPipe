@@ -1,8 +1,8 @@
 {
   "active_goal": "Staged NAV ingest (2026-04-24 founder directive): 100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full feed. Execplan at docs/execplans/staged-ingest-2026-04-24.md. Profile/ contract landed. JobSync purge deferred. T002 Sprint 4 Slice B paused (in-flight codex/T002-s4b-flow-author runs to completion naturally).",
   "current_task_id": "staged-ingest-2026-04-24",
-  "current_slice": "stage_1_100_jobs",
-  "status": "stage_1_ready_awaiting_founder_run",
+  "current_slice": "stage_3_500_jobs",
+  "status": "stage_3_ready_awaiting_founder_run",
   "lead_worker": "codex",
   "active_branch": "codex/T002-s4b-flow-author",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -202,11 +202,11 @@
   "blocked_on": [],
   "needs_founder_decision": [],
   "ingest_prep_track": {
-    "status": "stage_1_ready",
+    "status": "stage_3_ready",
     "goal": "Staged NAV ingest: 100 jobs → 500 → full NAV feed, with manual threshold tuning between stages.",
     "opened_at": "2026-04-23",
     "opened_by": "lars",
-    "notes": "Founder directive 2026-04-23: pause new T002 Sprint 4 slice handoffs until prereqs clear. In-flight work (PR #116, codex/T002-s4b-flow-author) runs to completion naturally.",
+    "notes": "Founder directive 2026-04-23: pause new T002 Sprint 4 slice handoffs until prereqs clear. In-flight work (PR #116, codex/T002-s4b-flow-author) runs to completion naturally. Stage 1+2 collapsed into a single 440-job calibration pass on 2026-04-24 (1305 jobs reached triage after geo/hard-no filters). Artifacts landed in calibration/2026-04-24_n440.*. Threshold tuned 0.30 -> 0.27.",
     "prereqs": {
       "profile_folder_contract": {
         "status": "landed",
@@ -254,10 +254,17 @@
     "staged_runs": {
       "execplan": "docs/execplans/staged-ingest-2026-04-24.md",
       "cadence": "100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full remainder",
-      "stage_1_100_jobs": "ready_to_run",
-      "stage_2_100_jobs": "pending_stage_1",
-      "stage_3_500_jobs": "pending_stage_2",
+      "stage_1_100_jobs": "done_2026-04-24 (folded into 440-job calibration batch; 1305 jobs reached triage; 1 APPLY + 5 REVIEW_LOW; threshold tune 0.30 -> 0.27)",
+      "stage_2_100_jobs": "done_2026-04-24 (folded into same 440-job batch)",
+      "stage_3_500_jobs": "ready_to_run",
       "stage_4_full_feed": "pending_stage_3",
+      "stage_1_2_artifact": {
+        "json": "calibration/2026-04-24_n440.json",
+        "markdown": "calibration/2026-04-24_n440.md",
+        "raw_jsonl": "calibration/2026-04-24_n440_raw.jsonl",
+        "overrides": "calibration/overrides.jsonl",
+        "summary": "1305 triaged; 1299 SKIP; 5 REVIEW_LOW; 1 APPLY (Nofence Senior Product Manager Data & AI). Threshold lowered 0.30 -> 0.27 to open boundary band (0.27-0.29). Kongsberg Defence hardware FP overridden to SKIP."
+      },
       "intake_command": "jobpipe pull-sheets --sheet-url $env:JOBPIPE_CSV_URL",
       "run_command_template": ".\\go.ps1 --max-jobs <N>"
     }
@@ -286,6 +293,11 @@
     "crewai_as_coding_tool": "No. Authoring domain only. Research tracked in #112."
   },
   "recent_decisions": [
+    {
+      "decided_at": "2026-04-24",
+      "decision": "Stage 1+2 closed as a single 440-job calibration pass (1305 jobs reached triage). semantic_filter_threshold lowered 0.30 -> 0.27 in configs/pipeline.v1.yaml. Outcome: 1299 SKIP, 5 REVIEW_LOW, 1 APPLY (Nofence Senior Product Manager - Data & AI). Kongsberg Defence hardware role flagged as false positive by Lars override; candidate for future hard_no_title_regex addition pending Stage 3 confirmation. Profile_pack unchanged — too early + too little APPLY signal.",
+      "rationale": "Boundary band 0.27-0.29 held plausible roles (Administrativ koordinator). 99.5% SKIP on NAV general feed is expected; geo filter (52% of skips) + hard_no title (8%) working as designed. Calibration artifact landed per docs/crew-calibration-contract.md v1.0. Stage 3 (500 jobs) is the next tuning-stable checkpoint — watch REVIEW rate: if >15%, nudge threshold back to 0.28."
+    },
     {
       "decided_at": "2026-04-24",
       "decision": "JobSync purge deferred from ingest-prep track. Staged NAV ingest (docs/execplans/staged-ingest-2026-04-24.md) runs the core JobPipe pipeline (triage -> parse -> profile_match -> pivot -> moderate -> application_pack) in four stages: 100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full remainder. No JobSync sync during this ingest.",
