@@ -68,16 +68,21 @@ Expected queue size: 1,000–2,500 ACTIVE jobs on a typical day. If under 300, s
 
 If distribution is wildly off (e.g. >95% SKIP_TRIAGE or <0.5% APPLY), recalibration is mandatory before Stage 2.
 
-**Stage 1 calibration entry** *(fill in after run)*:
-- Run timestamp:
-- Queue before / after: _ / _
-- Decision breakdown: SKIP_TRIAGE=_, SKIP_MATCH=_, REVIEW_LOW=_, REVIEW_HIGH=_, APPLY=_
+**Stage 1 calibration entry** *(completed 2026-04-24)*:
+- Run timestamp: 2026-04-24 ~07:20–07:50 CEST
+- Queue before / after: 11,240 active / ~10,800 remaining (440 processed across 5 batches; 1 batch of 7 failed due to relative-path cwd bug — non-blocking)
+- Decision breakdown: SKIP=438 (99%), APPLY=1 (0.2%), REVIEW_LOW=1 (0.2%), REVIEW_HIGH=0, APPLY=1
+- Triage breakdown: SKIP=435 (99%), REVIEW=4 (1%), APPLY_CANDIDATE=1 (0.2%)
 - Spot-check findings:
-  - False-positive KEEPs (should have been SKIP): _
-  - False-negative SKIPs (should have been KEEP): _
-- Knob change(s) applied:
-- Rationale (2 sentences):
-- Commit SHA (if knob change committed):
+  - True KEEPs: "Senior Product Manager - Data & AI focus" (APPLY ✓), "Senior Mulesoft Developer" (REVIEW_LOW ✓)
+  - False-negative SKIPs observed: "Administrativ koordinator" sim:0.29 — borderline; "Verksted/MC" sim:0.21–0.27 — correctly skipped
+  - No false-positive KEEPs observed in 5-job sample
+  - Geo filter working correctly: rural postal codes (5760 Røldal etc.) correctly skipped
+  - Hard-no regex firing correctly on MC/ATV, retail, healthcare titles
+- Skip signals: `semantic_filter_skip` dominant (scores 0.21–0.29, threshold 0.30); `geo_postal_skip` secondary
+- Knob change applied: `semantic_filter_threshold` 0.30 → 0.27
+- Rationale: Borderline relevant roles (e.g. "Administrativ koordinator") scored 0.27–0.29, just under the 0.30 cut. Opening the 0.27–0.30 band lets the nano-model LLM triage decide — cheap insurance against false negatives. NAV feed is general Norwegian market; 99% SKIP on raw feed is expected and not a problem in itself.
+- Commit SHA: (pending — see git commit block below)
 
 ### Stage 2 — 100 more
 

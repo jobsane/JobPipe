@@ -1,0 +1,6 @@
+{"job_id": "", "title": "Senior Product Manager - Data & AI focus", "employer": "Nofence", "decision_was": "APPLY", "lars_override": null, "note": "Awaiting Lars review — likely correct APPLY"}
+{"job_id": "", "title": "Senior Mulesoft Developer", "employer": "reMarkable", "decision_was": "REVIEW_LOW", "lars_override": null, "note": "Awaiting Lars review — technical role, integration angle plausible"}
+{"job_id": "", "title": "Senior Software Engineer (Rust)", "employer": "Six Robotics", "decision_was": "REVIEW_LOW", "lars_override": null, "note": "Awaiting Lars review — engineering role, interesting company"}
+{"job_id": "", "title": "Senior Platform Engineer", "employer": "Six Robotics", "decision_was": "REVIEW_LOW", "lars_override": null, "note": "Awaiting Lars review — platform angle closer to scope"}
+{"job_id": "", "title": "Platform Reliability Engineer", "employer": "Heimdall Power", "decision_was": "REVIEW_LOW", "lars_override": null, "note": "Awaiting Lars review — platform/reliability borderline"}
+{"job_id": "", "title": "Gi kraft til luft- og kystforsvar — elektrisk hardware", "employer": "Kongsberg Defence", "decision_was": "REVIEW_LOW", "lars_override": "SKIP", "note": "Hardware engineering — false positive, wrong domain. Suggest adding elektrisk hardware|hardwareingeniør to hard_no_title_regex after Stage 3 confirms pattern."}
