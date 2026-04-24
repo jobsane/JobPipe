@@ -36,7 +36,7 @@ thresholds:
   # (look for "sim:X.XX" tag), find score separating helse/håndverk from IT-mgmt roles,
   # then raise threshold toward 0.55-0.60. Delete reports/profile_embedding.npy
   # whenever profile_pack.md changes or after switching models to rebuild the cache.
-  semantic_filter_threshold: 0.30  # Lowered from 0.45 — calibration showed real interview jobs score 0.33-0.42
+  semantic_filter_threshold: 0.27  # Lowered 0.45->0.30->0.27. Stage 1 calibration 2026-04-24: borderline relevant roles (e.g. Administrativ koordinator) scored 0.27-0.29, just under 0.30. Opening band for LLM triage. — calibration showed real interview jobs score 0.33-0.42
   semantic_filter_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
   reverse_triage_min_conf: 0.60   # kept for reference if reverse_triage is re-enabled
