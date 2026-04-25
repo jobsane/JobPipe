@@ -358,6 +358,12 @@ def _run_main_flow(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     raw_argv = list(argv if argv is not None else sys.argv[1:])
+    # Preload .env BEFORE any subcommand dispatch so JOBPIPE_DATA_DIR (and
+    # related path overrides) are visible to every subcommand -- not just `run`.
+    # Previously this was only called on the parser path below, which meant
+    # fast-path subcommands like `drain-queue` ran without env loaded and
+    # silently fell back to writing into <repo>/reports/jobpipe.sqlite.
+    _preload_env_from_argv(raw_argv)
     if raw_argv and raw_argv[0] in MODULE_COMMANDS:
         module = MODULE_COMMANDS[raw_argv[0]]
         forwarded = raw_argv[1:]
@@ -365,7 +371,6 @@ def main(argv: list[str] | None = None) -> None:
             forwarded = forwarded[1:]
         raise SystemExit(_run_module(module, forwarded))
 
-    _preload_env_from_argv(raw_argv)
     ap = _build_parser()
     args = ap.parse_args(raw_argv)
 
