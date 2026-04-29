@@ -7,6 +7,7 @@ from jobpipe.cli import main as cli_main
 
 
 def test_run_dry_run_uses_local_delta_and_skips_drain_queue(tmp_path, monkeypatch) -> None:
+    """Canonical bounded smoke path: local delta only, no drain_queue, max two jobs."""
     delta_path = tmp_path / "jobs_delta.jsonl"
     delta_path.write_text(
         "\n".join(

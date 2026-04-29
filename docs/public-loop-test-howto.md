@@ -15,6 +15,15 @@ This how-to matches the current `Jobpipe` repo shape:
 
 ## What this test proves
 
+Canonical bounded smoke command for this repo:
+
+```powershell
+.venv\Scripts\python.exe -m jobpipe.cli.main run --dry-run --no-open
+```
+
+This command is the single best local smoke entrypoint because it exercises the
+canonical CLI run loop while keeping the path bounded and browser-free.
+
 This test is for the current public local-first loop:
 
 1. the CLI starts
@@ -118,6 +127,7 @@ Success:
 - in current JobPipe, `--dry-run` is a bounded local smoke path:
   - it skips live sheet intake
   - it processes at most two already-queued jobs if a local delta exists
+- `--no-open` keeps the smoke path browser-free and scriptable
 - zero jobs processed is acceptable if the local queue is empty
 
 Not successful:
@@ -181,6 +191,7 @@ Not successful:
 ### Step 7. Verify the test matched the current repo shape
 
 Check the result against current docs:
+- `run --dry-run --no-open` is the canonical bounded smoke command
 - static export is the dashboard validation path
 - the primary DB is the system of record
 - `jobpipe.cli.main` is the canonical CLI surface

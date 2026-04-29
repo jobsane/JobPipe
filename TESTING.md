@@ -31,7 +31,7 @@ Every change should include one of:
 Preferred smoke test:
 
 ```text
-jobpipe run --dry-run
+jobpipe run --dry-run --no-open
 ```
 
 Current meaning:
@@ -44,13 +44,13 @@ Current meaning:
 Fallback:
 
 ```text
-python -m jobpipe.cli.main run --dry-run
+python -m jobpipe.cli.main run --dry-run --no-open
 ```
 
 Windows wrapper:
 
 ```powershell
-.\go.ps1 -DryRun
+.\go.ps1 -DryRun -NoOpen
 ```
 
 For a step-by-step manual validation path with explicit success and failure outcomes, use [docs/public-loop-test-howto.md](docs/public-loop-test-howto.md).
