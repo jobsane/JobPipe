@@ -43,3 +43,31 @@ def test_record_jobsync_event_cli_writes_primary_db(tmp_path, capsys) -> None:
 
     assert summary == ("applied", "", "applied", "Sent via jobsync")
     assert event == ("applied", "jobsync", "Sent via jobsync")
+
+
+def test_record_jobsync_event_cli_runtime_profile_uses_live_local_db(tmp_path, monkeypatch, capsys) -> None:
+    data_root = tmp_path / "JobpipeData"
+    monkeypatch.setenv("JOBPIPE_DATA_DIR", str(data_root))
+
+    record_jobsync_event.main(
+        [
+            "job-456",
+            "interview",
+            "--candidate-id",
+            "candidate-b",
+            "--runtime-profile",
+            "live_local",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["job_id"] == "job-456"
+
+    con = sqlite3.connect(str(data_root / "db" / "jobpipe.sqlite"))
+    event = con.execute(
+        "SELECT event_type FROM application_events WHERE candidate_id = ? AND job_id = ?",
+        ["candidate-b", "job-456"],
+    ).fetchone()
+    con.close()
+
+    assert event == ("interview",)
