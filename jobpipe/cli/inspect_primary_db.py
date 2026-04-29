@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from jobpipe.core.io import load_env_file
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 load_env_file(".env")
 
-from jobpipe.runtime.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db
 
 
@@ -622,7 +622,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="Inspect the primary JobPipe SQLite database used for candidate/profile/application state."
     )
-    ap.add_argument("--db", default=str(primary_db_path()), help="Path to primary SQLite DB")
+    ap.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB path from")
+    ap.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
+    ap.add_argument("--db", default="", help="Path to primary SQLite DB")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help="Candidate ID to inspect")
     ap.add_argument("--limit", type=int, default=20, help="Row limit for list views")
     ap.add_argument(
@@ -635,7 +637,12 @@ def main() -> None:
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
     args = ap.parse_args()
 
-    db_path = Path(args.db)
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+    )
+    db_path = runtime.primary_db_path
     views = args.show or ["summary"]
     job_id = str(args.job_id or "").strip() or None
 

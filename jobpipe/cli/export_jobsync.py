@@ -10,7 +10,7 @@ from typing import Iterable, List, Optional
 
 from jobpipe.projections import build_jobsync_application_case_projections
 from jobpipe.projections.dashboard import build_payload
-from jobpipe.runtime.paths import artifacts_root, exports_root, primary_db_path
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 _DEFAULT_DECISIONS = ("APPLY_STRONGLY", "APPLY", "REVIEW_HIGH", "REVIEW_LOW")
@@ -38,17 +38,19 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="Export thin JobSync application-case projections from canonical JobPipe state."
     )
+    parser.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve canonical paths from")
+    parser.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
     parser.add_argument(
         "--artifacts",
         "--out-runs",
         dest="artifacts_dir",
-        default=str(artifacts_root()),
-        help=f"Artifact runs directory (default: {artifacts_root()})",
+        default="",
+        help="Artifact runs directory override",
     )
     parser.add_argument(
         "--db",
-        default=str(primary_db_path()),
-        help=f"Path to primary jobpipe.sqlite (default: {primary_db_path()})",
+        default="",
+        help="Path to primary jobpipe.sqlite override",
     )
     parser.add_argument(
         "--candidate-id",
@@ -72,14 +74,24 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     parser.add_argument(
         "--out",
-        default=str(exports_root() / "jobsync_cases.json"),
-        help=f"Output JSON path (default: {exports_root() / 'jobsync_cases.json'})",
+        default="",
+        help="Output JSON path override",
     )
     args = parser.parse_args(argv)
 
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+        artifacts_override=args.artifacts_dir,
+    )
+    artifacts_dir = runtime.artifacts_root
+    db_path = runtime.primary_db_path
+    out_path = Path(args.out) if str(args.out).strip() else (runtime.exports_root / "jobsync_cases.json")
+
     payload = build_payload(
-        Path(args.artifacts_dir),
-        primary_db_path_=Path(args.db),
+        artifacts_dir,
+        primary_db_path_=db_path,
         candidate_id=args.candidate_id,
     )
     rows = _selected_rows(
@@ -89,7 +101,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     cases = [case.model_dump(mode="json") for case in build_jobsync_application_case_projections(rows)]
 
-    out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(

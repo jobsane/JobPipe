@@ -20,6 +20,7 @@ from jobpipe.core.paths import (
     repo_root,
     secrets_root as compat_secrets_root,
 )
+from jobpipe.runtime.data_sources import resolve_profile_paths, resolve_runtime_profile
 from jobpipe.runtime.paths import (
     application_state_path,
     cache_root,
@@ -145,3 +146,42 @@ def test_runtime_paths_is_canonical_and_core_paths_stays_compatible(monkeypatch,
     assert profile_embedding_cache_path() == compat_profile_embedding_cache_path()
     assert gmail_token_path() == compat_gmail_token_path()
     assert gmail_credentials_path() == compat_gmail_credentials_path()
+
+
+def test_runtime_profile_repo_smoke_ignores_external_data_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBPIPE_DATA_DIR", str(tmp_path / "external"))
+
+    profile = resolve_runtime_profile("repo_smoke")
+
+    assert profile.name == "repo_smoke"
+    assert profile.data_root is None
+    assert profile.primary_db_path == repo_root() / "reports" / "jobpipe.sqlite"
+    assert profile.artifacts_root == repo_root() / "out_runs"
+
+
+def test_runtime_profile_live_local_follows_external_data_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBPIPE_DATA_DIR", str(tmp_path))
+
+    profile = resolve_runtime_profile("live_local")
+
+    assert profile.name == "live_local"
+    assert profile.data_root == tmp_path.resolve()
+    assert profile.primary_db_path == tmp_path / "db" / "jobpipe.sqlite"
+    assert profile.profile_pack_path == tmp_path / "profile" / "profile_pack.md"
+    assert profile.resume_json_path == tmp_path / "profile" / "resume.json"
+
+
+def test_runtime_profile_path_overrides_win(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBPIPE_DATA_DIR", str(tmp_path / "data"))
+    custom_db = tmp_path / "custom" / "jobpipe.sqlite"
+    custom_profile = tmp_path / "profile_pack.md"
+
+    profile = resolve_profile_paths(
+        "live_local",
+        db_override=str(custom_db),
+        profile_override=str(custom_profile),
+    )
+
+    assert profile.primary_db_path == custom_db.resolve()
+    assert profile.db_root == custom_db.resolve().parent
+    assert profile.profile_pack_path == custom_profile.resolve()
