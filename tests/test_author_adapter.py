@@ -66,7 +66,7 @@ def _author_output() -> SimpleNamespace:
             ],
             "experience_refs": ["evidence-1", "evidence-1", "evidence-1", "evidence-1"],
         },
-        evidence_refs=[{"evidence_unit_id": "evidence-1"}],
+        evidence_refs=["evidence-1"],
         gap_notes=["Ingen kritiske gap identifisert."],
     )
 

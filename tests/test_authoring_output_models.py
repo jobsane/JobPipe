@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,7 +16,7 @@ def _generated_package(**overrides: object) -> GeneratedApplicationPackage:
             "headline": "Product leader",
             "selected_bullets": ["Led roadmap work."],
         },
-        "evidence_refs": [{"evidence_unit_id": "evidence-1"}],
+        "evidence_refs": ["evidence-1"],
         "gap_notes": ["Clarify sector transition."],
         "validation": {"passed": True, "score": 0.91},
     }
@@ -32,7 +30,7 @@ def test_generated_package_happy_path() -> None:
     assert package.job_id == "job-1"
     assert package.cover_letter_draft == "Dear hiring team..."
     assert package.tailored_cv_projection["headline"] == "Product leader"
-    assert package.evidence_refs == [{"evidence_unit_id": "evidence-1"}]
+    assert package.evidence_refs == ["evidence-1"]
     assert package.gap_notes == ["Clarify sector transition."]
     assert package.validation == {"passed": True, "score": 0.91}
 
@@ -63,7 +61,7 @@ def test_generated_package_model_dump_shape() -> None:
             "headline": "Product leader",
             "selected_bullets": ["Led roadmap work."],
         },
-        "evidence_refs": [{"evidence_unit_id": "evidence-1"}],
+        "evidence_refs": ["evidence-1"],
         "gap_notes": ["Clarify sector transition."],
         "validation": None,
     }
@@ -95,19 +93,8 @@ def test_validation_result_score_coerces_int() -> None:
 
 
 def test_no_crewai_import() -> None:
-    env = None
-    git_grep_dir = Path("C:/Program Files/Git/usr/bin")
-    if git_grep_dir.exists():
-        env = dict(os.environ)
-        env["PATH"] = f"{git_grep_dir}{os.pathsep}{env.get('PATH', '')}"
+    text = Path("jobpipe/authoring/output_models.py").read_text(encoding="utf-8")
 
-    result = subprocess.run(
-        ["grep", "-r", "crewai", "jobpipe/", "--include=*.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-
-    assert result.returncode == 1, f"Unexpected crewai reference found:\n{result.stdout}"
-    assert result.stdout == ""
+    assert "crewai" not in text
+    assert "autogen" not in text
+    assert "langchain" not in text

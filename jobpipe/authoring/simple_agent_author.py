@@ -30,7 +30,7 @@ Krav:
 class _AuthorOutput(BaseModel):
     cover_letter_draft: str
     tailored_cv_projection: dict
-    evidence_refs: list[dict]
+    evidence_refs: list[str]
     gap_notes: list[str]
 
 
