@@ -10,12 +10,8 @@ from typing import Iterable
 
 from jobpipe.core.io import read_jsonl_lines, write_jsonl_lines
 from jobpipe.core.io import load_env_file
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 from jobpipe.runtime.paths import (
-    artifacts_root,
-    exports_root,
-    jobs_delta_path,
-    jobs_state_path,
-    primary_db_path,
     repo_root,
 )
 
@@ -42,6 +38,7 @@ MODULE_COMMANDS = {
     "record-feedback": "jobpipe.cli.record_feedback",
     "record-jobsync-event": "jobpipe.cli.record_jobsync_event",
     "record-reactive-resume-document": "jobpipe.cli.record_reactive_resume_document",
+    "refresh-runtime-state": "jobpipe.cli.refresh_runtime_state",
     "reset-runtime": "jobpipe.cli.reset_runtime",
     "scan-gmail": "jobpipe.cli.scan_gmail",
     "sync-evaluations": "jobpipe.cli.sync_evaluations",
@@ -188,12 +185,14 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help=f"Path to .env file (default: {DEFAULT_ENV_PATH})")
     default_candidate_id = _default_candidate_id()
     run.add_argument("--candidate-id", default="", help=f"Candidate ID override (default: {default_candidate_id})")
+    run.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB/artifact/export paths from")
+    run.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
     run.add_argument("--profile", default="", help="Optional profile_pack.md override")
     run.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help=f"Pipeline YAML path (default: {DEFAULT_CONFIG_PATH})")
-    run.add_argument("--artifacts", "--out", dest="artifacts_dir", default=str(artifacts_root()), help=f"Artifacts root override (default: {artifacts_root()})")
-    run.add_argument("--exports", "--reports", dest="exports_dir", default=str(exports_root()), help=f"Exports root override (default: {exports_root()})")
-    run.add_argument("--state", default=str(jobs_state_path()), help=f"Jobs state path override (default: {jobs_state_path()})")
-    run.add_argument("--db", default=str(primary_db_path()), help=f"Primary DB path override (default: {primary_db_path()})")
+    run.add_argument("--artifacts", "--out", dest="artifacts_dir", default="", help="Artifacts root override")
+    run.add_argument("--exports", "--reports", dest="exports_dir", default="", help="Exports root override")
+    run.add_argument("--state", default="", help="Jobs state path override")
+    run.add_argument("--db", default="", help="Primary DB path override")
     run.add_argument("--max-jobs", type=int, default=100, help="Max jobs per run (default: 100; dry-run uses 2)")
     run.add_argument(
         "--dry-run",
@@ -218,11 +217,21 @@ def _run_main_flow(args: argparse.Namespace) -> None:
     default_candidate_id = _default_candidate_id()
     candidate_id = (args.candidate_id or os.environ.get("JOBPIPE_CANDIDATE_ID") or default_candidate_id).strip() or default_candidate_id
     max_jobs = 2 if args.dry_run else max(1, int(args.max_jobs))
-    artifacts_dir = Path(args.artifacts_dir)
-    reports_dir = Path(args.exports_dir)
-    state_path = Path(args.state)
-    delta_path = jobs_delta_path()
-    db_path = Path(args.db)
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+        artifacts_override=args.artifacts_dir,
+        exports_override=args.exports_dir,
+        profile_override=args.profile,
+        jobs_state_override=args.state,
+    )
+    artifacts_dir = runtime.artifacts_root
+    reports_dir = runtime.exports_root
+    state_path = runtime.jobs_state_path
+    delta_path = runtime.jobs_delta_path
+    db_path = runtime.primary_db_path
+    profile_path = str(runtime.profile_pack_path)
     dashboard_path = reports_dir / "dashboard.html"
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -276,7 +285,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             candidate_id=candidate_id,
             artifacts_dir=artifacts_dir,
             config_path=args.config,
-            profile_path=args.profile,
+            profile_path=profile_path,
             batch_size=max_jobs,
         )
 
@@ -294,7 +303,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             candidate_id=candidate_id,
             artifacts_dir=artifacts_dir,
             config_path=args.config,
-            profile_path=args.profile,
+            profile_path=profile_path,
             batch_size=max_jobs,
         )
 
@@ -305,7 +314,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             candidate_id=candidate_id,
             artifacts_dir=artifacts_dir,
             config_path=args.config,
-            profile_path=args.profile,
+            profile_path=profile_path,
             max_jobs=max_jobs,
         )
     else:
@@ -321,8 +330,8 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             "--overwrite",
             "--db", str(db_path),
         ]
-        if args.profile:
-            drain_argv += ["--profile", args.profile]
+        if profile_path:
+            drain_argv += ["--profile", profile_path]
         _run_module("jobpipe.cli.drain_queue", drain_argv)
 
     print()

@@ -9,7 +9,7 @@ from typing import Any
 from jobpipe.cli.mark_status import VALID_STAGES, load_state
 from jobpipe.core.io import load_env_file, now_iso
 from jobpipe.core.profile_pack import parse_profile_pack
-from jobpipe.runtime.paths import application_state_path, primary_db_path, profile_pack_path, resume_json_path
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 from jobpipe.core.primary_db import (
     connect_primary_db,
     replace_imported_application_state,
@@ -136,35 +136,25 @@ def import_application_snapshot(candidate_id: str, state: dict[str, Any]) -> tup
     return events, summaries
 
 
-def main() -> None:
-    load_env_file(".env")
-
-    ap = argparse.ArgumentParser(
-        description="Bootstrap the primary JobPipe SQLite database from current local profile and application state files."
-    )
-    ap.add_argument("--db", default=str(primary_db_path()), help="Path to primary SQLite DB")
-    ap.add_argument("--profile", default=str(profile_pack_path()), help="Path to profile_pack.md")
-    ap.add_argument("--resume", default=str(resume_json_path()), help="Path to resume.json")
-    ap.add_argument("--app-state", default=str(application_state_path()), help="Path to application_state.json")
-    ap.add_argument("--candidate-id", default="default", help="Stable candidate ID to store in the DB")
-    ap.add_argument("--display-name", default="", help="Optional display name override")
-    ap.add_argument("--email", default="", help="Optional candidate email")
-    ap.add_argument("--locale", default="nb-NO", help="Candidate locale")
-    ap.add_argument("--timezone", default="Europe/Oslo", help="Candidate timezone")
-    args = ap.parse_args()
-
-    db_path = Path(args.db)
-    profile_path = Path(args.profile)
-    resume_path = Path(args.resume)
-    app_state_path = Path(args.app_state)
-
+def bootstrap_primary_db(
+    *,
+    db_path: Path,
+    profile_path: Path,
+    resume_path: Path,
+    app_state_path: Path,
+    candidate_id: str,
+    display_name_override: str = "",
+    email: str = "",
+    locale: str = "nb-NO",
+    timezone: str = "Europe/Oslo",
+) -> dict[str, Any]:
     profile_text = _read_text(profile_path)
     resume_json = _read_json(resume_path)
     app_state = load_state(app_state_path)
 
     parsed_profile = parse_profile_pack(profile_text)
     snapshot = parsed_profile.get("snapshot", {})
-    display_name = (args.display_name or snapshot.get("name") or "Default Candidate").strip()
+    display_name = (display_name_override or snapshot.get("name") or "Default Candidate").strip()
 
     now = now_iso()
     profile_hash = _profile_content_hash(profile_text, resume_json)
@@ -175,11 +165,11 @@ def main() -> None:
         upsert_candidate(
             conn,
             {
-                "candidate_id": args.candidate_id,
+                "candidate_id": candidate_id,
                 "display_name": display_name,
-                "email": args.email,
-                "locale": args.locale,
-                "timezone": args.timezone,
+                "email": email,
+                "locale": locale,
+                "timezone": timezone,
                 "base_location": snapshot.get("base", ""),
                 "seniority_label": snapshot.get("level", ""),
                 "positioning_summary": snapshot.get("positioning", ""),
@@ -194,7 +184,7 @@ def main() -> None:
             conn,
             {
                 "profile_version_id": profile_version_id,
-                "candidate_id": args.candidate_id,
+                "candidate_id": candidate_id,
                 "source_kind": "bootstrap_import",
                 "is_active": 1,
                 "content_hash": profile_hash,
@@ -206,23 +196,75 @@ def main() -> None:
             },
         )
 
-        events, summaries = import_application_snapshot(args.candidate_id, app_state)
-        replace_imported_application_state(conn, args.candidate_id, events, summaries)
-
+        events, summaries = import_application_snapshot(candidate_id, app_state)
+        replace_imported_application_state(conn, candidate_id, events, summaries)
         conn.commit()
     finally:
         conn.close()
 
+    return {
+        "db_path": db_path.resolve(),
+        "candidate_id": candidate_id,
+        "display_name": display_name,
+        "profile_path": profile_path.resolve(),
+        "resume_path": resume_path.resolve(),
+        "app_state_path": app_state_path.resolve(),
+        "profile_version_id": profile_version_id,
+        "events_stored": len(events),
+        "jobs_tracked": len(summaries),
+    }
+
+
+def main() -> None:
+    load_env_file(".env")
+
+    ap = argparse.ArgumentParser(
+        description="Bootstrap the primary JobPipe SQLite database from current local profile and application state files."
+    )
+    ap.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB/input paths from")
+    ap.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
+    ap.add_argument("--db", default="", help="Path to primary SQLite DB")
+    ap.add_argument("--profile", default="", help="Path to profile_pack.md")
+    ap.add_argument("--resume", default="", help="Path to resume.json")
+    ap.add_argument("--app-state", default="", help="Path to application_state.json")
+    ap.add_argument("--candidate-id", default="default", help="Stable candidate ID to store in the DB")
+    ap.add_argument("--display-name", default="", help="Optional display name override")
+    ap.add_argument("--email", default="", help="Optional candidate email")
+    ap.add_argument("--locale", default="nb-NO", help="Candidate locale")
+    ap.add_argument("--timezone", default="Europe/Oslo", help="Candidate timezone")
+    args = ap.parse_args()
+
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+        profile_override=args.profile,
+        resume_override=args.resume,
+        app_state_override=args.app_state,
+    )
+
+    summary = bootstrap_primary_db(
+        db_path=runtime.primary_db_path,
+        profile_path=runtime.profile_pack_path,
+        resume_path=runtime.resume_json_path,
+        app_state_path=runtime.application_state_path,
+        candidate_id=args.candidate_id,
+        display_name_override=args.display_name,
+        email=args.email,
+        locale=args.locale,
+        timezone=args.timezone,
+    )
+
     print("=== JobPipe Primary DB Bootstrap ===")
-    print(f"DB:            {db_path.resolve()}")
-    print(f"Candidate ID:  {args.candidate_id}")
-    print(f"Display name:  {display_name}")
-    print(f"Profile path:  {profile_path.resolve()}")
-    print(f"Resume path:   {resume_path.resolve()}")
-    print(f"App state:     {app_state_path.resolve()}")
-    print(f"Profile ver.:  {profile_version_id}")
-    print(f"Events stored: {len(events)}")
-    print(f"Jobs tracked:  {len(summaries)}")
+    print(f"DB:            {summary['db_path']}")
+    print(f"Candidate ID:  {summary['candidate_id']}")
+    print(f"Display name:  {summary['display_name']}")
+    print(f"Profile path:  {summary['profile_path']}")
+    print(f"Resume path:   {summary['resume_path']}")
+    print(f"App state:     {summary['app_state_path']}")
+    print(f"Profile ver.:  {summary['profile_version_id']}")
+    print(f"Events stored: {summary['events_stored']}")
+    print(f"Jobs tracked:  {summary['jobs_tracked']}")
 
 
 if __name__ == "__main__":

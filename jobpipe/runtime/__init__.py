@@ -15,6 +15,7 @@ from .catalog import (
     source_priority,
     source_record_id,
 )
+from .data_sources import RuntimeProfile, resolve_profile_path, resolve_profile_paths, resolve_runtime_profile, runtime_profile_choices
 from .jobsync import record_jobsync_application_status_event
 from .reactive_resume import record_reactive_resume_document_ref
 from .paths import (
@@ -39,6 +40,7 @@ from .paths import (
 
 __all__ = [
     "SOURCE_PRIORITIES",
+    "RuntimeProfile",
     "application_state_path",
     "artifacts_root",
     "canonical_job_content_hash",
@@ -64,10 +66,14 @@ __all__ = [
     "record_jobsync_application_status_event",
     "record_reactive_resume_document_ref",
     "repo_root",
+    "resolve_profile_path",
+    "resolve_profile_paths",
+    "resolve_runtime_profile",
     "resume_json_path",
     "source_job_key",
     "source_platform",
     "source_priority",
     "source_record_id",
     "suggested_jobs_path",
+    "runtime_profile_choices",
 ]

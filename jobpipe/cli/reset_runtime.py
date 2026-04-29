@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from jobpipe.core.io import load_env_file, now_iso
-from jobpipe.runtime.paths import data_root
+from jobpipe.runtime.data_sources import resolve_runtime_profile, runtime_profile_choices
 
 
 ARCHIVE_RELATIVE_PATHS = (
@@ -31,11 +31,11 @@ def _default_tag() -> str:
     return f"post_refactor_baseline_{stamp}"
 
 
-def _resolve_data_root(raw: str) -> Path:
-    root = Path(raw).expanduser().resolve() if raw else data_root()
-    if root is None:
-        raise SystemExit("JOBPIPE_DATA_DIR is required for reset-runtime.")
-    return root
+def _resolve_data_root(profile_name: str, raw: str) -> Path:
+    profile = resolve_runtime_profile(profile_name, data_root_override=raw)
+    if profile.data_root is None:
+        raise SystemExit("reset-runtime requires an external runtime data root. Use --runtime-profile live_local or --data-root.")
+    return profile.data_root
 
 
 def _inside_root(path: Path, root: Path) -> bool:
@@ -125,6 +125,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="Archive generated runtime state under JOBPIPE_DATA_DIR and create a fresh baseline root without deleting candidate inputs or secrets."
     )
+    ap.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="live_local", help="Runtime profile to reset")
     ap.add_argument("--data-root", default="", help="Runtime root override (default: JOBPIPE_DATA_DIR)")
     ap.add_argument(
         "--archive-root",
@@ -139,7 +140,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    root = _resolve_data_root(args.data_root)
+    root = _resolve_data_root(args.runtime_profile, args.data_root)
     archive_root_path = Path(args.archive_root).expanduser().resolve() if args.archive_root else root / "_archives"
     tag = args.tag.strip() or _default_tag()
 

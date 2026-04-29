@@ -13,7 +13,7 @@ from jobpipe.core.candidate_data import load_candidate_profile_pack
 from jobpipe.core.io import now_iso
 from jobpipe.core.profile_pack import parse_profile_pack
 from jobpipe.core.primary_db import connect_primary_db, upsert_candidate, upsert_candidate_profile
-from jobpipe.runtime.paths import primary_db_path
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
@@ -31,17 +31,37 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="Import a structured Reactive Resume JSON snapshot into canonical candidate_profiles state."
     )
-    parser.add_argument("resume_json_path", help="Path to the structured Reactive Resume JSON export")
+    parser.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB/profile/resume paths from")
+    parser.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
+    parser.add_argument(
+        "resume_json_path",
+        nargs="?",
+        default=None,
+        help="Path to the structured resume JSON export (default: resolves via resume_json_path(), which prefers ./profile/resume.json)",
+    )
     parser.add_argument("--profile", default="", help="Optional profile_pack.md override")
     parser.add_argument("--candidate-id", default=_DEFAULT_CANDIDATE_ID, help=f"Candidate ID (default: {_DEFAULT_CANDIDATE_ID})")
-    parser.add_argument("--db", default=str(primary_db_path()), help=f"Path to primary jobpipe.sqlite (default: {primary_db_path()})")
+    parser.add_argument("--db", default="", help="Path to primary jobpipe.sqlite override")
     parser.add_argument("--display-name", default="", help="Optional display name override")
     args = parser.parse_args(argv)
 
-    resume_path = Path(args.resume_json_path)
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+        profile_override=args.profile,
+        resume_override=args.resume_json_path or "",
+    )
+    resume_path = runtime.resume_json_path
+    if not resume_path.exists():
+        raise SystemExit(
+            f"Resume JSON not found at {resume_path}. "
+            "Provide a path argument, drop a file at ./profile/resume.json, "
+            "or set JOBPIPE_RESUME_JSON."
+        )
     resume_json = _read_json(resume_path)
-    db_path = Path(args.db)
-    profile_pack = load_candidate_profile_pack(args.profile, candidate_id=args.candidate_id, db_path=db_path)
+    db_path = runtime.primary_db_path
+    profile_pack = load_candidate_profile_pack(str(runtime.profile_pack_path), candidate_id=args.candidate_id, db_path=db_path)
     parsed_profile = parse_profile_pack(profile_pack)
     snapshot = parsed_profile.get("snapshot", {})
     basics = resume_json.get("basics") if isinstance(resume_json.get("basics"), dict) else {}

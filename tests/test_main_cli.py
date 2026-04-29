@@ -4,6 +4,7 @@ import json
 import pytest
 
 from jobpipe.cli import main as cli_main
+from jobpipe.runtime import data_sources
 
 
 def test_run_dry_run_uses_local_delta_and_skips_drain_queue(tmp_path, monkeypatch) -> None:
@@ -29,13 +30,15 @@ def test_run_dry_run_uses_local_delta_and_skips_drain_queue(tmp_path, monkeypatc
 
     monkeypatch.setattr(cli_main, "_run_module", _fake_run_module)
     monkeypatch.setattr(cli_main, "repo_root", lambda: tmp_path)
-    monkeypatch.setattr(cli_main, "jobs_delta_path", lambda: delta_path)
+    monkeypatch.setattr(data_sources, "repo_root", lambda: tmp_path)
 
     cli_main.main(
         [
             "run",
             "--dry-run",
             "--no-open",
+            "--runtime-profile",
+            "repo_smoke",
             "--env-file",
             str(tmp_path / ".env"),
             "--artifacts",
@@ -46,6 +49,8 @@ def test_run_dry_run_uses_local_delta_and_skips_drain_queue(tmp_path, monkeypatc
             str(tmp_path / "jobs_state.json"),
             "--db",
             str(tmp_path / "jobpipe.sqlite"),
+            "--data-root",
+            str(tmp_path),
         ]
     )
 
@@ -72,12 +77,14 @@ def test_run_non_dry_run_keeps_drain_queue_flow(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(cli_main, "_run_module", _fake_run_module)
     monkeypatch.setattr(cli_main, "repo_root", lambda: tmp_path)
-    monkeypatch.setattr(cli_main, "jobs_delta_path", lambda: tmp_path / "jobs_delta.jsonl")
+    monkeypatch.setattr(data_sources, "repo_root", lambda: tmp_path)
 
     cli_main.main(
         [
             "run",
             "--no-open",
+            "--runtime-profile",
+            "repo_smoke",
             "--env-file",
             str(tmp_path / ".env"),
             "--artifacts",
@@ -141,3 +148,25 @@ def test_reset_runtime_proxies_module(monkeypatch) -> None:
 
     assert exc.value.code == 0
     assert calls == [("jobpipe.cli.reset_runtime", ["--tag", "baseline_a"])]
+
+
+def test_run_runtime_profile_repo_smoke_uses_repo_layout(tmp_path, monkeypatch) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def _fake_run_module(module: str, argv: list[str], *, allow_failure: bool = False) -> int:
+        calls.append((module, list(argv)))
+        return 0
+
+    monkeypatch.setattr(cli_main, "_run_module", _fake_run_module)
+    monkeypatch.setattr(cli_main, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(data_sources, "repo_root", lambda: tmp_path)
+
+    cli_main.main(["run", "--dry-run", "--no-open", "--runtime-profile", "repo_smoke"])
+
+    sync_argv = next(argv for module, argv in calls if module == "jobpipe.cli.sync_evaluations")
+    export_argv = next(argv for module, argv in calls if module == "jobpipe.cli.export_dashboard")
+
+    assert str(tmp_path / "out_runs") in sync_argv
+    assert str(tmp_path / "reports") in sync_argv
+    assert str(tmp_path / "reports" / "jobpipe.sqlite") in sync_argv
+    assert str(tmp_path / "reports" / "dashboard.html") in export_argv
