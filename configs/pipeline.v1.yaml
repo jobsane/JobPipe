@@ -10,10 +10,12 @@ models:
   writer: gpt-4.1
   packet: gpt-4.1-mini
 
-# Order is respected by run_feed.build_stages (parse/moderate are aliases: parse->parsed, moderate->moderator)
+# Order is respected by the runtime stage builder
+# (parse/moderate are aliases: parse->parsed, moderate->moderator).
+# reverse_triage remains a supported optional stage even when disabled here.
 stages:
   - triage          # includes semantic pre-filter when semantic_filter_threshold > 0
-  # - reverse_triage  # disabled: semantic filter + confidence calibration makes this redundant
+  # - reverse_triage  # supported optional stage; disabled by default because semantic filter + confidence calibration make it redundant for the current path
   - parse
   - profile_match
   - pivot

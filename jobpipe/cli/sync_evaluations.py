@@ -186,9 +186,9 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
     input_j = _safe_load_json(ev.job_dir / "00_input.json") if ev.job_dir.exists() else {}
     triage_j = _safe_load_json(ev.job_dir / "01_triage.json") if ev.job_dir.exists() else {}
     rev_j = _safe_load_json(ev.job_dir / "02_reverse_triage.json") if ev.job_dir.exists() else {}
-    # Stage file numbering shifted when reverse_triage was disabled (2026-04-13).
-    # Try new numbering first (03/04/05/06), fall back to old (04/05/06/07) for
-    # any runs produced before the change.
+    # Stage file numbering shifts when the supported optional reverse_triage
+    # stage is disabled in config. Try the no-reverse-triage numbering first
+    # (03/04/05/06), then fall back to the older numbering (04/05/06/07).
     def _load_stage(new_name: str, old_name: str) -> dict:
         if not ev.job_dir.exists():
             return {}

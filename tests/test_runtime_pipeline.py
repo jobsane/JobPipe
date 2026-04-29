@@ -80,6 +80,27 @@ def test_build_stages_uses_default_order_when_config_empty(monkeypatch: pytest.M
     ]
 
 
+def test_build_stages_respects_configured_disable_of_reverse_triage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_stage_factories(monkeypatch)
+
+    stages = build_stages(
+        _cfg(["triage", "parse", "profile_match", "pivot", "moderate", "application_pack"]),
+        profile_pack="profile",
+    )
+
+    assert [stage.name for stage in stages] == [
+        "triage",
+        "parsed",
+        "profile_match",
+        "pivot",
+        "moderator",
+        "application_pack",
+    ]
+    assert all(stage.name != "reverse_triage" for stage in stages)
+
+
 def test_build_stages_rejects_unknown_stage(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_stage_factories(monkeypatch)
 

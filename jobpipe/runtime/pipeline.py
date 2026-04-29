@@ -21,6 +21,21 @@ from jobpipe.stages.profile_match import profile_match_stage_factory
 from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
 from jobpipe.stages.triage import triage_stage_factory
 
+SUPPORTED_STAGE_ALIASES = {"parse": "parsed", "moderate": "moderator"}
+
+# reverse_triage remains a supported optional stage even when config omits it.
+# Keep it in the supported order so validation and callers can reason about the
+# full runtime shape without treating the stage as dead code.
+SUPPORTED_DEFAULT_STAGE_ORDER = [
+    "triage",
+    "reverse_triage",
+    "parsed",
+    "profile_match",
+    "pivot",
+    "moderator",
+    "application_pack",
+]
+
 
 def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
     """
@@ -35,22 +50,10 @@ def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
     rt_min_conf = float(cfg.thresholds.get("reverse_triage_min_conf", 0.70))
     rt_skip_above = float(cfg.thresholds.get("reverse_triage_skip_above", 1.0))
 
-    aliases = {"parse": "parsed", "moderate": "moderator"}
+    order_raw = cfg.stages or SUPPORTED_DEFAULT_STAGE_ORDER
+    order = [SUPPORTED_STAGE_ALIASES.get(s, s) for s in order_raw]
 
-    default_order = [
-        "triage",
-        "reverse_triage",
-        "parsed",
-        "profile_match",
-        "pivot",
-        "moderator",
-        "application_pack",
-    ]
-
-    order_raw = cfg.stages or default_order
-    order = [aliases.get(s, s) for s in order_raw]
-
-    allowed = set(default_order)
+    allowed = set(SUPPORTED_DEFAULT_STAGE_ORDER)
     stages: List[Stage] = []
 
     for s in order:

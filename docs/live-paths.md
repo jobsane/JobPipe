@@ -46,6 +46,9 @@ Current stage order from [docs/decision-model.md](C:/Users/larsv/Jobpipe-codex-v
 5. `moderate`
 6. `application_pack`
 
+`reverse_triage` is still a supported optional stage in the runtime model, but
+it is disabled in the current default config path.
+
 Stage modules live under:
 
 - [jobpipe/stages](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/stages)
