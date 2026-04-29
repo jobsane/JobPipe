@@ -75,6 +75,21 @@ commit_msg.txt
 pipeline_error.json
 .jobpipe_tmp/
 
+# GitNexus local index / experiments
+.gitnexus/
+.tmp-gitnexus-rc/
+.tmp-node22/
+.gitnexus-analyze.log
+
+# Local test/runtime temp dirs
+.pytest-tmp/
+.pytest-tmp-slice4-run/
+.tmp-authoring-smoke/
+pytest-cache-files-*/
+
+# Local scratch / repro work
+scratch/
+
 # Local tooling / scratch scripts (orchestrator-side only)
 # If any of these become canonical, move into jobpipe/cli/ or scripts/ and un-ignore.
 /check_db.py

@@ -1,0 +1,11 @@
+.gitnexus/
+docs/.gitnexus/
+jobpipe/.gitnexus/
+tests/.gitnexus/
+.pytest-tmp/
+.pytest-tmp-slice4-run/
+.tmp-authoring-smoke/
+pytest-cache-files-*/
+.tmp-gitnexus-rc/
+.tmp-node22/
+scratch/
