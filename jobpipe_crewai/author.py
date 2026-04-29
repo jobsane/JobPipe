@@ -43,7 +43,7 @@ class CrewAIAuthor:
                 gap_notes=["crewAI output was not valid JSON - raw text returned"],
             )
 
-        return GeneratedApplicationPackage.model_construct(
+        return GeneratedApplicationPackage(
             job_id=ctx.job_id,
             cover_letter_draft=parsed.get("cover_letter_draft", raw),
             tailored_cv_projection=parsed.get("tailored_cv_projection", {}),
