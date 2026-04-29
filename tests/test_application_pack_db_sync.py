@@ -60,6 +60,34 @@ def test_sync_generated_documents_registers_json_and_docx(monkeypatch, tmp_path)
     assert str(docx_path.resolve()) in {rows[0][3], rows[1][3]}
 
 
+def test_generated_document_rows_builds_json_and_docx_rows(tmp_path):
+    job_dir = tmp_path / "job-123"
+    job_dir.mkdir()
+    draft_path = job_dir / "application_pack_draft.json"
+    draft_path.write_text('{"ok": true}', encoding="utf-8")
+    docx_path = job_dir / "07_cv_highlights.docx"
+    docx_path.write_bytes(b"fake-docx")
+
+    rows = app_pack._generated_document_rows(
+        _make_ctx(),
+        {
+            "positioning_headline": "Product owner with delivery depth",
+            "cover_letter_angle": "Strong fit for platform ownership",
+            "cv_highlights": ["Led roadmap", "Improved operations"],
+            "cv_experience_refs": ["Example Co", "Another Co"],
+        },
+        draft_path,
+        docx_path,
+        candidate_id="candidate-a",
+        generated_at="2026-04-29T00:00:00Z",
+    )
+
+    assert [row["kind"] for row in rows] == ["application_pack_json", "cv_highlights_docx"]
+    assert all(row["candidate_id"] == "candidate-a" for row in rows)
+    assert rows[0]["document_json"]["cv_highlights"] == ["Led roadmap", "Improved operations"]
+    assert rows[1]["document_json"]["cv_experience_refs"] == ["Example Co", "Another Co"]
+
+
 def test_generate_cv_docx_creates_document(tmp_path):
     out_path = app_pack._generate_cv_docx(
         {

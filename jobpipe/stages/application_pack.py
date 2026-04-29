@@ -237,6 +237,85 @@ def _document_id(candidate_id: str, job_id: str, kind: str, storage_path: Path) 
     return "doc_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
 
+def _generated_document_rows(
+    ctx: JobContext,
+    pack_data: dict,
+    draft_path: Path,
+    docx_path: Path | None,
+    *,
+    candidate_id: str,
+    generated_at: str,
+) -> list[dict]:
+    evaluation_id = f"{ctx.meta.run_id}:{ctx.job_id}"
+    preview = _preview_text(pack_data)
+    rows = [
+        {
+            "document_id": _document_id(candidate_id, ctx.job_id, "application_pack_json", draft_path),
+            "candidate_id": candidate_id,
+            "job_id": ctx.job_id,
+            "evaluation_id": evaluation_id,
+            "kind": "application_pack_json",
+            "producer": "jobpipe_pipeline",
+            "status": "draft",
+            "storage_path": str(draft_path.resolve()),
+            "preview_text": preview,
+            "document_json": pack_data,
+            "created_at": generated_at,
+            "updated_at": generated_at,
+        }
+    ]
+    if docx_path and docx_path.exists():
+        rows.append(
+            {
+                "document_id": _document_id(candidate_id, ctx.job_id, "cv_highlights_docx", docx_path),
+                "candidate_id": candidate_id,
+                "job_id": ctx.job_id,
+                "evaluation_id": evaluation_id,
+                "kind": "cv_highlights_docx",
+                "producer": "jobpipe_pipeline",
+                "status": "draft",
+                "storage_path": str(docx_path.resolve()),
+                "preview_text": preview,
+                "document_json": {
+                    "positioning_headline": pack_data.get("positioning_headline", ""),
+                    "cv_highlights": pack_data.get("cv_highlights", []),
+                    "cv_experience_refs": pack_data.get("cv_experience_refs", []),
+                },
+                "created_at": generated_at,
+                "updated_at": generated_at,
+            }
+        )
+    return rows
+
+
+def _register_generated_documents(conn, rows: list[dict]) -> None:
+    for row in rows:
+        insert_generated_document(conn, row)
+
+
+def _persist_candidate_materials_for_pack(
+    conn,
+    *,
+    ctx: JobContext,
+    evidence_context: CandidateEvidenceContext | None,
+    narrative_context: CandidateNarrativeContext | None,
+    updated_at: str,
+    candidate_id: str,
+) -> None:
+    if evidence_context is None or narrative_context is None:
+        return
+
+    persist_candidate_materials(
+        conn,
+        candidate_id=candidate_id,
+        job_id=ctx.job_id,
+        evaluation_id=f"{ctx.meta.run_id}:{ctx.job_id}",
+        evidence_context=evidence_context,
+        narrative_context=narrative_context,
+        updated_at=updated_at,
+    )
+
+
 def _sync_generated_documents(
     ctx: JobContext,
     pack_data: dict,
@@ -252,60 +331,25 @@ def _sync_generated_documents(
         try:
             ensure_candidate(conn, candidate_id=_DEFAULT_CANDIDATE_ID)
             now = now_iso()
-            evaluation_id = f"{ctx.meta.run_id}:{ctx.job_id}"
-            preview = _preview_text(pack_data)
-
-            insert_generated_document(
+            _register_generated_documents(
                 conn,
-                {
-                    "document_id": _document_id(_DEFAULT_CANDIDATE_ID, ctx.job_id, "application_pack_json", draft_path),
-                    "candidate_id": _DEFAULT_CANDIDATE_ID,
-                    "job_id": ctx.job_id,
-                    "evaluation_id": evaluation_id,
-                    "kind": "application_pack_json",
-                    "producer": "jobpipe_pipeline",
-                    "status": "draft",
-                    "storage_path": str(draft_path.resolve()),
-                    "preview_text": preview,
-                    "document_json": pack_data,
-                    "created_at": now,
-                    "updated_at": now,
-                },
-            )
-
-            if docx_path and docx_path.exists():
-                insert_generated_document(
-                    conn,
-                    {
-                        "document_id": _document_id(_DEFAULT_CANDIDATE_ID, ctx.job_id, "cv_highlights_docx", docx_path),
-                        "candidate_id": _DEFAULT_CANDIDATE_ID,
-                        "job_id": ctx.job_id,
-                        "evaluation_id": evaluation_id,
-                        "kind": "cv_highlights_docx",
-                        "producer": "jobpipe_pipeline",
-                        "status": "draft",
-                        "storage_path": str(docx_path.resolve()),
-                        "preview_text": preview,
-                        "document_json": {
-                            "positioning_headline": pack_data.get("positioning_headline", ""),
-                            "cv_highlights": pack_data.get("cv_highlights", []),
-                            "cv_experience_refs": pack_data.get("cv_experience_refs", []),
-                        },
-                        "created_at": now,
-                        "updated_at": now,
-                    },
-                )
-
-            if evidence_context is not None and narrative_context is not None:
-                persist_candidate_materials(
-                    conn,
+                _generated_document_rows(
+                    ctx,
+                    pack_data,
+                    draft_path,
+                    docx_path,
                     candidate_id=_DEFAULT_CANDIDATE_ID,
-                    job_id=ctx.job_id,
-                    evaluation_id=evaluation_id,
-                    evidence_context=evidence_context,
-                    narrative_context=narrative_context,
-                    updated_at=now,
-                )
+                    generated_at=now,
+                ),
+            )
+            _persist_candidate_materials_for_pack(
+                conn,
+                ctx=ctx,
+                evidence_context=evidence_context,
+                narrative_context=narrative_context,
+                updated_at=now,
+                candidate_id=_DEFAULT_CANDIDATE_ID,
+            )
 
             conn.commit()
         finally:
