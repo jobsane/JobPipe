@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import uuid
-from typing import List
 
 import traceback
 
@@ -25,116 +24,114 @@ load_env_file(".env")
 from jobpipe.core.candidate_data import default_candidate_id, load_candidate_profile_pack
 from jobpipe.core.config import load_config
 from jobpipe.runtime.paths import artifacts_root, primary_db_path, repo_root
+from jobpipe.runtime.pipeline import build_stages
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
     mark_pipeline_run_finished,
     upsert_pipeline_run,
 )
-from jobpipe.model.schema import (
-    JobContext, RunMeta,
-    TriageOut, ReverseTriageOut, JobParse, ProfileMatchOut,
-    PivotOut, ModeratorOut, ApplicationPackOut,
-)
-from jobpipe.core.runner import PipelineRunner, Stage
-
-from jobpipe.stages.application_pack import application_pack_stage_factory
-from jobpipe.stages.moderate import moderate_stage_factory
-from jobpipe.stages.parse import parse_stage_factory
-from jobpipe.stages.pivot import pivot_stage_factory
-from jobpipe.stages.profile_match import profile_match_stage_factory
-from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
-from jobpipe.stages.triage import triage_stage_factory
+from jobpipe.model.schema import JobContext, RunMeta
+from jobpipe.core.runner import PipelineRunner
 
 
-def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
-    """
-    Stage.name must match JobContext attribute names for artifact dumps.
-    Accept YAML-friendly aliases:
-      - parse     -> parsed
-      - moderate  -> moderator
-    """
-    max_chars = int(cfg.thresholds.get("max_ad_text_chars", 2200))
-    triage_max_chars = int(cfg.thresholds.get("triage_max_ad_text_chars", max_chars))
-    rt_max_chars = int(cfg.thresholds.get("reverse_triage_max_ad_text_chars", max_chars))
-    rt_min_conf = float(cfg.thresholds.get("reverse_triage_min_conf", 0.70))
-    rt_skip_above = float(cfg.thresholds.get("reverse_triage_skip_above", 1.0))
+def _open_pipeline_run(db_conn, *, run_id: str, candidate_id: str, cfg, args, started_at: str) -> None:
+    profile_row = db_conn.execute(
+        """
+        SELECT profile_version_id
+        FROM candidate_profiles
+        WHERE candidate_id = ? AND is_active = 1
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        [candidate_id],
+    ).fetchone()
+    upsert_pipeline_run(
+        db_conn,
+        {
+            "run_id": run_id,
+            "candidate_id": candidate_id,
+            "profile_version_id": profile_row[0] if profile_row else "",
+            "config_version": cfg.pipeline_name,
+            "jobs_path": args.jobs,
+            "max_jobs": args.max,
+            "status": "running",
+            "started_at": started_at,
+            "finished_at": "",
+            "jobs_seen": 0,
+            "jobs_failed": 0,
+            "source_batch_json": {
+                "jobs_path": args.jobs,
+                "out_dir": args.out,
+                "config_path": args.config,
+                "overwrite": bool(args.overwrite),
+            },
+            "updated_at": started_at,
+        },
+    )
+    db_conn.commit()
 
-    aliases = {"parse": "parsed", "moderate": "moderator"}
 
-    default_order = [
-        "triage",
-        "reverse_triage",
-        "parsed",
-        "profile_match",
-        "pivot",
-        "moderator",
-        "application_pack",
-    ]
+def _build_repaired_index_record(job_dir: str, job_id: str) -> dict:
+    inp = read_json_safe(os.path.join(job_dir, "00_input.json")) or {}
+    triage = read_json_safe(os.path.join(job_dir, "01_triage.json")) or {}
+    mod = read_json_safe(os.path.join(job_dir, "05_moderator.json")) or {}
+    return {
+        "job_id": job_id,
+        "title": inp.get("title", ""),
+        "employer": inp.get("employer_name", ""),
+        "triage_decision": triage.get("decision", ""),
+        "triage_confidence": triage.get("confidence"),
+        "triage_signals": triage.get("signals", []),
+        "final_decision": mod.get("final_decision", ""),
+        "fit_score": mod.get("fit_score"),
+        "pivot_score": mod.get("pivot_score"),
+        "repaired": True,
+    }
 
-    order_raw = cfg.stages or default_order
-    order = [aliases.get(s, s) for s in order_raw]
 
-    allowed = set(default_order)
-    stages: List[Stage] = []
+def _repair_missing_index_entries(run_dir: str) -> int:
+    index_path = os.path.join(run_dir, "index.jsonl")
+    existing_ids: set[str] = set()
+    if os.path.exists(index_path):
+        with open(index_path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                    if rec.get("job_id"):
+                        existing_ids.add(rec["job_id"])
+                except Exception:
+                    pass
 
-    for s in order:
-        if s not in allowed:
-            raise ValueError(
-                f"Unknown stage '{s}'. Allowed: {sorted(allowed)} "
-                "(aliases: parse->parsed, moderate->moderator)"
-            )
+    repaired = 0
+    for entry in sorted(os.scandir(run_dir), key=lambda e: e.name):
+        if not entry.is_dir():
+            continue
+        job_id = entry.name
+        if job_id in existing_ids:
+            continue
+        try:
+            rec = _build_repaired_index_record(entry.path, job_id)
+            with open(index_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            repaired += 1
+        except Exception as rep_exc:
+            print(f"[WARN] repair failed for {job_id}: {rep_exc}", flush=True)
+    return repaired
 
-        if s == "triage":
-            should_tr, run_tr = triage_stage_factory(
-                model=cfg.models.get("triage", "gpt-4.1-nano"),
-                max_ad_text_chars=triage_max_chars,
-                safety_rules=cfg.safety_rules,
-                profile_pack=profile_pack,
-                semantic_threshold=float(cfg.thresholds.get("semantic_filter_threshold", 0.0)),
-                semantic_model=str(cfg.thresholds.get("semantic_filter_model", "BAAI/bge-small-en-v1.5")),
-            )
-            stages.append(Stage(name="triage", run=run_tr, should_run=should_tr, ctx_model=TriageOut))
 
-        elif s == "reverse_triage":
-            should_rt, run_rt = reverse_triage_stage_factory(
-                model=cfg.models.get("reverse_triage", "gpt-4.1-mini"),
-                max_ad_text_chars=rt_max_chars,
-                min_conf=rt_min_conf,
-                skip_above=rt_skip_above,
-            )
-            stages.append(Stage(name="reverse_triage", run=run_rt, should_run=should_rt, ctx_model=ReverseTriageOut))
-
-        elif s == "parsed":
-            should_parse, run_parse = parse_stage_factory(
-                model=cfg.models.get("parse", "gpt-4.1-mini"),
-                max_ad_text_chars=max_chars,
-            )
-            stages.append(Stage(name="parsed", run=run_parse, should_run=should_parse, ctx_model=JobParse))
-
-        elif s == "profile_match":
-            should_pm, run_pm = profile_match_stage_factory(
-                model=cfg.models.get("profile_match", "gpt-4.1-mini"),
-            )
-            stages.append(Stage(name="profile_match", run=run_pm, should_run=should_pm, ctx_model=ProfileMatchOut))
-
-        elif s == "pivot":
-            should_pv, run_pv = pivot_stage_factory(
-                model=cfg.models.get("pivot", "gpt-4.1-mini"),
-            )
-            stages.append(Stage(name="pivot", run=run_pv, should_run=should_pv, ctx_model=PivotOut))
-
-        elif s == "moderator":
-            should_mod, run_mod = moderate_stage_factory(cfg.thresholds)
-            stages.append(Stage(name="moderator", run=run_mod, should_run=should_mod, ctx_model=ModeratorOut))
-
-        elif s == "application_pack":
-            should_pack, run_pack = application_pack_stage_factory(
-                model=cfg.models.get("application_pack", "gpt-4.1"),
-            )
-            stages.append(Stage(name="application_pack", run=run_pack, should_run=should_pack, ctx_model=ApplicationPackOut))
-
-    return stages
+def _close_pipeline_run(db_conn, *, run_id: str, run_status: str, count: int, max_jobs: int, errors: int) -> None:
+    finished_at = now_iso()
+    jobs_seen = min(count, max_jobs) if max_jobs else count
+    mark_pipeline_run_finished(
+        db_conn,
+        run_id=run_id,
+        status=run_status,
+        finished_at=finished_at,
+        jobs_seen=jobs_seen,
+        jobs_failed=errors,
+    )
+    db_conn.commit()
 
 
 def main() -> None:
@@ -175,40 +172,14 @@ def main() -> None:
     try:
         db_conn = connect_primary_db(args.db)
         ensure_candidate(db_conn, candidate_id=args.candidate_id)
-        profile_row = db_conn.execute(
-            """
-            SELECT profile_version_id
-            FROM candidate_profiles
-            WHERE candidate_id = ? AND is_active = 1
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """,
-            [args.candidate_id],
-        ).fetchone()
-        upsert_pipeline_run(
+        _open_pipeline_run(
             db_conn,
-            {
-                "run_id": run_id,
-                "candidate_id": args.candidate_id,
-                "profile_version_id": profile_row[0] if profile_row else "",
-                "config_version": cfg.pipeline_name,
-                "jobs_path": args.jobs,
-                "max_jobs": args.max,
-                "status": "running",
-                "started_at": started_at,
-                "finished_at": "",
-                "jobs_seen": 0,
-                "jobs_failed": 0,
-                "source_batch_json": {
-                    "jobs_path": args.jobs,
-                    "out_dir": args.out,
-                    "config_path": args.config,
-                    "overwrite": bool(args.overwrite),
-                },
-                "updated_at": started_at,
-            },
+            run_id=run_id,
+            candidate_id=args.candidate_id,
+            cfg=cfg,
+            args=args,
+            started_at=started_at,
         )
-        db_conn.commit()
 
         for job in iter_jobs(args.jobs):
             count += 1
@@ -239,48 +210,7 @@ def main() -> None:
         # Catches cases where append_index silently failed mid-run (e.g. file lock,
         # exception after run_job completed successfully).
         try:
-            index_path = os.path.join(run_dir, "index.jsonl")
-            existing_ids: set = set()
-            if os.path.exists(index_path):
-                with open(index_path, encoding="utf-8") as fh:
-                    for line in fh:
-                        try:
-                            rec = json.loads(line)
-                            if rec.get("job_id"):
-                                existing_ids.add(rec["job_id"])
-                        except Exception:
-                            pass
-
-            repaired = 0
-            for entry in sorted(os.scandir(run_dir), key=lambda e: e.name):
-                if not entry.is_dir():
-                    continue
-                jid = entry.name
-                if jid in existing_ids:
-                    continue
-                # Reconstruct a minimal summary from artifacts
-                try:
-                    inp = read_json_safe(os.path.join(entry.path, "00_input.json")) or {}
-                    triage = read_json_safe(os.path.join(entry.path, "01_triage.json")) or {}
-                    mod = read_json_safe(os.path.join(entry.path, "05_moderator.json")) or {}
-                    rec = {
-                        "job_id": jid,
-                        "title": inp.get("title", ""),
-                        "employer": inp.get("employer_name", ""),
-                        "triage_decision": triage.get("decision", ""),
-                        "triage_confidence": triage.get("confidence"),
-                        "triage_signals": triage.get("signals", []),
-                        "final_decision": mod.get("final_decision", ""),
-                        "fit_score": mod.get("fit_score"),
-                        "pivot_score": mod.get("pivot_score"),
-                        "repaired": True,
-                    }
-                    with open(index_path, "a", encoding="utf-8") as fh:
-                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                    repaired += 1
-                except Exception as rep_exc:
-                    print(f"[WARN] repair failed for {jid}: {rep_exc}", flush=True)
-
+            repaired = _repair_missing_index_entries(run_dir)
             if repaired:
                 print(f"[INFO] Repaired {repaired} missing index entries.", flush=True)
         except Exception as heal_exc:
@@ -290,17 +220,14 @@ def main() -> None:
         raise
     finally:
         if db_conn is not None:
-            finished_at = now_iso()
-            jobs_seen = min(count, args.max) if args.max else count
-            mark_pipeline_run_finished(
+            _close_pipeline_run(
                 db_conn,
                 run_id=run_id,
-                status=run_status,
-                finished_at=finished_at,
-                jobs_seen=jobs_seen,
-                jobs_failed=errors,
+                run_status=run_status,
+                count=count,
+                max_jobs=args.max,
+                errors=errors,
             )
-            db_conn.commit()
             db_conn.close()
 
     suffix = f" ({errors} errors)" if errors else ""
