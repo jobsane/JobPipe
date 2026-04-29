@@ -29,7 +29,7 @@ def _package() -> GeneratedApplicationPackage:
         job_id="job-001",
         cover_letter_draft="Dette er et kort søknadsutkast.",
         tailored_cv_projection={"highlights": ["Ledet roadmap"], "experience_refs": ["evidence-1"]},
-        evidence_refs=[{"evidence_unit_id": "evidence-1"}],
+        evidence_refs=["evidence-1"],
         gap_notes=[],
     )
 
