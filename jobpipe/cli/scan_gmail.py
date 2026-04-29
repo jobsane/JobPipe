@@ -78,21 +78,16 @@ from jobpipe.runtime.catalog import ingest_catalog_job, load_source_record_index
 from jobpipe.core.evaluation_state import load_job_catalog
 from jobpipe.core.io import load_env_file
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, upsert_suggestion_lead
-from jobpipe.runtime.paths import (
-    application_state_path,
-    gmail_credentials_path,
-    gmail_token_path,
-    primary_db_path,
-    suggested_jobs_path,
-)
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 load_env_file(".env")
 
-DEFAULT_STATE_PATH = application_state_path()
-DEFAULT_TOKEN_PATH = gmail_token_path()
-DEFAULT_CREDS_PATH = gmail_credentials_path()
-DEFAULT_DB_PATH = primary_db_path()
-DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
+DEFAULT_RUNTIME = resolve_profile_paths("default")
+DEFAULT_STATE_PATH = DEFAULT_RUNTIME.application_state_path
+DEFAULT_DB_PATH = DEFAULT_RUNTIME.primary_db_path
+DEFAULT_SUGGESTED_PATH = DEFAULT_RUNTIME.suggested_jobs_path
+DEFAULT_TOKEN_PATH = DEFAULT_RUNTIME.secrets_root / "gmail_token.json"
+DEFAULT_CREDS_PATH = DEFAULT_RUNTIME.secrets_root / "gmail_credentials.json"
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 
@@ -800,12 +795,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    ap.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB/state/secret paths from")
+    ap.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
     ap.add_argument("--days", type=int, default=90, help="Days back to scan (default: 90)")
-    ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to the application state compatibility file")
-    ap.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to primary jobpipe.sqlite")
+    ap.add_argument("--state", default="", help="Path to the application state compatibility file")
+    ap.add_argument("--db", default="", help="Path to primary jobpipe.sqlite")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB writes (default: {DEFAULT_CANDIDATE_ID})")
-    ap.add_argument("--token", default=str(DEFAULT_TOKEN_PATH), help="OAuth token path (gmail_token.json)")
-    ap.add_argument("--creds", default=str(DEFAULT_CREDS_PATH), help="OAuth credentials path (gmail_credentials.json)")
+    ap.add_argument("--token", default="", help="OAuth token path (gmail_token.json)")
+    ap.add_argument("--creds", default="", help="OAuth credentials path (gmail_credentials.json)")
     ap.add_argument("--dry-run", action="store_true", help="Preview without writing")
     ap.add_argument("--verbose", "-v", action="store_true", help="Show all processing details")
     ap.add_argument("--setup", action="store_true", help="Run one-time OAuth2 setup")
@@ -819,24 +816,35 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument(
         "--suggested",
-        default=str(DEFAULT_SUGGESTED_PATH),
+        default="",
         help="Path for the suggested_jobs.jsonl compatibility bridge (used with --scan-suggestions)",
     )
 
     args = ap.parse_args(argv)
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+        app_state_override=args.state,
+    )
+    db_path = runtime.primary_db_path
+    state_path = runtime.application_state_path
+    token_path = Path(args.token).expanduser().resolve() if str(args.token).strip() else (runtime.secrets_root / "gmail_token.json")
+    creds_path = Path(args.creds).expanduser().resolve() if str(args.creds).strip() else (runtime.secrets_root / "gmail_credentials.json")
+    suggested_path = Path(args.suggested).expanduser().resolve() if str(args.suggested).strip() else runtime.suggested_jobs_path
 
     if args.setup:
-        setup_oauth(Path(args.creds), Path(args.token))
+        setup_oauth(creds_path, token_path)
         return
 
     if args.scan_suggestions:
         scan_suggestions(
             days=args.days,
-            suggested_path=Path(args.suggested),
-            db_path=Path(args.db),
+            suggested_path=suggested_path,
+            db_path=db_path,
             candidate_id=args.candidate_id,
-            token_path=Path(args.token),
-            creds_path=Path(args.creds),
+            token_path=token_path,
+            creds_path=creds_path,
             dry_run=args.dry_run,
             verbose=args.verbose,
         )
@@ -844,10 +852,10 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     scan(
         days=args.days,
-        state_path=Path(args.state),
-        token_path=Path(args.token),
-        creds_path=Path(args.creds),
-        db_path=Path(args.db),
+        state_path=state_path,
+        token_path=token_path,
+        creds_path=creds_path,
+        db_path=db_path,
         candidate_id=args.candidate_id,
         dry_run=args.dry_run,
         verbose=args.verbose,

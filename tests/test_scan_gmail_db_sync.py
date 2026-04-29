@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from jobpipe.cli import scan_gmail
 from jobpipe.cli.scan_gmail import _match_jobs, _match_jobs_by_source_refs, _persist_gmail_status
 
 
@@ -95,3 +96,22 @@ def test_match_jobs_by_source_refs_prefers_exact_identifier_match():
     }
     matched = _match_jobs_by_source_refs([("finn", "123")], source_index, catalog)
     assert [row["job_id"] for row in matched] == ["job-2"]
+
+
+def test_scan_gmail_cli_runtime_profile_resolves_live_local_paths(tmp_path, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_scan(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setenv("JOBPIPE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(scan_gmail, "scan", _fake_scan)
+    monkeypatch.setattr(scan_gmail, "_configure_stdout_for_windows_console", lambda: None)
+
+    scan_gmail.main(["--runtime-profile", "live_local", "--dry-run"])
+
+    assert captured["state_path"] == tmp_path / "db" / "application_state.json"
+    assert captured["db_path"] == tmp_path / "db" / "jobpipe.sqlite"
+    assert captured["token_path"] == tmp_path / "secrets" / "gmail_token.json"
+    assert captured["creds_path"] == tmp_path / "secrets" / "gmail_credentials.json"

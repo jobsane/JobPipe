@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from jobpipe.model import JobSyncApplicationStatusEvent
 from jobpipe.runtime import record_jobsync_application_status_event
-from jobpipe.runtime.paths import primary_db_path
+from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
@@ -44,10 +44,17 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     parser.add_argument(
         "--db",
-        default=str(primary_db_path()),
-        help=f"Path to primary jobpipe.sqlite (default: {primary_db_path()})",
+        default="",
+        help="Path to primary jobpipe.sqlite override",
     )
+    parser.add_argument("--runtime-profile", choices=runtime_profile_choices(), default="default", help="Runtime profile to resolve DB path from")
+    parser.add_argument("--data-root", default="", help="Runtime data root override for live_local profile")
     args = parser.parse_args(argv)
+    runtime = resolve_profile_paths(
+        args.runtime_profile,
+        data_root_override=args.data_root,
+        db_override=args.db,
+    )
 
     metadata = {}
     if args.metadata_json:
@@ -64,7 +71,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         notes=args.notes,
         metadata_json=metadata,
     )
-    recorded = record_jobsync_application_status_event(Path(args.db), event)
+    recorded = record_jobsync_application_status_event(runtime.primary_db_path, event)
     print(json.dumps(recorded.model_dump(mode="json"), indent=2, ensure_ascii=False))
 
 
