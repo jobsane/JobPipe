@@ -151,6 +151,142 @@ def _replay_input_row(row: Dict[str, Any], *, mirrored_at: str) -> Dict[str, Any
     }
 
 
+def _job_evaluation_row(
+    row: Dict[str, Any],
+    *,
+    candidate_id: str,
+    mirrored_at: str,
+) -> Dict[str, Any]:
+    return {
+        "candidate_id": candidate_id,
+        "job_id": clean(row.get("job_id")),
+        "run_id": clean(row.get("run_id")),
+        "run_mtime": row.get("run_mtime") or 0,
+        "run_seen_at": clean(row.get("run_seen_at")),
+        "title": clean(row.get("title")),
+        "employer": clean(row.get("employer")),
+        "sector": clean(row.get("sector")),
+        "work_city": clean(row.get("work_city")),
+        "work_county": clean(row.get("work_county")),
+        "work_postalCode": clean(row.get("work_postalCode")),
+        "applicationDue": clean(row.get("applicationDue")),
+        "source_url": clean(row.get("source_url")),
+        "application_url": clean(row.get("application_url")),
+        "triage_decision": clean(row.get("triage_decision")),
+        "triage_confidence": row.get("triage_confidence"),
+        "triage_explanation": clean(row.get("triage_explanation")),
+        "triage_signals": clean(row.get("triage_signals")),
+        "reverse_decision": clean(row.get("reverse_decision")),
+        "reverse_confidence": row.get("reverse_confidence"),
+        "reverse_rationale": clean(row.get("reverse_rationale")),
+        "fit_score": row.get("fit_score"),
+        "pivot_score": row.get("pivot_score"),
+        "final_decision": clean(row.get("final_decision")),
+        "final_confidence": row.get("final_confidence"),
+        "recommendation_reason": clean(row.get("recommendation_reason")),
+        "cv_focus": clean(row.get("cv_focus")),
+        "feedback_flags": clean(row.get("feedback_flags")),
+        "description_snip": clean(row.get("description_snip")),
+        "skip_reason": clean(row.get("skip_reason")),
+        "raw_index_json": clean(row.get("raw_index_json")),
+        "raw_match_json": clean(row.get("raw_match_json")),
+        "raw_pivot_json": clean(row.get("raw_pivot_json")),
+        "raw_moderator_json": clean(row.get("raw_moderator_json")),
+        "closed_at": clean(row.get("closed_at")),
+        "updated_at": clean(row.get("updated_at")) or mirrored_at,
+    }
+
+
+def _job_run_event_row(
+    row: Dict[str, Any],
+    *,
+    candidate_id: str,
+    mirrored_at: str,
+) -> Dict[str, Any]:
+    return {
+        "candidate_id": candidate_id,
+        "run_id": clean(row.get("run_id")),
+        "job_id": clean(row.get("job_id")),
+        "run_mtime": row.get("run_mtime") or 0,
+        "seen_at": clean(row.get("seen_at")),
+        "final_decision": clean(row.get("final_decision")),
+        "final_confidence": row.get("final_confidence"),
+        "triage_decision": clean(row.get("triage_decision")),
+        "triage_confidence": row.get("triage_confidence"),
+        "fit_score": row.get("fit_score"),
+        "pivot_score": row.get("pivot_score"),
+        "applicationDue": clean(row.get("applicationDue")),
+        "title": clean(row.get("title")),
+        "employer": clean(row.get("employer")),
+        "work_city": clean(row.get("work_city")),
+        "work_county": clean(row.get("work_county")),
+        "work_postalCode": clean(row.get("work_postalCode")),
+        "source_url": clean(row.get("source_url")),
+        "application_url": clean(row.get("application_url")),
+        "raw_index_json": clean(row.get("raw_index_json")),
+        "updated_at": mirrored_at,
+    }
+
+
+def _persist_latest_row(
+    conn,
+    *,
+    candidate_id: str,
+    row: Dict[str, Any],
+    event_rows: List[Dict[str, Any]],
+    candidate_profile: Dict[str, Any],
+    mirrored_at: str,
+    watchlists_by_id: Dict[str, Any],
+) -> None:
+    upsert_job_replay_input(
+        conn,
+        _replay_input_row(row, mirrored_at=mirrored_at),
+    )
+    upsert_job_evaluation(
+        conn,
+        _job_evaluation_row(
+            row,
+            candidate_id=candidate_id,
+            mirrored_at=mirrored_at,
+        ),
+    )
+
+    job_view = _decision_job_view(row)
+    decision_context = build_decision_context(job_view, candidate_profile=candidate_profile)
+    evaluation_id = f"{clean(row.get('run_id'))}:{clean(row.get('job_id'))}"
+    updated_at = clean(row.get("updated_at")) or mirrored_at
+    job_id = clean(row.get("job_id"))
+
+    persist_job_decision_state(
+        conn,
+        candidate_id=candidate_id,
+        job_id=job_id,
+        evaluation_id=evaluation_id,
+        decision_context=decision_context,
+        updated_at=updated_at,
+    )
+
+    monitoring_context = build_monitoring_context(
+        job_view,
+        candidate_id=candidate_id,
+        decision_context=decision_context,
+        run_history=[event for event in event_rows if clean(event.get("job_id")) == job_id],
+    )
+    for watch in monitoring_context.watchlists:
+        watchlists_by_id[watch.watchlist_id] = watch
+    persist_monitoring_state(
+        conn,
+        candidate_id=candidate_id,
+        monitoring_context=monitoring_context.model_copy(
+            update={
+                "watchlists": [],
+            }
+        ),
+        updated_at=updated_at,
+        replace_watchlists_state=False,
+    )
+
+
 @dataclass
 class EventRow:
     run_id: str
@@ -391,110 +527,24 @@ def mirror_to_primary_db(
         candidate_profile = load_candidate_profile_json(candidate_id=candidate_id, db_path=db_path)
 
         for row in latest_rows:
-            upsert_job_replay_input(
-                conn,
-                _replay_input_row(row, mirrored_at=mirrored_at),
-            )
-            upsert_job_evaluation(
-                conn,
-                {
-                    "candidate_id": candidate_id,
-                    "job_id": clean(row.get("job_id")),
-                    "run_id": clean(row.get("run_id")),
-                    "run_mtime": row.get("run_mtime") or 0,
-                    "run_seen_at": clean(row.get("run_seen_at")),
-                    "title": clean(row.get("title")),
-                    "employer": clean(row.get("employer")),
-                    "sector": clean(row.get("sector")),
-                    "work_city": clean(row.get("work_city")),
-                    "work_county": clean(row.get("work_county")),
-                    "work_postalCode": clean(row.get("work_postalCode")),
-                    "applicationDue": clean(row.get("applicationDue")),
-                    "source_url": clean(row.get("source_url")),
-                    "application_url": clean(row.get("application_url")),
-                    "triage_decision": clean(row.get("triage_decision")),
-                    "triage_confidence": row.get("triage_confidence"),
-                    "triage_explanation": clean(row.get("triage_explanation")),
-                    "triage_signals": clean(row.get("triage_signals")),
-                    "reverse_decision": clean(row.get("reverse_decision")),
-                    "reverse_confidence": row.get("reverse_confidence"),
-                    "reverse_rationale": clean(row.get("reverse_rationale")),
-                    "fit_score": row.get("fit_score"),
-                    "pivot_score": row.get("pivot_score"),
-                    "final_decision": clean(row.get("final_decision")),
-                    "final_confidence": row.get("final_confidence"),
-                    "recommendation_reason": clean(row.get("recommendation_reason")),
-                    "cv_focus": clean(row.get("cv_focus")),
-                    "feedback_flags": clean(row.get("feedback_flags")),
-                    "description_snip": clean(row.get("description_snip")),
-                    "skip_reason": clean(row.get("skip_reason")),
-                    "raw_index_json": clean(row.get("raw_index_json")),
-                    "raw_match_json": clean(row.get("raw_match_json")),
-                    "raw_pivot_json": clean(row.get("raw_pivot_json")),
-                    "raw_moderator_json": clean(row.get("raw_moderator_json")),
-                    "closed_at": clean(row.get("closed_at")),
-                    "updated_at": clean(row.get("updated_at")) or mirrored_at,
-                },
-            )
-
-            job_view = _decision_job_view(row)
-            decision_context = build_decision_context(job_view, candidate_profile=candidate_profile)
-            evaluation_id = f"{clean(row.get('run_id'))}:{clean(row.get('job_id'))}"
-            persist_job_decision_state(
+            _persist_latest_row(
                 conn,
                 candidate_id=candidate_id,
-                job_id=clean(row.get("job_id")),
-                evaluation_id=evaluation_id,
-                decision_context=decision_context,
-                updated_at=clean(row.get("updated_at")) or mirrored_at,
-            )
-
-            monitoring_context = build_monitoring_context(
-                job_view,
-                candidate_id=candidate_id,
-                decision_context=decision_context,
-                run_history=[event for event in event_rows if clean(event.get("job_id")) == clean(row.get("job_id"))],
-            )
-            for watch in monitoring_context.watchlists:
-                watchlists_by_id[watch.watchlist_id] = watch
-            persist_monitoring_state(
-                conn,
-                candidate_id=candidate_id,
-                monitoring_context=monitoring_context.model_copy(
-                    update={
-                        "watchlists": [],
-                    }
-                ),
-                updated_at=clean(row.get("updated_at")) or mirrored_at,
-                replace_watchlists_state=False,
+                row=row,
+                event_rows=event_rows,
+                candidate_profile=candidate_profile,
+                mirrored_at=mirrored_at,
+                watchlists_by_id=watchlists_by_id,
             )
 
         for row in event_rows:
             upsert_job_run_event(
                 conn,
-                {
-                    "candidate_id": candidate_id,
-                    "run_id": clean(row.get("run_id")),
-                    "job_id": clean(row.get("job_id")),
-                    "run_mtime": row.get("run_mtime") or 0,
-                    "seen_at": clean(row.get("seen_at")),
-                    "final_decision": clean(row.get("final_decision")),
-                    "final_confidence": row.get("final_confidence"),
-                    "triage_decision": clean(row.get("triage_decision")),
-                    "triage_confidence": row.get("triage_confidence"),
-                    "fit_score": row.get("fit_score"),
-                    "pivot_score": row.get("pivot_score"),
-                    "applicationDue": clean(row.get("applicationDue")),
-                    "title": clean(row.get("title")),
-                    "employer": clean(row.get("employer")),
-                    "work_city": clean(row.get("work_city")),
-                    "work_county": clean(row.get("work_county")),
-                    "work_postalCode": clean(row.get("work_postalCode")),
-                    "source_url": clean(row.get("source_url")),
-                    "application_url": clean(row.get("application_url")),
-                    "raw_index_json": clean(row.get("raw_index_json")),
-                    "updated_at": mirrored_at,
-                },
+                _job_run_event_row(
+                    row,
+                    candidate_id=candidate_id,
+                    mirrored_at=mirrored_at,
+                ),
             )
 
         persist_monitoring_state(
