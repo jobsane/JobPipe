@@ -8,17 +8,34 @@ short orchestrator-facing adapter.
 ## Default Workflow
 
 1. Confirm repo state with `git status --short` and `git branch --show-current`.
-2. Read the canonical planning spine listed in `AGENTS.md` or `CLAUDE.md`.
-3. Read `docs/current-state.json`.
-4. Read the relevant task file in `docs/execplans/`.
-5. Choose one coherent next step.
-6. Implement or review only that step.
-7. Run the relevant validation.
-8. Update live state, task notes, or durable decisions when the work changes them.
+2. Detect the tool surface before planning implementation or PR work:
+   - use the preloaded tools first
+   - if a relevant app/plugin tool is not exposed, run tool discovery before
+     falling back to CLI
+   - prefer the connector/app tool over shelling out when both can do the job
+3. Read the canonical planning spine listed in `AGENTS.md` or `CLAUDE.md`.
+4. Read `docs/current-state.json`.
+5. Read the relevant task file in `docs/execplans/`.
+6. Choose one coherent next step.
+7. Implement or review only that step.
+8. Run the relevant validation.
+9. Update live state, task notes, or durable decisions when the work changes them.
 
 Do not start a new sprint or topic on top of unclear git state. Classify unclear
 state as active sprint work, unfinished prior sprint work, unrelated user work,
 or unexpected drift before proceeding.
+
+Tool-surface rule:
+
+- Before planning implementation, PR, issue, or project-board work, verify that
+  the relevant connector/app tools are actually available in the current
+  session.
+- If the needed tool is deferred, use tool discovery first instead of assuming
+  it is unavailable.
+- Fall back to CLI only when:
+  - the connector/app tool is truly unavailable, or
+  - the connector/app tool does not expose the needed operation.
+- Report which tool path was chosen when the choice matters to the workflow.
 
 ## Worker Split
 
@@ -166,6 +183,9 @@ Operating rules:
 
 - Every implementable task should exist as a GitHub issue or draft issue on
   Project #6 before Codex starts code work.
+- For GitHub work, check the GitHub connector surface first. If the GitHub app
+  tools are not exposed in the session, use tool discovery before falling back
+  to `gh`.
 - Planner output must reference the GitHub issue or project item when one
   exists.
 - PRs should link back to the corresponding issue.
