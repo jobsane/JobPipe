@@ -70,7 +70,7 @@ def test_author_cli_help() -> None:
 
 def test_author_cli_no_persist_prints_json(monkeypatch, capsys) -> None:
     monkeypatch.setattr(author_cli, "_load_context_for_job", lambda job_id: _ctx())
-    monkeypatch.setattr(author_cli, "SimpleAgentAuthor", _FakeAuthor)
+    monkeypatch.setattr("jobpipe.authoring.author_factory.build_author", lambda name, model: _FakeAuthor(model=model))
 
     assert author_cli._run(_args(no_persist=True)) == 0
     captured = capsys.readouterr()
@@ -83,7 +83,7 @@ def test_author_cli_no_persist_prints_json(monkeypatch, capsys) -> None:
 def test_author_cli_persist_called(monkeypatch, capsys) -> None:
     calls = []
     monkeypatch.setattr(author_cli, "_load_context_for_job", lambda job_id: _ctx())
-    monkeypatch.setattr(author_cli, "SimpleAgentAuthor", _FakeAuthor)
+    monkeypatch.setattr("jobpipe.authoring.author_factory.build_author", lambda name, model: _FakeAuthor(model=model))
     monkeypatch.setattr(author_cli, "connect_primary_db", lambda path: _FakeConn())
     monkeypatch.setattr(
         author_cli,
