@@ -111,7 +111,7 @@ The repo still contains legacy `out_runs/` and `reports/` naming in places durin
 | `jobpipe/decision/` | canonical public decision objects, deterministic claim/selection/decision/evidence/narrative/monitoring derivation, calibration helpers, and persistence adapters for promoted decision-state rows |
 | `jobpipe/projections/` | canonical export/projection logic built on canonical state |
 | `jobpipe/connectors/mail/` | extracted Gmail provider/session, parsing, suggestion, and status-helper logic |
-| `jobpipe/stages/` | evaluation stages and interpretation pipeline |
+| `jobpipe/stages/` | evaluation stages, current stage-builder wiring, and interpretation pipeline |
 | `jobpipe/core/` | transitional shared IO, compat shims, runner, and DB helpers |
 | `configs/pipeline.v1.yaml` | thresholds, stage order, model choices, rules |
 | `docs/` | runtime/operator documentation |
@@ -140,6 +140,7 @@ Important note:
 - `jobpipe/model/` now owns the canonical schema surface, while `jobpipe/core/schema.py` remains a compatibility shim during migration
 - `jobpipe/runtime/paths.py` now owns the canonical runtime-root mapping, including `db/`, `artifacts/`, `exports/`, `documents/`, `cache/`, and `secrets/` under `JOBPIPE_DATA_DIR`
 - `jobpipe/runtime/catalog.py` now owns canonical job/source-record intake and dedup behavior, while `jobpipe/core/job_catalog.py` remains a compatibility shim during migration
+- `jobpipe/stages/pipeline.py` now owns current stage-builder wiring; `jobpipe/runtime/` must stay below stages and must not import stage modules
 - `jobpipe/decision/` now owns the first public decision-substrate objects: deterministic `job_claims`, `selection_signals`, `selection_assessment`, a derived `decision_table`, deterministic candidate-evidence derivation/selection helpers, deterministic narrative derivation/assessment helpers, deterministic monitoring/change interpretation, and decision-state persistence adapters built on the primary DB
 - `jobpipe/projections/dashboard.py` now owns the canonical dashboard projection logic, while `jobpipe/cli/export_dashboard.py` remains a thin CLI wrapper
 - the mail/Gmail path is now substantially extracted into `jobpipe/connectors/mail/`
@@ -147,6 +148,8 @@ Important note:
 - `jobpipe/cli/sync_evaluations.py` now promotes job-level decision state and monitoring state into first-class DB rows
 - `jobpipe/cli/sync_evaluations.py` now also preserves rerunnable job input snapshots in the primary DB so evaluated jobs can be replayed even when the live catalog has moved on
 - `jobpipe/stages/application_pack.py` now promotes candidate-evidence and narrative state into first-class DB rows when that seam already has the necessary context
+- `jobpipe/authoring/` is the public authoring adapter contract and deterministic/local authoring surface
+- `jobpipe_crewai/` is an optional CrewAI implementation outside `jobpipe/`; `jobpipe/` may load it dynamically through the author factory but must not statically import CrewAI
 - the architecture pass does not require an immediate rewrite
 - new work should increasingly land in the target slices instead of enlarging `core/` and `cli/` in the wrong directions
 

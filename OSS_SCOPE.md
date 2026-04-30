@@ -49,6 +49,7 @@ Public scope should include:
 - artifact/export/document abstractions
 - generic adapters and projection hooks
 - baseline pipeline behavior
+- public authoring adapter contracts and local/simple baseline authoring behavior
 - public examples, fixtures, and demos
 - docs that explain the public model, workflow, and extension points
 
@@ -87,6 +88,21 @@ That later layer may build on the public foundation by adding:
 - premium packaging and product UX
 
 The private layer should depend on the public foundation, not replace it.
+
+## Optional extension seams
+
+Optional implementation packages may live beside `jobpipe/` when they are useful proof-of-work or integration surfaces.
+
+Current example:
+
+- `jobpipe_crewai/` is an optional CrewAI implementation of the public authoring adapter seam.
+
+Rules:
+
+- optional extensions must not be required for the core public runtime to import or run
+- `jobpipe/` may load optional implementations dynamically through public adapter contracts
+- optional extensions must not define alternate canonical schemas, alternate product stories, or private-only assumptions
+- CrewAI, private policy packs, premium connectors, or sibling-product integrations must remain behind explicit seams
 
 ## Contribution surface
 

@@ -6,8 +6,8 @@ It is not a backlog doc. It is a "what actually runs" map.
 
 Read this together with:
 
-- [docs/architecture.md](C:/Users/larsv/Jobpipe-codex-v2/docs/architecture.md)
-- [jobpipe/cli/main.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/main.py)
+- [docs/architecture.md](architecture.md)
+- [jobpipe/cli/main.py](../jobpipe/cli/main.py)
 
 ## 1. Canonical operator path
 
@@ -19,7 +19,7 @@ python -m jobpipe.cli.main ...
 
 Primary commands are registered in:
 
-- [jobpipe/cli/main.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/main.py)
+- [jobpipe/cli/main.py](../jobpipe/cli/main.py)
 
 The `run` command remains the normal orchestration path for the single-user loop.
 
@@ -37,7 +37,7 @@ flowchart TD
 
 ## 3. Evaluation path
 
-Current stage order from [docs/decision-model.md](C:/Users/larsv/Jobpipe-codex-v2/docs/decision-model.md):
+Current default stage order from [configs/pipeline.v1.yaml](../configs/pipeline.v1.yaml):
 
 1. `triage`
 2. `parse`
@@ -51,12 +51,17 @@ it is disabled in the current default config path.
 
 Stage modules live under:
 
-- [jobpipe/stages](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/stages)
+- [jobpipe/stages](../jobpipe/stages)
+
+Current stage-builder wiring lives in:
+
+- [jobpipe/stages/pipeline.py](../jobpipe/stages/pipeline.py)
 
 Important rule:
 
 - `stages/` is the live execution path
 - `decision/` is the intended canonical home for durable decision semantics
+- `runtime/` must not import `stages/`
 
 ## 4. Decision-state promotion path
 
@@ -70,9 +75,9 @@ flowchart TD
 
 Key owner modules:
 
-- [jobpipe/decision](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/decision)
-- [jobpipe/cli/sync_evaluations.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/sync_evaluations.py)
-- [jobpipe/core/primary_db.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/core/primary_db.py)
+- [jobpipe/decision](../jobpipe/decision)
+- [jobpipe/cli/sync_evaluations.py](../jobpipe/cli/sync_evaluations.py)
+- [jobpipe/core/primary_db.py](../jobpipe/core/primary_db.py)
 
 ## 5. Projection path
 
@@ -95,11 +100,11 @@ Key rule:
 
 Mail/Gmail provider logic is extracted under:
 
-- [jobpipe/connectors/mail](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/connectors/mail)
+- [jobpipe/connectors/mail](../jobpipe/connectors/mail)
 
 Operational orchestration still enters through:
 
-- [jobpipe/cli/scan_gmail.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/scan_gmail.py)
+- [jobpipe/cli/scan_gmail.py](../jobpipe/cli/scan_gmail.py)
 
 Key rule:
 
@@ -122,8 +127,8 @@ flowchart TD
 
 Key owner modules:
 
-- [jobpipe/runtime/paths.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/runtime/paths.py)
-- [jobpipe/runtime/catalog.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/runtime/catalog.py)
+- [jobpipe/runtime/paths.py](../jobpipe/runtime/paths.py)
+- [jobpipe/runtime/catalog.py](../jobpipe/runtime/catalog.py)
 
 ## 8. Known drift / caution zones
 

@@ -10,9 +10,9 @@ Use it to answer:
 
 Read this together with:
 
-- [docs/architecture.md](C:/Users/larsv/Jobpipe-codex-v2/docs/architecture.md)
-- [docs/decision-model.md](C:/Users/larsv/Jobpipe-codex-v2/docs/decision-model.md)
-- [MASTER_PLAN.md](C:/Users/larsv/Jobpipe-codex-v2/MASTER_PLAN.md)
+- [docs/architecture.md](architecture.md)
+- [docs/decision-model.md](decision-model.md)
+- [MASTER_PLAN.md](../MASTER_PLAN.md)
 
 Status meanings:
 
@@ -29,8 +29,10 @@ Status meanings:
 | `jobpipe/runtime/` | Canonical runtime roots and storage-boundary logic | canonical | Adding product semantics that belong in `decision/` or `model/` | Path helpers, catalog/runtime boundary cleanup, adapter surfaces |
 | `jobpipe/connectors/` | Provider adapters and input normalization | canonical | Letting connector-specific behavior become product logic | Provider/session helpers, parsing, normalization, connector tests |
 | `jobpipe/cli/` | Canonical operator interface and thin orchestration layer | canonical | Hiding core product logic directly in CLI modules | Argument parsing, orchestration, thin wrappers over owned modules |
+| `jobpipe/authoring/` | Public authoring adapter contract, context model, validation, persistence, and simple/local author implementation | canonical | Letting optional CrewAI details leak into `jobpipe/` | Adapter contracts, deterministic validation, local authoring smoke paths |
+| `jobpipe_crewai/` | Optional CrewAI implementation of the authoring adapter and post-triage authoring flow | optional extension | Treating CrewAI as required core runtime or importing it statically from `jobpipe/` | CrewAI-specific orchestration behind the adapter seam |
 | `jobpipe/core/` | Transitional shared IO, DB helpers, legacy ownership, compat shims | transitional | Treating it as the permanent home for new product logic | Narrow bug fixes, extraction into `runtime/` or `model/`, compat preservation |
-| `jobpipe/stages/` | Evaluation pipeline execution order and stage orchestration | transitional | Expanding stage-local logic that should live in `decision/` | Stage wiring, prompt/stage behavior, narrow pipeline fixes |
+| `jobpipe/stages/` | Evaluation pipeline execution order, stage-builder wiring, and stage orchestration | transitional | Expanding stage-local logic that should live in `decision/` | Stage wiring, prompt/stage behavior, narrow pipeline fixes |
 | `jobpipe/compat/` | Reserved compatibility boundary | compat | Building new features here | Only explicit compatibility shims |
 | `configs/` | Runtime thresholds, stage order, model choices, rules | canonical | Treating config changes as no-risk text edits | Threshold/routing edits with validation and explicit review |
 | `docs/` | Runtime/operator explanation and architecture memory | canonical | Duplicating backlog or stale branch-specific instructions | Architecture docs, operator docs, cleanup maps |
@@ -57,6 +59,7 @@ Status meanings:
 
 - Runtime ownership is still being pulled out of `core/`.
 - Prefer new path/root/catalog cleanup here instead of enlarging `core/`.
+- Runtime must not import `jobpipe.stages.*`; current stage-builder wiring lives in `jobpipe/stages/pipeline.py`.
 
 ### `jobpipe/cli`
 
@@ -72,9 +75,10 @@ Status meanings:
 
 - Stages are still on the live path.
 - That does not make them the canonical owner of every concept they currently touch.
+- Stage-builder wiring belongs here while `stages/` remains the transitional execution surface.
 
-## Current worktree caveat
+### `jobpipe/authoring` and `jobpipe_crewai`
 
-This worktree contains `jobpipe/authoring/` and `jobpipe_crewai/` directories only as local `__pycache__` leftovers; there are no tracked source files there in the current `main` worktree state.
-
-Treat those directories as absent for ownership purposes in this worktree until real tracked source files exist again.
+- `jobpipe/authoring/` owns the stable public authoring adapter seam.
+- `jobpipe_crewai/` may import CrewAI freely, but it is optional and must remain outside `jobpipe/`.
+- `jobpipe/` may use dynamic import to select the CrewAI author implementation; it should not gain static CrewAI imports.

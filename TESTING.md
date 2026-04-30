@@ -18,6 +18,20 @@ For any meaningful code change:
 4. Confirm output format is unchanged unless intentionally updated.
 5. Confirm the dashboard or other key derived exports still generate as expected.
 
+Current audit baseline after the runtime/stages boundary slice:
+
+- `python compile_check.py` should pass.
+- `python -m pytest tests/test_architecture_boundaries.py tests/test_runtime_pipeline.py -q` should pass.
+- `python -m pytest tests/test_evaluation_state.py -q` should pass.
+- `python -m jobpipe.cli.main run --dry-run --no-open` should pass.
+
+Known full-suite blockers on the current Windows audit machine:
+
+- two `test_no_crewai_import` checks call external `grep`; they fail if Git for Windows grep is unavailable on PATH
+- `tests/test_persona_fixtures.py` expects `tests/fixtures/personas/persona_a_reference/profile_pack.md`, which is missing in the current checkout
+
+Treat those as baseline cleanup items, not regressions from the runtime/stages boundary move.
+
 ## Practical rule
 
 Every change should include one of:

@@ -26,7 +26,7 @@ Status meanings:
 | `jobpipe/core/job_catalog.py` | Compatibility import surface for runtime catalog ownership migration | compat | `jobpipe/runtime/catalog.py` | Keep until import-compat contract is explicitly retired; compat test exists |
 | `jobpipe/core/paths.py` | Compatibility import surface for runtime path ownership migration | compat | `jobpipe/runtime/paths.py` | Keep until import-compat contract is explicitly retired; path compat tests exist |
 | `jobpipe/core/runner.py` | Live orchestration dependency still imported by `jobpipe/cli/run_feed.py` | review-first | thin CLI orchestration + owned runtime helpers | Caller audit confirms live use; any extraction must preserve `run_feed` behavior |
-| `jobpipe/cli/run_feed.py` | Main feed entrypoint and live pipeline assembly/orchestration concentration point | review-first | thinner CLI wrapper over a clearer pipeline/runtime boundary | Stage wiring, DB run bookkeeping, and repair logic are still concentrated here; extraction should be a dedicated slice |
+| `jobpipe/cli/run_feed.py` | Main feed entrypoint and live pipeline invocation/orchestration concentration point | review-first | thinner CLI wrapper over a clearer pipeline/runtime boundary | DB run bookkeeping, per-job execution, and repair logic are still concentrated here; extraction should be a dedicated slice |
 | `jobpipe/stages/reverse_triage.py` | Still-live optional stage referenced by `jobpipe/cli/run_feed.py`, `sync_evaluations.py`, and model schema | review-first | none yet; requires explicit stage-removal decision | Config check + caller audit + schema impact review before any removal |
 | `jobpipe/cli/export_dashboard.py` | Thin wrapper over projection/export path | keep | `jobpipe.projections.dashboard` as owner | none; wrapper is intentional while CLI stays canonical |
 | `jobpipe/cli/export_jobsync.py` | Thin wrapper over projection/export path | keep | `jobpipe.projections.jobsync` | none; wrapper is intentional |
@@ -46,23 +46,24 @@ Start cleanup review in this order:
 
 Why this order:
 
-- `run_feed.py`, `core/runner.py`, and `reverse_triage.py` form a live orchestration seam that looks more removable than it is
+- `run_feed.py`, `core/runner.py`, `stages/pipeline.py`, and `reverse_triage.py` form a live orchestration seam that looks more removable than it is
 - `core/schema.py`, `core/job_catalog.py`, and `core/paths.py` have explicit compatibility value and test coverage
-- several replacements are already named in [docs/architecture.md](C:/Users/larsv/Jobpipe-codex-v2/docs/architecture.md), but removal still requires caller and contract review
+- several replacements are already named in [docs/architecture.md](architecture.md), but removal still requires caller and contract review
 
 ## Evidence from first review pass
 
 Confirmed current evidence:
 
-- `jobpipe/core/schema.py` is covered by [tests/test_model_schema_compat.py](C:/Users/larsv/Jobpipe-codex-v2/tests/test_model_schema_compat.py)
-- `jobpipe/core/job_catalog.py` is covered by [tests/test_runtime_catalog_compat.py](C:/Users/larsv/Jobpipe-codex-v2/tests/test_runtime_catalog_compat.py)
-- `jobpipe/core/paths.py` is still imported directly by [tests/test_paths.py](C:/Users/larsv/Jobpipe-codex-v2/tests/test_paths.py)
-- `jobpipe/cli/run_feed.py` still owns stage assembly, DB run bookkeeping, per-job execution, and post-run index repair
-- `jobpipe/core/runner.py` is still imported by [jobpipe/cli/run_feed.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/run_feed.py)
+- `jobpipe/core/schema.py` is covered by [tests/test_model_schema_compat.py](../tests/test_model_schema_compat.py)
+- `jobpipe/core/job_catalog.py` is covered by [tests/test_runtime_catalog_compat.py](../tests/test_runtime_catalog_compat.py)
+- `jobpipe/core/paths.py` is still imported directly by [tests/test_paths.py](../tests/test_paths.py)
+- `jobpipe/cli/run_feed.py` still invokes the stage builder and owns DB run bookkeeping, per-job execution, and post-run index repair
+- `jobpipe/stages/pipeline.py` owns current stage-builder wiring
+- `jobpipe/core/runner.py` is still imported by [jobpipe/cli/run_feed.py](../jobpipe/cli/run_feed.py)
 - `jobpipe/stages/reverse_triage.py` is still referenced by:
-  - [jobpipe/cli/run_feed.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/run_feed.py)
-  - [jobpipe/cli/sync_evaluations.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/cli/sync_evaluations.py)
-  - [jobpipe/model/schema.py](C:/Users/larsv/Jobpipe-codex-v2/jobpipe/model/schema.py)
+  - [jobpipe/cli/run_feed.py](../jobpipe/cli/run_feed.py)
+  - [jobpipe/cli/sync_evaluations.py](../jobpipe/cli/sync_evaluations.py)
+  - [jobpipe/model/schema.py](../jobpipe/model/schema.py)
 
 ## Review procedure for each file
 

@@ -1,6 +1,6 @@
 # Architecture Boundaries
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-30
 
 This spec defines the architectural boundaries the next implementation pass should follow.
 
@@ -248,6 +248,11 @@ Current public package layout is still:
 - `jobpipe/cli`
 - `jobpipe/core`
 - `jobpipe/stages`
+- `jobpipe/runtime`
+- `jobpipe/model`
+- `jobpipe/decision`
+- `jobpipe/projections`
+- `jobpipe/connectors`
 
 That is acceptable as a transitional shape, but it is not the clean long-term public boundary model.
 
@@ -259,6 +264,8 @@ That is acceptable as a transitional shape, but it is not the clean long-term pu
   - `model/`
   - small remaining compatibility helpers if needed
 - `stages/` stays temporarily as the execution surface for the current pipeline, but should gradually give up durable product semantics to `decision/`
+- current stage-builder wiring belongs in `jobpipe/stages/pipeline.py`, not in `jobpipe/runtime/`
+- `runtime/` must stay below the execution surface and must not import `jobpipe.stages.*`
 
 This means the next implementation work should prefer:
 
@@ -329,6 +336,12 @@ The public repo should own the **interfaces and default baseline behavior**.
 The private layer should own **better policies and premium implementations**, not alternate schemas or a different product story.
 
 That seam is the architectural protection against open-core confusion.
+
+Current authoring seam:
+
+- `jobpipe/authoring/` owns the public authoring adapter contract, case context, output model, validation, persistence, and simple/local author implementation.
+- `jobpipe_crewai/` is an optional CrewAI implementation outside `jobpipe/`.
+- `jobpipe/` may dynamically import `jobpipe_crewai` through the author factory when requested, but it must not statically import CrewAI or make CrewAI a core runtime requirement.
 
 ---
 
