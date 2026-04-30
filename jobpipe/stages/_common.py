@@ -2,7 +2,45 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+_MONTHS_NO = [
+    "", "januar", "februar", "mars", "april", "mai", "juni",
+    "juli", "august", "september", "oktober", "november", "desember",
+]
+_PASS_THROUGH = {"snarest", "asap", "fortløpende", "løpende"}
+
+
+def format_deadline(raw: str) -> str:
+    """Format applicationDue for human display.
+
+    - ISO datetime (2026-05-15T00:00:00) → "15. mai 2026"
+    - snarest / asap / fortløpende → passed through as-is
+    - anything else unparseable → returned raw
+    """
+    s = raw.strip()
+    if not s:
+        return s
+    if s.lower() in _PASS_THROUGH:
+        return s
+    # Try ISO parse
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(s[:len(fmt.replace("%Y", "0000").replace("%m", "00").replace("%d", "00").replace("%H", "00").replace("%M", "00").replace("%S", "00"))], fmt)
+            return f"{dt.day}. {_MONTHS_NO[dt.month]} {dt.year}"
+        except (ValueError, IndexError):
+            continue
+    # fromisoformat fallback (handles offsets)
+    try:
+        s2 = s
+        if s2.endswith("Z"):
+            s2 = s2[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s2)
+        return f"{dt.day}. {_MONTHS_NO[dt.month]} {dt.year}"
+    except (ValueError, AttributeError):
+        pass
+    return raw  # unparseable — return as-is
 
 from agents import Runner, RunConfig
 
@@ -30,7 +68,7 @@ def build_job_header(job: Dict[str, Any]) -> str:
 
     status = _clean(job.get("status"))
     updated = _clean(job.get("sistEndret") or job.get("ad_updated") or job.get("ad_updated"))
-    due = _clean(job.get("applicationDue"))
+    due = format_deadline(_clean(job.get("applicationDue")))
     sourceurl = _clean(job.get("sourceurl") or job.get("link"))
     app_url = _clean(job.get("applicationUrl"))
 

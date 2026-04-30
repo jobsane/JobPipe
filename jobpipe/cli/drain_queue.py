@@ -176,7 +176,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         candidate_id=candidate_id,
     ) if args.skip_processed else set()
     if args.skip_processed:
-        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already known in {db_path}")
+        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already evaluated in {db_path}")
 
     loops = 0
     total_rows_processed = 0

@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from agents import Agent
 from jobpipe.model.schema import JobContext, ProfileMatchOut
-from jobpipe.stages._common import run_agent
+from jobpipe.stages._common import run_agent, format_deadline
 
 MATCH_INSTRUCTIONS = """
 Du er en match-agent. Du vurderer faktisk kompetansematch mellom kandidaten og stillingen.
@@ -85,7 +85,7 @@ def profile_match_stage_factory(model: str):
                 "title": ctx.job.get("title"),
                 "employer_name": ctx.job.get("employer_name"),
                 "sector": ctx.job.get("sector"),
-                "deadline": ctx.job.get("applicationDue"),
+                "deadline": format_deadline((ctx.job.get("applicationDue") or "").strip()),
             },
         }
 

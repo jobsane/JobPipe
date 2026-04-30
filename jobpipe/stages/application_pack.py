@@ -22,7 +22,7 @@ from jobpipe.decision import (
 from jobpipe.runtime.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, insert_generated_document
 from jobpipe.model.schema import JobContext, ApplicationPackOut
-from jobpipe.stages._common import run_agent
+from jobpipe.stages._common import run_agent, format_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +196,7 @@ def _build_application_pack_payload(
             "title": ctx.job.get("title"),
             "employer_name": ctx.job.get("employer_name"),
             "sector": ctx.job.get("sector"),
-            "deadline": ctx.job.get("applicationDue"),
+            "deadline": format_deadline((ctx.job.get("applicationDue") or "").strip()),
             "source_url": ctx.job.get("sourceurl") or ctx.job.get("link"),
         },
         "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
