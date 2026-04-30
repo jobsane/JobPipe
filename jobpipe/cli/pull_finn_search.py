@@ -42,7 +42,7 @@ from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.evaluation_state import load_job_catalog
 from jobpipe.core.io import load_env_file
 from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
 
@@ -418,10 +418,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     queries  = _load_queries_from_config(config_path) or DEFAULT_QUERIES
     location = _load_location_from_config(config_path) or DEFAULT_LOCATION
 
-    processed_ids = load_processed_job_ids(
-        primary_db_path=Path(args.db),
-        candidate_id=args.candidate_id,
-    )
+    processed_ids = {
+        str(row.get("job_id") or "").strip()
+        for row in load_job_catalog(
+            primary_db_path=Path(args.db),
+            candidate_id=args.candidate_id,
+        )
+        if str(row.get("job_id") or "").strip()
+    }
     print(f"Known jobs: {len(processed_ids)} (db={args.db})")
 
     # --- Phase 1: Scrape search pages for new finnkodes ---

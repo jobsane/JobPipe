@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.evaluation_state import load_job_catalog
 from jobpipe.core.io import load_env_file
 from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
 
@@ -238,10 +238,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(1)
 
-    processed_ids = set() if args.no_dedupe else load_processed_job_ids(
-        primary_db_path=Path(args.db),
-        candidate_id=args.candidate_id,
-    )
+    if args.no_dedupe:
+        processed_ids: set[str] = set()
+    else:
+        processed_ids = {
+            str(row.get("job_id") or "").strip()
+            for row in load_job_catalog(
+                primary_db_path=Path(args.db),
+                candidate_id=args.candidate_id,
+            )
+            if str(row.get("job_id") or "").strip()
+        }
     print(f"Loaded {len(processed_ids)} known job IDs for deduplication.")
 
     # Read raw FINN extension records

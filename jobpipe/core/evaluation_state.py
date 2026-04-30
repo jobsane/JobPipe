@@ -79,12 +79,25 @@ def load_processed_job_ids(
     primary_db_path: Optional[Path],
     candidate_id: str,
 ) -> set[str]:
-    """Return known job_ids from the primary DB."""
+    """Return job_ids that have a completed evaluation for this candidate.
+
+    "Processed" = a row exists in job_evaluations. Used by drain_queue's
+    skip-already-evaluated filter. For broader catalog dedup (e.g. FINN
+    scrapers checking whether a job is already mirrored), use load_job_catalog
+    and derive ids from its rows.
+    """
+    if primary_db_path is None or not primary_db_path.exists():
+        return set()
+    try:
+        rows = _rows_as_dicts(
+            primary_db_path,
+            "SELECT DISTINCT job_id FROM job_evaluations WHERE candidate_id = ?",
+            [candidate_id],
+        )
+    except Exception:
+        return set()
     return {
         str(row.get("job_id") or "").strip()
-        for row in load_job_catalog(
-            primary_db_path=primary_db_path,
-            candidate_id=candidate_id,
-        )
+        for row in rows
         if str(row.get("job_id") or "").strip()
     }
