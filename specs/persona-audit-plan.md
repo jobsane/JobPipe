@@ -59,6 +59,10 @@ It should do that using:
 - one frozen configuration baseline
 - multiple synthetic candidate personas
 
+Persona fixtures are synthetic calibration and regression fixtures.
+They exist to test whether JobPipe generalizes beyond one operator profile.
+They are not default user data, product assumptions, or evidence that the first four personas cover the market.
+
 ---
 
 ## Product-line constraint
@@ -141,6 +145,13 @@ Each persona should define:
 - location rules
 
 These should be synthetic and safe to publish.
+
+They should remain intentionally limited:
+
+- useful for initial calibration without personal data
+- useful for regression checks after threshold, prompt, decision, or projection changes
+- not treated as representative market research
+- not used as default profiles for normal users
 
 Committed fixture location:
 
