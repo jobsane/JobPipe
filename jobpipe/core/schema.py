@@ -89,6 +89,14 @@ class AdvantageAssessmentV3(BaseModel):
     confidence: int = Field(ge=0, le=100)
     summary: str = Field(min_length=1, max_length=240)
 
+    @field_validator("recruiter_hook", "applicant_pool_hypothesis", "summary", mode="before")
+    @classmethod
+    def _truncate_str(cls, v: Any) -> Any:
+        """Truncate LLM-generated strings that exceed the display limit rather than hard-failing."""
+        if isinstance(v, str) and len(v) > 240:
+            return v[:237] + "..."
+        return v
+
 
 class NarrativeStrategyV3(BaseModel):
     positioning_angle: str = Field(min_length=1, max_length=240)
