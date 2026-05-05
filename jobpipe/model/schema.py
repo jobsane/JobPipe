@@ -7,6 +7,101 @@ from pydantic import BaseModel, Field, field_validator
 TriageDecision = Literal["SKIP", "REVIEW", "APPLY_CANDIDATE"]
 ReverseDecision = Literal["SKIP_CONFIRMED", "REVIVE_REVIEW", "REVIVE_APPLY"]
 FinalDecision = Literal["APPLY_STRONGLY", "APPLY", "REVIEW_HIGH", "REVIEW_LOW", "SKIP"]
+TriageDecisionLabel = Literal["discard", "review", "shortlist"]
+
+
+class EvidenceSpan(BaseModel):
+    text: str = Field(min_length=1, max_length=280)
+    source: Literal["title", "body", "metadata", "connector"]
+    note: Optional[str] = Field(default=None, max_length=160)
+
+
+class FeatureScore(BaseModel):
+    score: int = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    reason: str = Field(min_length=1, max_length=240)
+    evidence_spans: List[EvidenceSpan] = Field(default_factory=list, max_length=4)
+
+
+class HardGates(BaseModel):
+    title_gate: bool = True
+    language_gate: bool = True
+    sector_gate: bool = True
+    geo_gate: bool = True
+    remote_gate: bool = True
+    must_have_tech_gate: bool = True
+    duplicate_gate: bool = True
+    blocker_reasons: List[str] = Field(default_factory=list)
+
+    def passed(self) -> bool:
+        return (
+            self.title_gate
+            and self.language_gate
+            and self.sector_gate
+            and self.geo_gate
+            and self.remote_gate
+            and self.must_have_tech_gate
+            and self.duplicate_gate
+        )
+
+
+class TriageFeatures(BaseModel):
+    core_tech_alignment: FeatureScore
+    legacy_burden: FeatureScore
+    role_specificity: FeatureScore
+    requirement_density: FeatureScore
+    geospatial_friction: FeatureScore
+    remote_veracity: FeatureScore
+    autonomy_level: FeatureScore
+    stakeholder_complexity: FeatureScore
+    operating_fit: FeatureScore
+
+
+class TriageDecisionV3(BaseModel):
+    label: TriageDecisionLabel
+    weighted_score: float = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    needs_ambiguity_pass: bool = False
+    blockers: List[str] = Field(default_factory=list)
+    boosts: List[str] = Field(default_factory=list)
+    summary: str = Field(min_length=1, max_length=240)
+
+
+class TriageAmbiguityV3(BaseModel):
+    initial_label: TriageDecisionLabel
+    resolved_label: TriageDecisionLabel
+    confidence: int = Field(ge=0, le=100)
+    resolution_reason: str = Field(min_length=1, max_length=240)
+    blockers: List[str] = Field(default_factory=list)
+    boosts: List[str] = Field(default_factory=list)
+    final_decision: TriageDecisionV3
+
+
+class AdvantageAssessmentV3(BaseModel):
+    advantage_type: Literal["strong_fit", "advantageous_mismatch", "stretch_review", "weak_case"]
+    advantage_signals: List[str] = Field(default_factory=list, max_length=6)
+    objection_signals: List[str] = Field(default_factory=list, max_length=6)
+    neutralizing_evidence: List[str] = Field(default_factory=list, max_length=6)
+    differentiation_signals: List[str] = Field(default_factory=list, max_length=6)
+    advantageous_match_score: int = Field(default=0, ge=0, le=100)
+    applicant_pool_hypothesis: str = Field(default="", max_length=240)
+    recruiter_hook: str = Field(default="", max_length=240)
+    stretch_level: Literal["low", "medium", "high"]
+    review_priority: int = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    summary: str = Field(min_length=1, max_length=240)
+
+
+class NarrativeStrategyV3(BaseModel):
+    positioning_angle: str = Field(min_length=1, max_length=240)
+    brand_frame: str = Field(min_length=1, max_length=180)
+    why_me_now: str = Field(min_length=1, max_length=240)
+    top_value_props: List[str] = Field(default_factory=list, min_length=2, max_length=4)
+    objections_to_handle: List[str] = Field(default_factory=list, max_length=4)
+    cv_focus_order: List[str] = Field(default_factory=list, min_length=2, max_length=6)
+    cover_letter_strategy: str = Field(min_length=1, max_length=240)
+    confidence: int = Field(ge=0, le=100)
+    summary: str = Field(min_length=1, max_length=240)
 JobSyncStatusEventType = Literal[
     "shortlisted",
     "called",
@@ -27,6 +122,9 @@ class TriageOut(BaseModel):
     signals: List[str] = Field(default_factory=list)
     forced_safety: bool = False
     noise_level: Optional[float] = Field(default=None, ge=0, le=1)
+    # Snapshot of the deterministic gates that ran before the LLM triage.
+    # Keeps hard skips auditable. None means not produced (older artifacts).
+    hard_gates: Optional[HardGates] = None
 
     @field_validator("confidence")
     @classmethod
@@ -103,6 +201,7 @@ class ModeratorOut(BaseModel):
     recommendation_reason: str
     cv_focus: List[str] = Field(default_factory=list)
     feedback_flags: List[str] = Field(default_factory=list)
+    triage_decision_v3: Optional[TriageDecisionV3] = None
 
 
 class ApplicationPackOut(BaseModel):
@@ -247,6 +346,11 @@ class JobContext(BaseModel):
     profile_pack: str
 
     triage: Optional[TriageOut] = None
+    triage_features: Optional[TriageFeatures] = None
+    triage_decision_v3: Optional[TriageDecisionV3] = None
+    triage_ambiguity_v3: Optional[TriageAmbiguityV3] = None
+    advantage_assessment_v3: Optional[AdvantageAssessmentV3] = None
+    narrative_strategy_v3: Optional[NarrativeStrategyV3] = None
     reverse_triage: Optional[ReverseTriageOut] = None
     parsed: Optional[JobParse] = None
     profile_match: Optional[ProfileMatchOut] = None
@@ -271,10 +375,19 @@ class JobContext(BaseModel):
 
 
 __all__ = [
+    "AdvantageAssessmentV3",
     "ApplicationPackOut",
+    "EvidenceSpan",
+    "FeatureScore",
     "FinalDecision",
+    "HardGates",
     "JobContext",
     "JobParse",
+    "NarrativeStrategyV3",
+    "TriageAmbiguityV3",
+    "TriageDecisionLabel",
+    "TriageDecisionV3",
+    "TriageFeatures",
     "JobSyncApplicationCaseProjection",
     "JobSyncApplicationStatusEvent",
     "JobSyncDecisionBrief",

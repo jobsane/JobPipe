@@ -19,6 +19,11 @@ stages:
   - parse
   - profile_match
   - pivot
+  - triage_features        # deterministic: 9 dimension scores from profile_match + parsed
+  - triage_decision_v3     # deterministic: weighted aggregate -> discard/review/shortlist
+  - triage_ambiguity_v3    # deterministic: conditional ambiguity resolution (skipped if not needed)
+  - advantage_assessment_v3  # deterministic: advantage type, recruiter hook, review priority
+  - narrative_strategy_v3    # deterministic: Norwegian positioning angle + cover letter strategy
   - moderate
   - application_pack
   # - writer

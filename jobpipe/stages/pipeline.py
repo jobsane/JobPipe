@@ -5,21 +5,31 @@ from typing import List
 from jobpipe.core.config import PipelineConfig
 from jobpipe.core.runner import Stage
 from jobpipe.model.schema import (
+    AdvantageAssessmentV3,
     ApplicationPackOut,
     JobParse,
     ModeratorOut,
+    NarrativeStrategyV3,
     PivotOut,
     ProfileMatchOut,
     ReverseTriageOut,
+    TriageAmbiguityV3,
+    TriageDecisionV3,
+    TriageFeatures,
     TriageOut,
 )
+from jobpipe.stages.advantage_assessment_v3 import advantage_assessment_v3_stage_factory
 from jobpipe.stages.application_pack import application_pack_stage_factory
 from jobpipe.stages.moderate import moderate_stage_factory
+from jobpipe.stages.narrative_strategy_v3 import narrative_strategy_v3_stage_factory
 from jobpipe.stages.parse import parse_stage_factory
 from jobpipe.stages.pivot import pivot_stage_factory
 from jobpipe.stages.profile_match import profile_match_stage_factory
 from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
 from jobpipe.stages.triage import triage_stage_factory
+from jobpipe.stages.triage_ambiguity_v3 import triage_ambiguity_v3_stage_factory
+from jobpipe.stages.triage_decision_v3 import triage_decision_v3_stage_factory
+from jobpipe.stages.triage_features import triage_features_stage_factory
 
 SUPPORTED_STAGE_ALIASES = {"parse": "parsed", "moderate": "moderator"}
 
@@ -32,6 +42,11 @@ SUPPORTED_DEFAULT_STAGE_ORDER = [
     "parsed",
     "profile_match",
     "pivot",
+    "triage_features",
+    "triage_decision_v3",
+    "triage_ambiguity_v3",
+    "advantage_assessment_v3",
+    "narrative_strategy_v3",
     "moderator",
     "application_pack",
 ]
@@ -101,6 +116,26 @@ def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
                 model=cfg.models.get("pivot", "gpt-4.1-mini"),
             )
             stages.append(Stage(name="pivot", run=run_pv, should_run=should_pv, ctx_model=PivotOut))
+
+        elif s == "triage_features":
+            should_tf, run_tf = triage_features_stage_factory()
+            stages.append(Stage(name="triage_features", run=run_tf, should_run=should_tf, ctx_model=TriageFeatures))
+
+        elif s == "triage_decision_v3":
+            should_td, run_td = triage_decision_v3_stage_factory()
+            stages.append(Stage(name="triage_decision_v3", run=run_td, should_run=should_td, ctx_model=TriageDecisionV3))
+
+        elif s == "triage_ambiguity_v3":
+            should_ta, run_ta = triage_ambiguity_v3_stage_factory()
+            stages.append(Stage(name="triage_ambiguity_v3", run=run_ta, should_run=should_ta, ctx_model=TriageAmbiguityV3))
+
+        elif s == "advantage_assessment_v3":
+            should_aa, run_aa = advantage_assessment_v3_stage_factory()
+            stages.append(Stage(name="advantage_assessment_v3", run=run_aa, should_run=should_aa, ctx_model=AdvantageAssessmentV3))
+
+        elif s == "narrative_strategy_v3":
+            should_ns, run_ns = narrative_strategy_v3_stage_factory()
+            stages.append(Stage(name="narrative_strategy_v3", run=run_ns, should_run=should_ns, ctx_model=NarrativeStrategyV3))
 
         elif s == "moderator":
             should_mod, run_mod = moderate_stage_factory(cfg.thresholds)
