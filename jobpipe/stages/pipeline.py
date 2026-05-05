@@ -18,18 +18,18 @@ from jobpipe.model.schema import (
     TriageFeatures,
     TriageOut,
 )
-from jobpipe.stages.advantage_assessment_v3 import advantage_assessment_v3_stage_factory
+from jobpipe.stages.advantage_assessment_v3 import advantage_assessment_v3_cache_key, advantage_assessment_v3_stage_factory
 from jobpipe.stages.application_pack import application_pack_stage_factory
 from jobpipe.stages.moderate import moderate_stage_factory
-from jobpipe.stages.narrative_strategy_v3 import narrative_strategy_v3_stage_factory
+from jobpipe.stages.narrative_strategy_v3 import narrative_strategy_v3_cache_key, narrative_strategy_v3_stage_factory
 from jobpipe.stages.parse import parse_stage_factory
 from jobpipe.stages.pivot import pivot_stage_factory
 from jobpipe.stages.profile_match import profile_match_stage_factory
 from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
 from jobpipe.stages.triage import triage_stage_factory
-from jobpipe.stages.triage_ambiguity_v3 import triage_ambiguity_v3_stage_factory
-from jobpipe.stages.triage_decision_v3 import triage_decision_v3_stage_factory
-from jobpipe.stages.triage_features import triage_features_stage_factory
+from jobpipe.stages.triage_ambiguity_v3 import triage_ambiguity_v3_cache_key, triage_ambiguity_v3_stage_factory
+from jobpipe.stages.triage_decision_v3 import triage_decision_v3_cache_key, triage_decision_v3_stage_factory
+from jobpipe.stages.triage_features import triage_features_cache_key, triage_features_stage_factory
 
 SUPPORTED_STAGE_ALIASES = {"parse": "parsed", "moderate": "moderator"}
 
@@ -52,7 +52,13 @@ SUPPORTED_DEFAULT_STAGE_ORDER = [
 ]
 
 
-def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
+def build_stages(
+    cfg: PipelineConfig,
+    profile_pack: str = "",
+    *,
+    triage_profile_summary: str = "",
+    targeting_title_patterns: list[str] | None = None,
+) -> List[Stage]:
     """
     Stage.name must match JobContext attribute names for artifact dumps.
     Accept YAML-friendly aliases:
@@ -84,6 +90,8 @@ def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
                 max_ad_text_chars=triage_max_chars,
                 safety_rules=cfg.safety_rules,
                 profile_pack=profile_pack,
+                triage_profile_summary=triage_profile_summary,
+                targeting_title_patterns=targeting_title_patterns,
                 semantic_threshold=float(cfg.thresholds.get("semantic_filter_threshold", 0.0)),
                 semantic_model=str(cfg.thresholds.get("semantic_filter_model", "BAAI/bge-small-en-v1.5")),
             )
@@ -119,23 +127,63 @@ def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
 
         elif s == "triage_features":
             should_tf, run_tf = triage_features_stage_factory()
-            stages.append(Stage(name="triage_features", run=run_tf, should_run=should_tf, ctx_model=TriageFeatures))
+            stages.append(
+                Stage(
+                    name="triage_features",
+                    run=run_tf,
+                    should_run=should_tf,
+                    ctx_model=TriageFeatures,
+                    cache_key_fn=triage_features_cache_key,
+                )
+            )
 
         elif s == "triage_decision_v3":
             should_td, run_td = triage_decision_v3_stage_factory()
-            stages.append(Stage(name="triage_decision_v3", run=run_td, should_run=should_td, ctx_model=TriageDecisionV3))
+            stages.append(
+                Stage(
+                    name="triage_decision_v3",
+                    run=run_td,
+                    should_run=should_td,
+                    ctx_model=TriageDecisionV3,
+                    cache_key_fn=triage_decision_v3_cache_key,
+                )
+            )
 
         elif s == "triage_ambiguity_v3":
             should_ta, run_ta = triage_ambiguity_v3_stage_factory()
-            stages.append(Stage(name="triage_ambiguity_v3", run=run_ta, should_run=should_ta, ctx_model=TriageAmbiguityV3))
+            stages.append(
+                Stage(
+                    name="triage_ambiguity_v3",
+                    run=run_ta,
+                    should_run=should_ta,
+                    ctx_model=TriageAmbiguityV3,
+                    cache_key_fn=triage_ambiguity_v3_cache_key,
+                )
+            )
 
         elif s == "advantage_assessment_v3":
             should_aa, run_aa = advantage_assessment_v3_stage_factory()
-            stages.append(Stage(name="advantage_assessment_v3", run=run_aa, should_run=should_aa, ctx_model=AdvantageAssessmentV3))
+            stages.append(
+                Stage(
+                    name="advantage_assessment_v3",
+                    run=run_aa,
+                    should_run=should_aa,
+                    ctx_model=AdvantageAssessmentV3,
+                    cache_key_fn=advantage_assessment_v3_cache_key,
+                )
+            )
 
         elif s == "narrative_strategy_v3":
             should_ns, run_ns = narrative_strategy_v3_stage_factory()
-            stages.append(Stage(name="narrative_strategy_v3", run=run_ns, should_run=should_ns, ctx_model=NarrativeStrategyV3))
+            stages.append(
+                Stage(
+                    name="narrative_strategy_v3",
+                    run=run_ns,
+                    should_run=should_ns,
+                    ctx_model=NarrativeStrategyV3,
+                    cache_key_fn=narrative_strategy_v3_cache_key,
+                )
+            )
 
         elif s == "moderator":
             should_mod, run_mod = moderate_stage_factory(cfg.thresholds)
