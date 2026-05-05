@@ -22,6 +22,7 @@ DEFAULT_ENV_PATH = repo_root() / ".env"
 MODULE_COMMANDS = {
     "author-package": "jobpipe.authoring.author_cli",
     "bootstrap-state-db": "jobpipe.cli.bootstrap_state_db",
+    "bounded-intake": "jobpipe.cli.bounded_intake",
     "build-authoring-context": "jobpipe.authoring.smoke_cli",
     "drain-queue": "jobpipe.cli.drain_queue",
     "export-dashboard": "jobpipe.cli.export_dashboard",
@@ -40,6 +41,7 @@ MODULE_COMMANDS = {
     "record-reactive-resume-document": "jobpipe.cli.record_reactive_resume_document",
     "refresh-runtime-state": "jobpipe.cli.refresh_runtime_state",
     "reset-runtime": "jobpipe.cli.reset_runtime",
+    "run-feed": "jobpipe.cli.run_feed",
     "scan-gmail": "jobpipe.cli.scan_gmail",
     "sync-evaluations": "jobpipe.cli.sync_evaluations",
 }

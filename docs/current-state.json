@@ -1,130 +1,130 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 active — Slice 1 (#58) approved and ready for Codex.",
-  "current_task_id": "T002",
-  "current_slice": "T002-slice-1",
-  "status": "slice_1_ready_for_codex",
+  "active_goal": "JobSane Sprint 1 — persistence seam contracts and planning docs. Intake batch (#9/#10/#12) complete. Next: #158 (North Star docs), #167 (hotspot mapping), #163 (persistence seam contracts).",
+  "current_task_id": null,
+  "current_slice": "Sprint JobSane-1",
+  "status": "in_sprint",
   "lead_worker": "claude",
-  "active_branch": "claude/T002-authoring-mvp",
+  "active_branch": null,
   "coordinator_branch": "ops/orchestrator-v2",
-  "implementation_branch": "codex/T002-authoring-mvp",
-  "planner_branch": "claude/T002-authoring-mvp",
+  "implementation_branch": null,
+  "planner_branch": null,
   "worktrees": {
-    "orchestrator": {
-      "path": "../Jobpipe-orchestrator-v2",
-      "branch": "ops/orchestrator-v2"
-    },
-    "claude": {
-      "path": "../Jobpipe-claude-v2",
-      "branch": "claude/T002-authoring-mvp"
-    },
-    "codex": {
-      "path": "../Jobpipe-codex-v2",
-      "branch": "codex/T002-authoring-mvp"
+    "note": "T002 worktrees (Jobpipe-orchestrator-v2, Jobpipe-claude-v2, Jobpipe-codex-v2) may still exist on disk. Verify before reusing."
+  },
+  "active_sprint": {
+    "task": null,
+    "status": "no_active_sprint",
+    "notes": "T002 Sprint 1 work merged April 29-30 (PRs #146, #148, #153, #154, #156). Board reorganised with new issue set (#1-#20, #135-#168). Next sprint not yet started. Coordinator must pick next task from Ready queue and open a new sprint."
+  },
+  "completed_sprint_jobsane_1_intake": [
+    {"number": 9, "title": "Feature: Bounded intake path", "closed_at": "2026-05-05"},
+    {"number": 10, "title": "Story: Bounded ingest mode", "closed_at": "2026-05-05"},
+    {"number": 12, "title": "Task: Smoke corpus fixtures", "closed_at": "2026-05-05"}
+  ],
+  "ready_queue": {
+    "docs_and_contracts": [
+      {"number": 158, "title": "Task: Add JobSane North Star and rolling plan docs", "size": "S", "delegation": "Agent-ready", "priority": "P0"},
+      {"number": 167, "title": "Task: Map direct persistence hotspots", "size": "S", "delegation": "Agent-ready", "priority": "P0"},
+      {"number": 163, "title": "Task: Define JobPipe persistence seam and repository contracts", "size": "M", "delegation": "Agent-ready", "priority": "P1"},
+      {"number": 159, "title": "Task: Define canonical application lifecycle and artifact contract", "size": "S", "delegation": "Agent-ready", "priority": "P1"}
+    ],
+    "profile": [
+      {"number": 13, "title": "Feature: Canonical candidate profile import from Reactive Resume", "size": "M", "delegation": "Human-led", "priority": "P0"},
+      {"number": 16, "title": "Task: Define the minimum profile fields required for tailoring", "size": "XS", "delegation": "Human-led", "priority": "P0"}
+    ],
+    "cv_authoring": [
+      {"number": 17, "title": "Feature: Structured tailored CV plan to Reactive Resume patch set", "size": "L", "delegation": "Human-led", "priority": "P0"},
+      {"number": 18, "title": "Story: Select evidence units per job ad", "size": "S", "delegation": "Agent-ready", "priority": "P0"},
+      {"number": 19, "title": "Story: Generate a Reactive Resume-compatible tailored CV patch plan", "size": "M", "delegation": "Agent-ready", "priority": "P0"}
+    ]
+  },
+  "initiative": {
+    "number": 157,
+    "title": "Initiative: JobSane calm job hunt operating system",
+    "north_star": "Only surface the most important decisions Lars can make best: apply, skip, research, follow up, prepare, or improve profile strategy.",
+    "product_loop": "Discover -> curate in Jobpipe -> decide -> apply workbench -> track -> follow up -> learn.",
+    "guardrails": [
+      "Jobpipe is canonical for new jobs and lifecycle state.",
+      "No auto-apply or recruiter portal submit without approval.",
+      "No fake CV or cover letter claims.",
+      "Recommendations must cite evidence.",
+      "Status updates must be traceable."
+    ],
+    "key_features": {
+      "158": "Task: Add JobSane North Star and rolling plan docs (Ready)",
+      "159": "Task: Define Jobpipe canonical application lifecycle and artifact contract",
+      "160": "Feature: Apply Workbench v1 contract across Jobpipe, JobSync, Reactive Resume, and editor (Backlog)",
+      "161": "Spike: Research Reactive Resume, cover letter editor, and recruiter portal integration options",
+      "162": "Feature: JobSane daily decision brief from Jobpipe curated jobs and email status (Backlog)",
+      "163": "Task: Define JobPipe persistence seam and repository contracts",
+      "164": "Epic: JobPipe event ingestion and status reconciliation seam",
+      "165": "Story: Define source event contract for leads, enrichment, and external signals",
+      "166": "Story: Define status reconciliation policy from events to canonical lifecycle",
+      "167": "Task: Map direct persistence hotspots before repository seam implementation",
+      "168": "Story: Define trigger policy for event-driven actions and decision briefs"
     }
   },
-  "current_slice_status": {
-    "issue": "#58",
-    "title": "Audit current application_pack inputs and define AuthoringCaseContext",
-    "slice_brief": "docs/execplans/T002-slice-1.md",
-    "planner_status": "approved",
-    "codex_status": "not_started",
-    "planner_stamp": "2026-04-21",
-    "coordinator_stamp": "2026-04-21",
-    "risk_label": "green"
-  },
-  "last_handoff_file": "docs/execplans/T001.md",
-  "last_handoff_at": "2026-04-21T00:00:00+02:00",
-  "last_coordinator_approval": {
-    "slice": "T001-slice-1",
-    "approved_at": "2026-04-21",
-    "approved_by": "coordinator",
-    "planner_commit": "7d6909d",
-    "planner_branch": "claude/job-catalog-foundation-v2",
-    "notes": "Codex worker prompt stamped approved. Escalation gates in the prompt remain in force during implementation."
-  },
+  "specs_added": [
+    {
+      "file": "specs/jobsane-crew-architecture-2026-05-03.md",
+      "summary": "Full sub-crew architecture for Apply Workbench: Ground Layer, CV Tailoring, Cover Letter, Screening Questions, Interview Prep crews. Feeds #160 and #161.",
+      "added_at": "2026-05-03"
+    }
+  ],
+  "merged_since_last_update": [
+    {
+      "number": 156,
+      "title": "fix: replay evaluated-job and deadline formatting fixes",
+      "branch": "codex/reapply-salvaged-patches",
+      "merged_at": "2026-04-30"
+    },
+    {
+      "number": 154,
+      "title": "feat: wire runtime seam into live loop commands",
+      "branch": "codex/150-runtime-live-loop-review",
+      "merged_at": "2026-04-29"
+    },
+    {
+      "number": 153,
+      "title": "feat: add runtime profile seam and refresh entrypoint",
+      "branch": "codex/149-runtime-profile-seam-review",
+      "merged_at": "2026-04-29"
+    },
+    {
+      "number": 148,
+      "title": "docs: define canonical application loop smoke path",
+      "branch": "codex/129-canonical-application-loop-smoke-clean",
+      "merged_at": "2026-04-29"
+    },
+    {
+      "number": 146,
+      "title": "#128 Extract authoring/document persistence bridge from application_pack",
+      "branch": "codex/128-application-pack-persistence-bridge",
+      "merged_at": "2026-04-29"
+    }
+  ],
   "last_tests_run": [
     {
-      "ran_at": "2026-04-21",
+      "ran_at": "2026-05-05",
       "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv)",
       "commands": [
         "python compile_check.py",
-        "python -m jobpipe.cli.main inspect-db --help",
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp tests/test_inspect_primary_db_claims.py -q"
+        "python -m pytest tests/test_smoke_corpus.py tests/test_bounded_ingest.py tests/test_bounded_intake_cli.py -v"
       ],
-      "result": "4 passed; compile_check OK (71 files); help lists new --show choices and --job-id"
+      "result": "compile_check OK (87 files); 15 passed (smoke corpus 8, bounded_ingest 4, bounded_intake_cli 3)"
     }
   ],
-  "last_test_status": "passed",
+  "last_test_status": "passed_2026-05-05",
   "toolchain_notes": [
     "Python 3.14 + anyio plugin autoload + Windows = OSError [WinError 10106] at asyncio backend init. Workaround: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 + explicit -p no:debugging -p no:cacheprovider. Separate follow-up slice should pin pytest plugins or add pyproject.toml pytest config."
   ],
   "implementation_pr": {
-    "number": 90,
-    "url": "https://github.com/larsvaerland/Jobpipe/pull/90",
-    "base": "codex/job-catalog-foundation",
-    "head": "codex/job-catalog-foundation-v2",
-    "title": "T001 Slice 1: inspect-db claim-layer views",
-    "commits_bundled": ["c3ddb0f", "582fa82", "7cac9a5", "f4b3062"],
-    "project_item_id": "PVTI_lAHOCSFbLc4BJUdazgqkLKk",
-    "status": "Merged",
-    "opened_at": "2026-04-21",
-    "merged_at": "2026-04-21T15:04:38Z",
-    "merge_commit": "9446998e0bd70743cfed1b25d615360aae2fccca",
-    "merge_strategy": "merge commit (preserves 4-commit history)",
-    "notes": "PR targeted codex/job-catalog-foundation (private integration lane). After merge, origin/main was force-updated to the merge SHA under Op 2 slice 3; main now reflects the unified codebase."
-  },
-  "github_project_item": {
-    "slice": "T001-slice-1",
-    "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjqHU",
-    "project_number": 6,
-    "project_url": "https://github.com/users/larsvaerland/projects/6",
-    "type": "draft_issue",
-    "title": "T001 Slice 1 - Inspect persisted claim layer",
-    "fields": {
-      "status": "In review",
-      "priority": "P1",
-      "size": "S",
-      "type": "Task",
-      "area": "Decisioning",
-      "delegation": "Agent-ready"
-    }
-  },
-  "tier_routing_draft": {
-    "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjuzg",
-    "project_number": 6,
-    "project_url": "https://github.com/users/larsvaerland/projects/6",
-    "type": "draft_issue",
-    "title": "Worker And Model Routing governance",
-    "fields": {
-      "status": "Ready",
-      "priority": "P2",
-      "size": "XS",
-      "type": "Task",
-      "area": "Governance",
-      "delegation": "Research only"
-    },
-    "notes": "Playbook section landed on ops/orchestrator-v2 as commit c42e8d6."
+    "note": "Last merged PR was #156 (2026-04-30). See merged_since_last_update for full list."
   },
   "op2_lane": {
     "name": "Op 2: OSS unification + upstream-fork integration model",
     "status": "done",
     "plan_doc": "docs/opsplans/op2-oss-unification.md",
-    "plan_commit": "fe61ba0",
-    "path_decision": "B",
-    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA. Path A rejected because preserving unrelated lineage drags a branching history into the 'one clean codebase' OSS story.",
-    "ordering_decision": "A",
-    "ordering_decision_notes": "PR #90 merged first (merge commit, 4-commit history preserved); main then force-updated to the merge SHA. Preserves PR #90 as a real review artifact in history.",
-    "slices": {
-      "slice_1_plan_doc": "done (commit fe61ba0 on ops/orchestrator-v2)",
-      "slice_2_archive_tag": "done (refs/tags/oss-main-pre-unify -> 927927add3d454065240b5fd6b3dee7003796d69, wraps commit b8bc34c1575bcb92b15b611984ee10016b55809d)",
-      "slice_3_force_update_main": "done (origin/main force-updated b8bc34c -> 9446998 on 2026-04-21)",
-      "slice_4_integrations_readme": "done (commit 8cb7560 on ops/orchestrator-v2, docs/integrations/README.md)"
-    },
-    "main_sha": "9446998e0bd70743cfed1b25d615360aae2fccca",
-    "archive_tag": "oss-main-pre-unify",
-    "archive_tag_object": "927927add3d454065240b5fd6b3dee7003796d69",
-    "archive_tag_wraps": "b8bc34c1575bcb92b15b611984ee10016b55809d",
-    "rollback_command": "git push origin +b8bc34c1575bcb92b15b611984ee10016b55809d:refs/heads/main",
     "upstream_fork_model": {
       "principle": "Use upstream repos as intended by GitHub. Slim seams, replaceable adapters, minimum integration. JobPipe is the engine; the forked/external repos are noise-reducing surfaces up until the candidate presses apply.",
       "reactive_resume": {
@@ -140,102 +140,75 @@
         "canonical_ownership": "stays in JobPipe (job evaluation state, claims, selection logic, evidence and narrative semantics)"
       },
       "crewai": {
-        "role": "prospective agent runtime for cooperative author/revise loop on cover letters + CV tailoring",
-        "integration": "not yet integrated. Fork at larsvaerland/crewAI tracks crewaiinc/crewai upstream. Enters inside the author/revise agent layer only after JobPipe produces the deterministic tailored_cv_plan.",
-        "status": "prospective - waits on T002 authoring MVP",
-        "canonical_ownership": "stays in JobPipe - deterministic contracts (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult) remain JobPipe-native and agent-runtime-swappable"
+        "role": "agent runtime for cooperative author/revise loop — cover letter, CV tailoring, screening questions, interview prep",
+        "integration": "sub-crew architecture defined in specs/jobsane-crew-architecture-2026-05-03.md. Enters inside the author/revise agent layer only after JobPipe produces AuthoringCaseContext.",
+        "status": "spec complete — waits on AuthoringCaseContext contract and CrewAI dependency review (#86)",
+        "canonical_ownership": "stays in JobPipe — deterministic contracts (AuthoringCaseContext, GeneratedApplicationPackage, DocumentValidationResult) remain JobPipe-native and agent-runtime-swappable"
       }
     }
   },
   "authoring_mvp_lane": {
     "name": "T002: AI document authoring MVP (cover letter + tailored CV)",
-    "status": "queued_behind_pr_90_merge",
+    "status": "sprint_1_merged",
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
     "position_decision": "C",
-    "position_decision_notes": "Option C (hybrid): deterministic contracts + validation stay JobPipe-native. crewAI enters only inside the author/revise agent layer. Contracts must be agent-runtime-swappable so the product is not locked to a specific agent framework. Data is the product, the engine is JobPipe, agent frameworks are pluggable.",
+    "position_decision_notes": "Option C (hybrid): deterministic contracts + validation stay JobPipe-native. crewAI enters only inside the author/revise agent layer. Contracts must be agent-runtime-swappable.",
     "contracts": {
       "AuthoringCaseContext": "immutable frozen dataclass - candidate + job + evidence bundle going into author",
       "GeneratedApplicationPackage": "pydantic model - cover_letter_draft + tailored_cv_projection + evidence_refs + gap_notes + validation",
       "DocumentValidationResult": "pydantic model - passed + score + failures + warnings"
-    },
-    "first_slice": "Issue #58 - audit existing application_pack paths, define AuthoringCaseContext",
-    "followup_slices": ["#59", "#60", "#61", "#63"],
-    "parked_issues": ["#82", "#83", "#84", "#85", "#86", "#87", "#88", "#89"],
-    "parked_reason": "Supabase / crewAI runtime / hosted shell explicitly out of scope for MVP per governing spec"
+    }
   },
   "open_risks": [
-    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice.",
-    "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
-    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for.",
-    "Post-unification: any clone of the old origin/main (tip b8bc34c) will require git fetch --prune + hard reset to match the new main. Archive tag oss-main-pre-unify preserves the old tip for provenance."
+    "Python 3.14 + anyio plugin autoload breaks pytest on Windows; workaround still active. Follow-up slice should add pytest config or pin plugins.",
+    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. First crew slice must not couple tightly to CrewAI primitives.",
+    "Worktrees Jobpipe-orchestrator-v2, Jobpipe-claude-v2, Jobpipe-codex-v2 may still exist on disk from T002 Sprint 1. Verify and clean up before next sprint.",
+    "prototype folder referenced in specs/controlled-cv-tailoring.md not found at Jobpipe root — confirm if moved, deleted, or located elsewhere.",
+    "Job Hunter crew Phase 3: cv_tailor and cover_letter_writer use claude-sonnet-4-6 which hits Anthropic 429 rate limits when run after a full Haiku session. Resume is 19KB (~4800 tokens); consider trimming profile_resume_json for cv_tailor. Validated end-to-end with Haiku fallback — chain works.",
+    "GitNexus index is stale — text queries return empty results. Run `npx gitnexus analyze` before the next slice that requires symbol-level impact analysis."
   ],
   "blocked_on": [],
-  "needs_founder_decision": [],
+  "needs_founder_decision": [
+    "Which Ready queue item to start next: intake (#9/#10/#12) vs profile import (#13/#16) vs CV authoring (#17/#18/#19). Profile import + CV authoring are P0; intake is P1 but unblocked.",
+    "Reactive Resume tailoring approach: constrained (show/hide + bounded rewrites per rewrite_policy) vs free creative room. specs/controlled-cv-tailoring.md recommends constrained — confirm before implementing #17/#18/#19.",
+    "Optimal resume definition: agree on what a top-quality tailored CV looks like for Lars's role family before the Resume Strategist agent prompt is written."
+  ],
   "recent_decisions": [
     {
-      "decided_at": "2026-04-21",
-      "decision": "Op 2 executed end-to-end: PR #90 merged (merge commit 9446998), archive tag oss-main-pre-unify pushed, origin/main force-updated to 9446998, docs/integrations/README.md landed.",
-      "rationale": "All slices completed with founder sign-off at each RED GATE. Main now reflects the unified private-lane codebase; old main preserved under tag for provenance."
+      "decided_at": "2026-05-03",
+      "decision": "JobSane sub-crew architecture spec written (specs/jobsane-crew-architecture-2026-05-03.md). Five sub-crews: Ground Layer, CV Tailoring, Cover Letter, Screening Questions, Interview Prep. CrewAI Flow orchestrates. Constrained tailoring confirmed as the right approach.",
+      "rationale": "Sub-crews are independently replaceable, each optimised for its task. Ground layer assembled once and shared downstream. Data sovereignty over local compute — cloud LLM APIs acceptable, canonical state stays in Jobpipe."
+    },
+    {
+      "decided_at": "2026-05-03",
+      "decision": "Local-first means data sovereignty and process control, not local compute. Cloud LLM APIs (Claude Sonnet, GPT-4o) are acceptable for writing tasks.",
+      "rationale": "Lars's hardware (8GB RAM laptop) cannot run quality LLMs locally. The value of local-first is owning all candidate data and controlling the process — not offline compute."
     },
     {
       "decided_at": "2026-04-21",
-      "decision": "Op 2 path B (archive + force-update) over path A (merge --allow-unrelated-histories)",
-      "rationale": "Path A preserves unrelated main lineage in permanent history. Path B gives a clean single-lineage OSS story with a preserved archive tag for provenance. Paid/multi-user work has not yet started; private lane is the intended OSS state."
+      "decision": "Op 2 executed end-to-end: PR #90 merged, archive tag oss-main-pre-unify pushed, origin/main force-updated to 9446998.",
+      "rationale": "All slices completed. Main now reflects the unified private-lane codebase."
     },
     {
       "decided_at": "2026-04-21",
       "decision": "T002 Option C (hybrid) for crewAI positioning",
-      "rationale": "Deterministic contracts + validation stay JobPipe-native; crewAI enters inside the author/revise agent layer only. Preserves 'data is the product, JobPipe is the engine' invariant. Keeps the agent runtime pluggable so the product is not locked to any single framework."
+      "rationale": "Deterministic contracts + validation stay JobPipe-native; crewAI enters inside the author/revise agent layer only. Preserves 'data is the product, JobPipe is the engine' invariant."
     },
     {
       "decided_at": "2026-04-21",
-      "decision": "Upstream fork model: use reactive-resume and jobsync upstream-as-intended via slim JSON/event seams. crewAI fork is prospective and waits on T002.",
-      "rationale": "Slim seams keep JobPipe modular. If any upstream goes stale or something better appears, the adapter is replaceable. Minimum integration = minimum maintenance burden."
+      "decision": "Upstream fork model: use reactive-resume and jobsync upstream-as-intended via slim JSON/event seams.",
+      "rationale": "Slim seams keep JobPipe modular. If any upstream goes stale, the adapter is replaceable."
     }
-  ],
-  "touched_files": [
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (merged via PR #90, now on origin/main)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\integrations\\README.md (commit 8cb7560)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\execplans\\T002.md (pending commit)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\decisions.md (pending commit)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\ai-playbook.md (pending commit)"
   ],
   "coordinator_leverage_scaffolding": {
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
-    "artifacts": [
-      "docs/decisions.md - Op 2 + Option C decisions as durable record",
-      "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
-      "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
-      "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
-      "docs/ai-playbook.md §Sprint Loops - standing loops for planner, Codex, coordinator",
-      "docs/ai-playbook.md §Cheap Delegation - explicit delegation matrix for each role",
-      "docs/execplans/T002.md §Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
-      "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
-      "docs/integrations/README.md - upstream role + seam map",
-      "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
-    ],
     "coordinator_still_owns": [
       "Sprint goal + slice ordering (set once per sprint in the task execplan)",
-      "Review gate stamps before Codex runs (can delegate to Sonnet subagent when no Approval Gate flagged)",
+      "Review gate stamps before Codex runs",
       "Approval Gate judgment calls (auth, billing, migrations, deployment, secrets, destructive deletes, pipeline semantics, scoring/selection, OSS/Workbench boundary, model-cost)",
       "Cross-task architectural decisions not yet in decisions.md",
-      "Routing a new task from scratch (T003+) or closing a sprint and opening the next"
+      "Routing a new task from scratch or closing a sprint and opening the next"
     ]
   },
-  "active_sprint": {
-    "task": "T002",
-    "sprint_number": 1,
-    "sprint_goal": "Deterministic contract layer + first authoring plumbing below the agent runtime. Option C compliant. No crewAI imports.",
-    "ordered_slices": ["#58", "#59", "#60", "#61", "#63"],
-    "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "slice_1_approved_handed_to_codex",
-    "planner_branch": "claude/T002-authoring-mvp",
-    "current_slice": "#58",
-    "current_slice_brief": "docs/execplans/T002-slice-1.md",
-    "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec."
-  },
-  "updated_at": "2026-04-21T20:00:00+02:00"
+  "updated_at": "2026-05-05T10:30:00+02:00"
 }

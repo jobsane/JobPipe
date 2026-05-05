@@ -33,3 +33,16 @@ def test_factory_no_static_crewai_import():
     ).read_text(encoding="utf-8")
     assert "import crewai" not in src
     assert "from crewai" not in src
+
+
+def test_factory_simple_branch_has_no_author_cli_sys_modules_lookup():
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parent.parent
+        / "jobpipe"
+        / "authoring"
+        / "author_factory.py"
+    ).read_text(encoding="utf-8")
+    assert "sys.modules" not in src
+    assert "jobpipe.authoring.author_cli" not in src

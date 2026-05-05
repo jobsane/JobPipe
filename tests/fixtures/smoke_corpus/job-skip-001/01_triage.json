@@ -1,0 +1,5 @@
+{
+  "decision": "SKIP",
+  "confidence": 0.94,
+  "signals": ["hard_no:sales", "hard_no:quota"]
+}
