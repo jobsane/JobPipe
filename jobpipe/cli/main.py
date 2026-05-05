@@ -30,6 +30,7 @@ MODULE_COMMANDS = {
     "export-jobsync": "jobpipe.cli.export_jobsync",
     "export-reactive-resume-plan": "jobpipe.cli.export_reactive_resume_plan",
     "gap-analysis": "jobpipe.cli.gap_analysis_report",
+    "generate-cover-letter": "jobpipe.cli.generate_cover_letter",
     "inspect-db": "jobpipe.cli.inspect_primary_db",
     "import-reactive-resume": "jobpipe.cli.import_reactive_resume",
     "mark-status": "jobpipe.cli.mark_status",
