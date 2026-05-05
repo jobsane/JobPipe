@@ -32,6 +32,33 @@ class AuthoringCaseContext:
         JobNarrativeAssessment. None is valid when narrative context is absent.
     artifact_plan:
         Reserved artifact plan. None in the MVP.
+
+    v3 Signals (from advantage_assessment_v3 and narrative_strategy_v3 stages)
+    ----------
+    advantage_type:
+        Advantage classification from advantage_assessment_v3 (e.g. "strong_match").
+        None when the v3 stage has not been run.
+    differentiation_signals:
+        List of differentiating skills/experience strings from advantage_assessment_v3.
+        Empty list when the v3 stage has not been run.
+    neutralizing_evidence:
+        List of gap-neutralizing evidence strings from advantage_assessment_v3.
+        Empty list when the v3 stage has not been run.
+    recruiter_hook:
+        Single-sentence recruiter attention hook from advantage_assessment_v3.
+        None when the v3 stage has not been run.
+    narrative_positioning_angle:
+        Positioning angle string from narrative_strategy_v3.positioning_angle.
+        None when the v3 stage has not been run.
+    narrative_brand_frame:
+        Brand frame string from narrative_strategy_v3.brand_frame.
+        None when the v3 stage has not been run.
+    narrative_why_me_now:
+        Why-me-now rationale from narrative_strategy_v3.why_me_now.
+        None when the v3 stage has not been run.
+    cover_letter_strategy:
+        Cover letter strategy string from narrative_strategy_v3.cover_letter_strategy.
+        None when the v3 stage has not been run.
     """
 
     candidate_id: str
@@ -42,3 +69,13 @@ class AuthoringCaseContext:
     selected_evidence: list[dict]
     narrative_brief: dict | None
     artifact_plan: dict | None
+
+    # v3 signals — all optional to preserve backward compatibility
+    advantage_type: str | None = None
+    differentiation_signals: list[str] | None = None
+    neutralizing_evidence: list[str] | None = None
+    recruiter_hook: str | None = None
+    narrative_positioning_angle: str | None = None
+    narrative_brand_frame: str | None = None
+    narrative_why_me_now: str | None = None
+    cover_letter_strategy: str | None = None
