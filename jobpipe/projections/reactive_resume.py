@@ -23,6 +23,8 @@ def build_resume_import_projection(
     candidate_id: str,
     resume_source_id: str = "default",
 ) -> ReactiveResumeImportProjection:
+    from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
+    resume_json = normalize_rr_to_jsonresume(dict(resume_json))
     return ReactiveResumeImportProjection(
         candidate_id=candidate_id,
         resume_source_id=resume_source_id,
@@ -90,6 +92,8 @@ def build_tailored_cv_plan(
     resume_json: Mapping[str, Any],
     candidate_id: str,
 ) -> ReactiveResumeTailoredCVPlan:
+    from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
+    resume_json = normalize_rr_to_jsonresume(dict(resume_json))
     candidate_profile = parse_profile_pack(profile_pack)
     decision_context = build_decision_context(row, candidate_profile=candidate_profile)
     focus_terms = list(row.get("cv_focus") or [])
@@ -150,6 +154,8 @@ def build_tailored_cv_projection(
     resume_json: Mapping[str, Any],
     candidate_id: str,
 ) -> ReactiveResumeTailoredCVProjection:
+    from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
+    resume_json = normalize_rr_to_jsonresume(dict(resume_json))
     candidate_profile = parse_profile_pack(profile_pack)
     evidence_context = build_candidate_evidence_context(
         row,
