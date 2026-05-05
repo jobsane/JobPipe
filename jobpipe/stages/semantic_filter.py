@@ -33,19 +33,22 @@ Recommended for Norwegian:
 Profile cache
 -------------
 The profile embedding is computed once and cached to disk.
-Delete the configured profile embedding cache file to force a rebuild.
-Under `JOBPIPE_DATA_DIR`, the canonical default is `cache/profile_embedding.npy`.
+Delete the cached profile embedding in the JobPipe data root cache directory to
+force a rebuild (e.g. after editing profile_pack.md).
 """
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 import warnings
 from pathlib import Path
-from typing import Callable, Tuple
+from typing import Callable, Optional
 
 import numpy as np
 
-from jobpipe.runtime.paths import profile_embedding_cache_path
-from jobpipe.model.schema import JobContext, TriageOut
+from jobpipe.core.paths import get_jobpipe_paths
+from jobpipe.core.profile_layer import build_triage_profile_text, load_or_build_profile_layer_for_paths
+from jobpipe.core.schema import JobContext, TriageOut
 from jobpipe.stages._common import job_excerpt
 
 try:
@@ -55,7 +58,10 @@ except ImportError:
     _HAS_FASTEMBED = False
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
-PROFILE_CACHE_PATH = profile_embedding_cache_path()
+
+
+def _default_profile_cache_path() -> Path:
+    return get_jobpipe_paths().profile_embedding_path
 
 
 # ---------------------------------------------------------------------------
@@ -67,41 +73,46 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / denom) if denom > 1e-9 else 0.0
 
 
-def _extract_profile_text(profile_pack: str, max_chars: int = 1400) -> str:
-    """
-    Pull the most signal-dense sections from profile_pack:
-      0) Role identity + career stage
-      1) Target roles / job types
-      2) Must-have signals
-
-    Falls back to raw profile start if section markers not found.
-    """
-    lines = profile_pack.split("\n")
-    capture: list[str] = []
-    in_section = False
-    for line in lines:
-        if any(line.startswith(f"## {n})") for n in ("0", "1", "2")):
-            in_section = True
-        elif line.startswith("## 3)"):
-            break
-        if in_section:
-            capture.append(line)
-    text = "\n".join(capture).strip()
-    return (text or profile_pack)[:max_chars]
-
-
 def build_or_load_profile_embedding(
     profile_pack: str,
     model: "TextEmbedding",
-    cache_path: Path = PROFILE_CACHE_PATH,
+    cache_path: Optional[Path] = None,
+    meta_path: Optional[Path] = None,
+    model_name: str = DEFAULT_MODEL,
 ) -> np.ndarray:
     """Load cached profile embedding or build it from scratch."""
-    if cache_path.exists():
-        return np.load(cache_path)
-    profile_text = _extract_profile_text(profile_pack)
+    cache_path = cache_path or _default_profile_cache_path()
+    paths = get_jobpipe_paths()
+    meta_path = meta_path or paths.profile_embedding_meta_path
+    layer = load_or_build_profile_layer_for_paths(paths)
+    profile_text = build_triage_profile_text(layer)
+    profile_hash = sha256(profile_text.encode("utf-8")).hexdigest()
+    if cache_path.exists() and meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+        if (
+            isinstance(meta, dict)
+            and meta.get("profile_hash") == profile_hash
+            and meta.get("model_name") == model_name
+        ):
+            return np.load(cache_path)
     emb = np.array(list(model.embed([profile_text]))[0], dtype=np.float32)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(cache_path, emb)
+    meta_path.write_text(
+        json.dumps(
+            {
+                "model_name": model_name,
+                "profile_hash": profile_hash,
+                "profile_layer_schema_version": layer.schema_version,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     print(f"[semantic_filter] Profile embedding built and cached -> {cache_path}")
     return emb
 
@@ -118,7 +129,7 @@ def build_semantic_filter(
     profile_pack: str,
     model_name: str = DEFAULT_MODEL,
     max_job_text_chars: int = 500,
-    cache_path: Path = PROFILE_CACHE_PATH,
+    cache_path: Optional[Path] = None,
 ) -> FilterFn:
     """
     Returns a function: (ctx: JobContext) -> JobContext
@@ -142,17 +153,13 @@ def build_semantic_filter(
         )
         return lambda ctx: ctx  # no-op
 
-    # The current JobPipe baseline accepts fastembed's pooled multilingual model behavior.
-    # Keep normal runs quiet and calibrate thresholds against the active output rather than
-    # leaking upstream compatibility warnings into every local workflow.
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"The model .* now uses mean pooling instead of CLS embedding\..*",
-            category=UserWarning,
-        )
-        model = TextEmbedding(model_name)  # fastembed 0.8+ dropped the model_name kwarg
-    profile_emb = build_or_load_profile_embedding(profile_pack, model, cache_path)
+    model = TextEmbedding(model_name)  # fastembed 0.8+ dropped the model_name kwarg
+    profile_emb = build_or_load_profile_embedding(
+        profile_pack,
+        model,
+        cache_path,
+        model_name=model_name,
+    )
 
     def _filter(ctx: JobContext) -> JobContext:
         job = ctx.job

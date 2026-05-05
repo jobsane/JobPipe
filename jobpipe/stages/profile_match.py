@@ -1,12 +1,14 @@
 from __future__ import annotations
 import json
 from agents import Agent
-from jobpipe.model.schema import JobContext, ProfileMatchOut
-from jobpipe.stages._common import run_agent, format_deadline
+from jobpipe.core.paths import get_jobpipe_paths
+from jobpipe.core.profile_layer import build_profile_match_context, load_or_build_profile_layer_for_paths
+from jobpipe.core.schema import JobContext, ProfileMatchOut
+from jobpipe.stages._common import run_agent
 
 MATCH_INSTRUCTIONS = """
 Du er en match-agent. Du vurderer faktisk kompetansematch mellom kandidaten og stillingen.
-Kandidatens profilpakke er sannhetskilden — ikke generaliser utover det som faktisk er der.
+JobPipe-avledet profile_match_context er sannhetskilden — ikke generaliser utover det som faktisk er der.
 
 ## Dimensjoner (score hver 0-100, vær kritisk):
 
@@ -51,7 +53,7 @@ Skriv "ITSM-forvaltning med ServiceNow" ikke bare "ITSM".
 Maks 6 punkter.
 
 ## gaps
-Krav stillingen stiller som kandidaten mangler (basert på profilpakken). Vær konkret.
+Krav stillingen stiller som kandidaten mangler (basert på profile_match_context). Vær konkret.
 
 ## hard_blockers
 Kun eksplisitte, ikke-overkommelige krav: sikkerhetsklarering, fagautorisasjon, lisens,
@@ -78,14 +80,16 @@ def profile_match_stage_factory(model: str):
         return bool(ctx.parsed is not None)
 
     def run(ctx: JobContext, job_dir: str) -> JobContext:
+        paths = get_jobpipe_paths()
+        profile_match_context = build_profile_match_context(load_or_build_profile_layer_for_paths(paths))
         payload = {
-            "profile_pack": ctx.profile_pack[:3500],
+            "profile_match_context": profile_match_context,
             "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
             "job_header": {
                 "title": ctx.job.get("title"),
                 "employer_name": ctx.job.get("employer_name"),
                 "sector": ctx.job.get("sector"),
-                "deadline": format_deadline((ctx.job.get("applicationDue") or "").strip()),
+                "deadline": ctx.job.get("applicationDue"),
             },
         }
 

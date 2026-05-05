@@ -33,10 +33,30 @@ from jobpipe.model.schema import (
     RunMeta,
     TriageOut,
 )
-from jobpipe.stages.application_pack import (
-    _build_application_pack_contexts,
-    _load_resume_context,
-)
+# ---------------------------------------------------------------------------
+# Stubs for helpers removed in the profile_layer refactor.
+# The real pipeline now uses build_authoring_context(profile_layer_bundle).
+# These stubs keep the smoke CLI importable and the monkeypatch points alive
+# for existing tests.  Replace with profile_layer wiring when adapting.
+# ---------------------------------------------------------------------------
+
+
+def _load_resume_context() -> dict:
+    """Stub: replaced by profile_layer in the pipeline (kept for smoke-CLI compat)."""
+    return {}
+
+
+def _build_application_pack_contexts(job_ctx, resume_ctx):  # type: ignore[no-untyped-def]
+    """Stub: replaced by build_authoring_context(profile_layer_bundle).
+
+    Raises NotImplementedError when called without monkeypatching so callers
+    know they must migrate to the profile_layer approach.
+    """
+    raise NotImplementedError(
+        "_build_application_pack_contexts was removed in the profile_layer refactor. "
+        "Use build_authoring_context(load_or_build_profile_layer_for_paths(paths)) "
+        "from jobpipe.core.profile_layer instead."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
 from agents import Agent
-from jobpipe.model.schema import JobContext, PivotOut
+from jobpipe.core.paths import get_jobpipe_paths
+from jobpipe.core.profile_layer import build_pivot_context, load_or_build_profile_layer_for_paths
+from jobpipe.core.schema import JobContext, PivotOut
 from jobpipe.stages._common import run_agent
 
 PIVOT_INSTRUCTIONS = """
@@ -32,8 +34,9 @@ def pivot_stage_factory(model: str):
         return bool(ctx.profile_match is not None)
 
     def run(ctx: JobContext, job_dir: str) -> JobContext:
+        paths = get_jobpipe_paths()
         payload = {
-            "profile_pack_excerpt": ctx.profile_pack[:2500],
+            "pivot_context": build_pivot_context(load_or_build_profile_layer_for_paths(paths)),
             "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
             "match": ctx.profile_match.model_dump() if ctx.profile_match else {},
         }

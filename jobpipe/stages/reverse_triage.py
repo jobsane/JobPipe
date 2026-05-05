@@ -4,7 +4,9 @@ import json
 
 from agents import Agent
 
-from jobpipe.model.schema import JobContext, ReverseTriageOut
+from jobpipe.core.paths import get_jobpipe_paths
+from jobpipe.core.profile_layer import build_reverse_triage_context, load_or_build_profile_layer_for_paths
+from jobpipe.core.schema import JobContext, ReverseTriageOut
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 
 REVERSE_INSTRUCTIONS = """
@@ -53,9 +55,10 @@ def reverse_triage_stage_factory(model: str, max_ad_text_chars: int, min_conf: f
         job = ctx.job
         text = job_excerpt(job, max_ad_text_chars)
         header = build_job_header(job)
+        paths = get_jobpipe_paths()
 
         payload = {
-            "profile_pack_excerpt": (ctx.profile_pack or "")[:1600],
+            "reverse_triage_context": build_reverse_triage_context(load_or_build_profile_layer_for_paths(paths)),
             "triage_explanation": ctx.triage.explanation if ctx.triage else "",
             "job": {"header": header, "text_excerpt": text},
         }
