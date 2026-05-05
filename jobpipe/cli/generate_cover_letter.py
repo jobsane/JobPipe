@@ -10,6 +10,7 @@ from jobpipe.authoring.case_context import AuthoringCaseContext
 from jobpipe.authoring.cover_letter_generator import generate_cover_letter
 from jobpipe.authoring.validation import validate_authoring_context
 from jobpipe.core.candidate_data import load_candidate_profile_pack, load_candidate_resume_json
+from jobpipe.core.io import load_env_file
 from jobpipe.core.profile_pack import parse_profile_pack
 from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
 from jobpipe.decision import build_candidate_evidence_context, build_candidate_narrative_context, build_decision_context
@@ -77,14 +78,14 @@ def _build_authoring_context(
     }
     selected_evidence = [eu.model_dump() for eu in evidence_ctx.selected_evidence_units]
 
-    narrative_brief = None
     np_ = narrative_ctx.narrative_profile
     na = narrative_ctx.job_narrative_assessment
+    np_dict = np_.model_dump()
     narrative_brief = {
-        "core_identity": np_.core_identity,
-        "future_direction": np_.future_direction,
-        "motivation_themes": np_.motivation_themes,
-        "pivot_thesis": np_.pivot_thesis,
+        "core_identity": np_dict.get("core_identity", ""),
+        "future_direction": np_dict.get("future_direction", ""),
+        "motivation_themes": np_dict.get("motivation_themes", []),
+        "pivot_thesis": np_dict.get("pivot_thesis", ""),
         "direction_fit_score": na.direction_fit_score,
         "motivation_fit_score": na.motivation_fit_score,
         "story_strength_score": na.story_strength_score,
@@ -115,13 +116,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--candidate-id", default=_DEFAULT_CANDIDATE_ID)
     parser.add_argument("--profile", default="", help="Optional profile_pack.md override")
     parser.add_argument("--resume-json", default="", help="Optional resume.json override (must be RR format)")
-    parser.add_argument("--model", default="claude-sonnet-4-6", help="Claude model to use for generation")
+    parser.add_argument("--model", default="gpt-4o-mini", help="OpenAI model to use for generation")
     parser.add_argument(
         "--out",
         default="",
         help="Optional output path. Defaults to exports/cover_letter_<job_id>.md",
     )
     args = parser.parse_args(argv)
+
+    load_env_file(Path(".env"))
 
     runtime = resolve_profile_paths(
         args.runtime_profile,

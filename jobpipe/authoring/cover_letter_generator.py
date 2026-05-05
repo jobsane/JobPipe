@@ -1,10 +1,10 @@
-"""Generate a Norwegian cover letter using Claude via the Anthropic API."""
+"""Generate a Norwegian cover letter using the OpenAI API."""
 from __future__ import annotations
 
 import json
 import os
 
-import anthropic
+import openai
 
 from jobpipe.authoring.case_context import AuthoringCaseContext
 
@@ -24,17 +24,20 @@ Regler:
 """
 
 _COVER_LETTER_TOOL: dict = {
-    "name": "cover_letter",
-    "description": "Return the generated cover letter text.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "cover_letter": {
-                "type": "string",
-                "description": "Full cover letter in Norwegian, plain text with paragraph breaks (\\n\\n).",
-            }
+    "type": "function",
+    "function": {
+        "name": "cover_letter",
+        "description": "Return the generated cover letter text.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cover_letter": {
+                    "type": "string",
+                    "description": "Full cover letter in Norwegian, plain text with paragraph breaks (\\n\\n).",
+                }
+            },
+            "required": ["cover_letter"],
         },
-        "required": ["cover_letter"],
     },
 }
 
@@ -42,9 +45,9 @@ _COVER_LETTER_TOOL: dict = {
 def generate_cover_letter(
     ctx: AuthoringCaseContext,
     *,
-    model: str = "claude-sonnet-4-6",
+    model: str = "gpt-4o-mini",
 ) -> str:
-    """Call Claude to write a Norwegian cover letter. Returns the letter text."""
+    """Call the OpenAI API to write a Norwegian cover letter. Returns the letter text."""
     payload = {
         "job_id": ctx.job_id,
         "job_summary": ctx.job_summary,
@@ -52,23 +55,25 @@ def generate_cover_letter(
         "selected_evidence": ctx.selected_evidence[:8],
         "narrative_brief": ctx.narrative_brief,
     }
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    response = client.messages.create(
+    client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    response = client.chat.completions.create(
         model=model,
         max_tokens=1500,
-        system=_SYSTEM_PROMPT,
         tools=[_COVER_LETTER_TOOL],
-        tool_choice={"type": "tool", "name": "cover_letter"},
+        tool_choice={"type": "function", "function": {"name": "cover_letter"}},
         messages=[
-            {
-                "role": "user",
-                "content": json.dumps(payload, ensure_ascii=False),
-            }
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
     )
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "cover_letter":
-            return str(block.input.get("cover_letter", "")).strip()
+    choice = response.choices[0]
+    if choice.message.tool_calls:
+        call = choice.message.tool_calls[0]
+        try:
+            args = json.loads(call.function.arguments)
+            return str(args.get("cover_letter", "")).strip()
+        except Exception:
+            pass
     return ""
 
 
