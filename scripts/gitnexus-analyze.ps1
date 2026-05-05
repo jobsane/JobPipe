@@ -19,12 +19,9 @@ if (-not $repoFull.StartsWith($userRoot, [System.StringComparison]::OrdinalIgnor
 $relative = $repoFull.Substring($userRoot.Length).TrimStart("\", "/")
 $containerRepo = "/workspace/" + ($relative -replace "\\", "/")
 
-$gitnexusArgs = @("analyze", $containerRepo, "--skip-agents-md")
+$gitnexusArgs = @("analyze", $containerRepo, "--skip-agents-md", "--embeddings")
 if ($Force) {
     $gitnexusArgs += "--force"
-}
-if ($Embeddings) {
-    $gitnexusArgs += "--embeddings"
 }
 
 docker run --rm `
