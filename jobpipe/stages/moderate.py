@@ -3,8 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from jobpipe.core.profile_pack import parse_profile_pack
+from jobpipe.core.schema import HardGates
+from jobpipe.core.triage_v3 import aggregate_triage_decision
 from jobpipe.decision import derive_selection_assessment
 from jobpipe.model.schema import JobContext, ModeratorOut
+from jobpipe.stages.triage_decision_v3 import persist_triage_decision_v3
+from jobpipe.stages.triage_features import build_triage_features, persist_triage_features
 
 
 _SCOPE_CAUTION_TERMS = ("early", "junior", "coordinator", "associate", "specialist", "operations")
@@ -203,6 +207,19 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
             final = "SKIP"
             candidate_risk_demoted = True
 
+        # --- v3 fallback builder ---
+        # If the dedicated v3 stages didn't run (e.g. pipeline config omits them),
+        # build triage_features and triage_decision_v3 here so ModeratorOut always
+        # carries a v3 snapshot and the v3 adjustment below has something to work with.
+        if ctx.triage_features is None:
+            ctx.triage_features = build_triage_features(ctx)
+            persist_triage_features(job_dir, ctx.triage_features)
+
+        hard_gates = ctx.triage.hard_gates if ctx.triage and ctx.triage.hard_gates else HardGates()
+        if ctx.triage_decision_v3 is None:
+            ctx.triage_decision_v3 = aggregate_triage_decision(ctx.triage_features, hard_gates)
+            persist_triage_decision_v3(job_dir, ctx.triage_decision_v3)
+
         # v3 adjustment (only when we're still in a REVIEW zone — not SKIP/APPLY)
         v3_note = ""
         if final in ("REVIEW_LOW", "REVIEW_HIGH"):
@@ -223,14 +240,20 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
             reason_parts.append(v3_note)
         reason = ", ".join(reason_parts)
 
-        # Pass through v3 decision so downstream consumers can read it from moderator output
+        # Resolved v3 decision: prefer ambiguity-corrected when available
+        effective_v3 = (
+            ctx.triage_ambiguity_v3.final_decision
+            if ctx.triage_ambiguity_v3
+            else ctx.triage_decision_v3
+        )
+
         ctx.moderator = ModeratorOut(
             final_decision=final,
             confidence=conf,
             recommendation_reason=reason,
             cv_focus=[],
             feedback_flags=[],
-            triage_decision_v3=ctx.triage_decision_v3,
+            triage_decision_v3=effective_v3,
         )
         return ctx
 

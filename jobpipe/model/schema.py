@@ -360,7 +360,7 @@ class JobContext(BaseModel):
     notes: Dict[str, Any] = Field(default_factory=dict)
 
     def snapshot_summary(self) -> Dict[str, Any]:
-        # Resolved v3 label: prefer ambiguity-resolved label when available
+        # Resolved v3 decision: prefer ambiguity-corrected final_decision when available
         effective_v3 = (
             self.triage_ambiguity_v3.final_decision
             if self.triage_ambiguity_v3
@@ -377,13 +377,20 @@ class JobContext(BaseModel):
             "fit_score": self.profile_match.fit_score if self.profile_match else None,
             "pivot_score": self.pivot.pivot_score if self.pivot else None,
             "confidence": self.moderator.confidence if self.moderator else None,
-            # v3 scoring fields
+            # v3 scoring — from the effective (ambiguity-resolved) decision
             "triage_v3_label": effective_v3.label if effective_v3 else None,
-            "triage_v3_score": effective_v3.weighted_score if effective_v3 else None,
+            "triage_v3_weighted_score": effective_v3.weighted_score if effective_v3 else None,
+            "triage_v3_confidence": effective_v3.confidence if effective_v3 else None,
+            "triage_v3_needs_ambiguity": effective_v3.needs_ambiguity_pass if effective_v3 else None,
+            # ambiguity stage resolved label (None when the stage didn't run)
+            "triage_ambiguity_label": self.triage_ambiguity_v3.resolved_label if self.triage_ambiguity_v3 else None,
+            # advantage assessment
             "advantage_type": self.advantage_assessment_v3.advantage_type if self.advantage_assessment_v3 else None,
-            "advantageous_match_score": self.advantage_assessment_v3.advantageous_match_score if self.advantage_assessment_v3 else None,
-            "review_priority": self.advantage_assessment_v3.review_priority if self.advantage_assessment_v3 else None,
-            "positioning_angle": self.narrative_strategy_v3.positioning_angle if self.narrative_strategy_v3 else None,
+            "advantage_match_score": self.advantage_assessment_v3.advantageous_match_score if self.advantage_assessment_v3 else None,
+            "advantage_review_priority": self.advantage_assessment_v3.review_priority if self.advantage_assessment_v3 else None,
+            # narrative strategy
+            "narrative_positioning_angle": self.narrative_strategy_v3.positioning_angle if self.narrative_strategy_v3 else None,
+            "narrative_brand_frame": self.narrative_strategy_v3.brand_frame if self.narrative_strategy_v3 else None,
         }
 
 

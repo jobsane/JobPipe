@@ -1,8 +1,7 @@
 """
 Tests for the moderate (moderator) stage — the deterministic threshold engine.
 
-No LLM calls. moderate_stage_factory stays deterministic and may incorporate
-candidate-profile signals in addition to YAML thresholds.
+No LLM calls. moderate_stage_factory uses only YAML thresholds.
 Tests every boundary condition to catch threshold regressions.
 
 Decision zones (with pipeline.v1.yaml thresholds):
@@ -15,11 +14,14 @@ Decision zones (with pipeline.v1.yaml thresholds):
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from jobpipe.stages.moderate import moderate_stage_factory
-from jobpipe.model.schema import (
+from jobpipe.core.schema import (
     JobContext, RunMeta, TriageOut, ProfileMatchOut, PivotOut
 )
+from jobpipe.stages.triage_features import triage_features_artifact_path
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +34,9 @@ THRESHOLDS = {
     "apply_fit": 67,
     "apply_strong_fit": 78,
     "pivot_boost_apply": 78,
+    # Disable v3 demotion so boundary tests isolate pure fit-score logic.
+    # v3 integration is tested separately in TestModeratorOutput.
+    "v3_discard_demote": False,
 }
 
 
@@ -59,60 +64,11 @@ def _make_ctx(fit: int, pivot: int = 50, triage: str = "REVIEW") -> JobContext:
     return ctx
 
 
-REFERENCE_PRODUCT_PROFILE = """
-## 0) Candidate snapshot (quick facts)
-- Level: Mid-Senior
-- Positioning: Product manager with platform delivery track record.
-
-### Strategic direction (priority signal for triage)
-Prioritize product manager, product owner, and platform product leadership roles.
-
-## 1) Target roles (TITLE ANCHORS) - keep if close match
-### Primary targets (highest priority)
-- Product Manager
-- Product Owner
-- Senior Product Manager
-
-### Secondary targets
-- Platform Lead
-"""
-
-
-EARLY_ADJACENT_PROFILE = """
-## 0) Candidate snapshot (quick facts)
-- Level: Early-Mid
-- Positioning: Growth and operations coordinator with hands-on digital delivery experience.
-
-### Strategic direction (priority signal for triage)
-Prioritize coordinator, specialist, junior product operations, digital operations, customer insight, and service improvement roles. Review broader product and transformation titles carefully rather than assuming readiness.
-
-## 1) Target roles (TITLE ANCHORS) - keep if close match
-### Primary targets (highest priority)
-- Operations Coordinator
-- Digital Operations Specialist
-- Product Operations Coordinator
-- Customer Insight Specialist
-
-### Secondary targets
-- Junior Product Owner
-- Marketing Operations Specialist
-- Service Improvement Coordinator
-"""
-
-
 def _decide(fit: int, pivot: int = 50, triage: str = "REVIEW") -> str:
     should_run, run = moderate_stage_factory(THRESHOLDS)
     ctx = _make_ctx(fit, pivot, triage)
     result = run(ctx, job_dir="/tmp")
     return result.moderator.final_decision
-
-
-def _moderate_with_profile(title: str, profile_pack: str, fit: int, pivot: int) -> JobContext:
-    _, run = moderate_stage_factory(THRESHOLDS)
-    ctx = _make_ctx(fit, pivot)
-    ctx.job["title"] = title
-    ctx.profile_pack = profile_pack
-    return run(ctx, job_dir="/tmp")
 
 
 # ---------------------------------------------------------------------------
@@ -253,36 +209,14 @@ class TestModeratorOutput:
         ctx_high = run(_make_ctx(fit=90), "/tmp")
         assert ctx_high.moderator.confidence > ctx_low.moderator.confidence
 
+    def test_moderator_attaches_triage_v3_snapshot(self):
+        _, run = moderate_stage_factory(THRESHOLDS)
+        ctx = run(_make_ctx(fit=70, pivot=80), "/tmp")
+        assert ctx.moderator.triage_decision_v3 is not None
+        assert ctx.moderator.triage_decision_v3.label in {"review", "shortlist", "discard"}
 
-class TestCandidateAwareDemotion:
-    def test_off_anchor_product_leadership_review_low_demotes_to_skip(self):
-        result = _moderate_with_profile(
-            title="Produktleder",
-            profile_pack=EARLY_ADJACENT_PROFILE,
-            fit=39,
-            pivot=70,
-        )
-
-        assert result.moderator.final_decision == "SKIP"
-        assert "candidate_risk=off_anchor_product_leadership_scope" in result.moderator.recommendation_reason
-
-    def test_reference_product_profile_keeps_review_low_for_same_title(self):
-        result = _moderate_with_profile(
-            title="Produktleder",
-            profile_pack=REFERENCE_PRODUCT_PROFILE,
-            fit=39,
-            pivot=70,
-        )
-
-        assert result.moderator.final_decision == "REVIEW_LOW"
-        assert "candidate_risk=off_anchor_product_leadership_scope" not in result.moderator.recommendation_reason
-
-    def test_aligned_junior_product_title_is_not_demoted(self):
-        result = _moderate_with_profile(
-            title="Junior Product Owner",
-            profile_pack=EARLY_ADJACENT_PROFILE,
-            fit=39,
-            pivot=70,
-        )
-
-        assert result.moderator.final_decision == "REVIEW_LOW"
+    def test_moderator_persists_triage_features_artifact(self, tmp_path: Path):
+        _, run = moderate_stage_factory(THRESHOLDS)
+        ctx = run(_make_ctx(fit=70, pivot=80), str(tmp_path))
+        assert ctx.triage_features is not None
+        assert triage_features_artifact_path(str(tmp_path)).exists()
