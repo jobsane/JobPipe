@@ -165,7 +165,7 @@
     "Worktrees Jobpipe-orchestrator-v2, Jobpipe-claude-v2, Jobpipe-codex-v2 may still exist on disk from T002 Sprint 1. Verify and clean up before next sprint.",
     "prototype folder referenced in specs/controlled-cv-tailoring.md not found at Jobpipe root — confirm if moved, deleted, or located elsewhere.",
     "Job Hunter crew Phase 3: cv_tailor and cover_letter_writer use claude-sonnet-4-6 which hits Anthropic 429 rate limits when run after a full Haiku session. Resume is 19KB (~4800 tokens); consider trimming profile_resume_json for cv_tailor. Validated end-to-end with Haiku fallback — chain works.",
-    "GitNexus index is stale — text queries return empty results. Run `npx gitnexus analyze` before the next slice that requires symbol-level impact analysis."
+    "GitNexus removed (2026-05-05); Axon is now the only code-intelligence MCP. Re-index with `axon analyze .` before any slice requiring symbol-level search."
   ],
   "blocked_on": [],
   "needs_founder_decision": [

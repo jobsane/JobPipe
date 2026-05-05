@@ -55,34 +55,16 @@ Stop and ask before auth, billing, migrations, deployment, destructive changes,
 secret handling, pipeline semantics, model-cost changes, or choices that blur
 the public OSS/private Workbench boundary.
 
-## GitNexus — Code Intelligence
+## Axon — Code Intelligence
 
-Re-indexing runs automatically via the `.git/hooks/post-commit` hook after every commit. To re-index manually:
+Axon is the local code-intelligence MCP (`axon serve --watch`). Re-index manually:
 
 ```powershell
-.\scripts\gitnexus-analyze.ps1          # incremental
-.\scripts\gitnexus-analyze.ps1 -Force   # full re-index
+axon analyze .
 ```
 
-The hook always runs with `--skip-agents-md` (no CLAUDE.md rewrites) and `--embeddings` (text search enabled).
+Index lives in `.axon/` (gitignored). Use these MCP tools:
 
-### Always Do
-
-- **MUST run impact analysis before editing any symbol.** Run `mcp__gitnexus__impact` on the target and report the blast radius before edits.
-- **MUST run `mcp__gitnexus__detect_changes` before committing** to verify scope.
-- **MUST warn** if impact returns HIGH or CRITICAL risk before proceeding.
-- Use `mcp__gitnexus__query` to find execution flows by concept; use `mcp__gitnexus__context` for full symbol context (callers, callees, flows).
-
-### Never Do
-
-- NEVER edit a symbol without first running impact analysis.
-- NEVER ignore HIGH or CRITICAL risk warnings.
-- NEVER rename with find-and-replace — use `mcp__gitnexus__rename`.
-
-### Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/Jobpipe/context` | Codebase overview, index freshness |
-| `gitnexus://repo/Jobpipe/clusters` | All functional areas |
-| `gitnexus://repo/Jobpipe/processes` | All execution flows |
+- `mcp__axon__axon_query` — find code by concept or keyword
+- `mcp__axon__axon_context` — full context for a symbol (callers, callees)
+- `mcp__axon__axon_file_context` — context for a specific file

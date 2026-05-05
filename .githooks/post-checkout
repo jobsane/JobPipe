@@ -1,3 +1,0 @@
-#!/bin/sh
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/gitnexus-hook.ps1 -Trigger post-checkout >/dev/null 2>&1
-exit 0
