@@ -15,12 +15,18 @@ Du mottar jobbsøknadskontekst som JSON og skriver et skreddersydd søknadsbrev 
 Regler:
 - Skriv på bokmål, direkte og troverdig — ingen klisjeer.
 - Brevet skal ha 3–4 korte avsnitt: åpning, kjernekompetanse/erfaring, motivasjon, avslutning.
-- Bruk konkrete eksempler fra selected_evidence. Finn ikke opp erfaringer.
-- Speil cv_focus fra decision_brief for å understreke det arbeidsgiveren verdsetter.
+- Bruk konkrete eksempler fra selected_evidence og cv_selected_bullets. Finn ikke opp erfaringer.
+- Speil cv_focus fra decision_brief og claim_targets fra artifact_plan for å understreke det arbeidsgiveren verdsetter.
 - Unngå fraser som «engasjert lagspiller», «sterk kommunikator», «brennende opptatt av».
 - Avslutt med tydelig initiativ, f.eks. «Ser frem til å høre fra dere.»
 - Ikke ta med sted/dato, adresse eller hilsenfrase øverst — bare selve brevteksten.
 - Maks 350 ord.
+
+Hvis artifact_plan er tilstede:
+- Brevet skal være konsistent med cv_headline og cv_summary.
+- cv_selected_bullets representerer det som allerede vises i CV-en — bekreft og utdyp, ikke bare gjenta.
+- cv_suppressed_items er erfaring som IKKE er i CV-en. Brevet kan kort adressere relevante gap
+  (f.eks. manglende sertifisering, kortere erfaring i et felt) — ærlig og uten unnskyldninger.
 """
 
 _COVER_LETTER_TOOL: dict = {
@@ -54,6 +60,7 @@ def generate_cover_letter(
         "decision_brief": ctx.decision_brief,
         "selected_evidence": ctx.selected_evidence[:8],
         "narrative_brief": ctx.narrative_brief,
+        "artifact_plan": ctx.artifact_plan,
     }
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     response = client.chat.completions.create(

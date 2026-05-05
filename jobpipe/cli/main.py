@@ -34,6 +34,7 @@ MODULE_COMMANDS = {
     "inspect-db": "jobpipe.cli.inspect_primary_db",
     "import-reactive-resume": "jobpipe.cli.import_reactive_resume",
     "mark-status": "jobpipe.cli.mark_status",
+    "prepare-application": "jobpipe.cli.prepare_application",
     "pull-finn-ext": "jobpipe.cli.pull_finn_ext",
     "pull-finn-search": "jobpipe.cli.pull_finn_search",
     "pull-sheets": "jobpipe.cli.pull_sheets_csv",

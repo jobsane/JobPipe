@@ -31,12 +31,19 @@ def _enum_val(v: object) -> str:
     return v.value if hasattr(v, "value") else str(v)
 
 
-def _build_authoring_context(
+def build_authoring_context(
     row: Mapping[str, Any],
     profile_pack: str,
     resume_json: Mapping[str, Any],
     candidate_id: str,
+    *,
+    artifact_plan: dict | None = None,
 ) -> AuthoringCaseContext:
+    """Build an AuthoringCaseContext from a dashboard payload row.
+
+    Pass artifact_plan with CV plan/projection data when calling from
+    prepare-application so the cover letter can reference the tailored CV.
+    """
     resume_json = normalize_rr_to_jsonresume(dict(resume_json))
     candidate_profile = parse_profile_pack(profile_pack)
     decision_ctx = build_decision_context(row, candidate_profile=candidate_profile)
@@ -100,7 +107,7 @@ def _build_authoring_context(
         decision_brief=decision_brief,
         selected_evidence=selected_evidence,
         narrative_brief=narrative_brief,
-        artifact_plan=None,
+        artifact_plan=artifact_plan,
     )
 
 
@@ -140,7 +147,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     profile_pack = load_candidate_profile_pack(str(runtime.profile_pack_path), candidate_id=args.candidate_id, db_path=db_path)
     resume_json = load_candidate_resume_json(str(runtime.resume_json_path), candidate_id=args.candidate_id, db_path=db_path)
 
-    ctx = _build_authoring_context(row, profile_pack, resume_json, args.candidate_id)
+    ctx = build_authoring_context(row, profile_pack, resume_json, args.candidate_id)
     validation = validate_authoring_context(ctx)
     if not validation.passed:
         for failure in validation.failures:
@@ -154,7 +161,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     cover_letter = generate_cover_letter(ctx, model=args.model)
 
     if not cover_letter:
-        raise SystemExit("Cover letter generation returned empty output. Check your ANTHROPIC_API_KEY.")
+        raise SystemExit("Cover letter generation returned empty output. Check your OPENAI_API_KEY.")
 
     out_path = Path(args.out) if args.out else (runtime.exports_root / f"cover_letter_{args.job_id}.md")
     out_path.parent.mkdir(parents=True, exist_ok=True)
