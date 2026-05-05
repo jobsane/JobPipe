@@ -195,6 +195,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             pull_cmd += ["--sheet-url", sheet_url]
         pull_cmd += ["--out", str(delta_path), "--state", str(state_path)]
         pull_cmd += ["--expired-out", str(expired_path)]
+        pull_cmd += ["--db", str(db_path)]
         if not args.no_only_changed:
             pull_cmd += ["--only-changed"]
         if args.status_filter and args.status_filter.upper() != "ALL":
