@@ -29,6 +29,23 @@ def _hard_gate_snapshot(**updates: object) -> HardGates:
     return _passing_hard_gates().model_copy(update=updates)
 
 
+def _normalize_title_text(value: object) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[\W_]+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _title_matches_targeting_patterns(title: str, patterns: list[str] | None) -> bool:
+    if not title or not patterns:
+        return False
+    normalized_title = f" {_normalize_title_text(title)} "
+    for pattern in patterns:
+        normalized_pattern = _normalize_title_text(pattern)
+        if normalized_pattern and f" {normalized_pattern} " in normalized_title:
+            return True
+    return False
+
+
 _TITLE_FAMILY_MARKERS: dict[str, tuple[str, ...]] = {
     "product": ("product", "produkt"),
     "service": ("service owner", "service manager", "service management", "tjenesteeier", "tjenesteleder", "tjenesteansvar"),
@@ -246,6 +263,8 @@ def triage_stage_factory(
     max_ad_text_chars: int,
     safety_rules: dict,
     profile_pack: str = "",
+    triage_profile_summary: str = "",
+    targeting_title_patterns: list[str] | None = None,
     semantic_threshold: float = 0.0,
     semantic_model: str = "BAAI/bge-small-en-v1.5",
 ):
@@ -285,7 +304,7 @@ def triage_stage_factory(
     geo_county_re = re.compile(geo_county_pat, re.I) if geo_county_pat else None
 
     # Build agent with profile baked into instructions — no need to send profile in user input
-    profile_summary = _extract_profile_summary(profile_pack) if profile_pack else ""
+    profile_summary = triage_profile_summary or (_extract_profile_summary(profile_pack) if profile_pack else "")
     candidate_supports_target_title = (
         lambda title: _candidate_supports_target_title(title, profile_pack)
         if profile_pack
@@ -312,9 +331,17 @@ def triage_stage_factory(
     def run(ctx: JobContext, job_dir: str) -> JobContext:
         job = ctx.job
         title = (job.get("normalized_title") or job.get("title") or "").strip()
+        title_matches_targeting = bool(target_re and target_re.search(title)) or _title_matches_targeting_patterns(
+            title,
+            targeting_title_patterns,
+        )
+        pretriage_policy = str(job.get("intake_pretriage_policy") or "").strip().lower()
+        is_suggested_lead = pretriage_policy == "suggested_lead" or (
+            not pretriage_policy and bool(job.get("suggested_by_platform"))
+        )
 
         # --- HARD GEO before AI ---
-        if geo_enabled and geo_postal_re:
+        if geo_enabled and geo_postal_re and not is_suggested_lead:
             postals = _get_postals(job)
             postal = postals[0] if postals else ""
 
@@ -374,7 +401,7 @@ def triage_stage_factory(
 
         # --- HARD NO title filter (unless title is target) ---
         if hard_no_re and hard_no_re.search(title):
-            if not (target_re and target_re.search(title)):
+            if not title_matches_targeting:
                 ctx.triage = TriageOut(
                     triage_decision="SKIP",
                     confidence=0.85,
@@ -391,15 +418,15 @@ def triage_stage_factory(
         # Safety override: if title matches a primary target, never let semantic filter kill it.
         ctx = semantic_check(ctx)
         if ctx.triage is not None:
-            if target_re and target_re.search(title) and candidate_supports_target_title(title):
+            if title_matches_targeting and candidate_supports_target_title(title):
                 # Title is a primary target — override semantic SKIP, let LLM decide
                 ctx.triage = None
                 pre = list(ctx.notes.get("pre_signals") or [])
                 pre.append("semantic_target_override")
                 ctx.notes["pre_signals"] = pre
-            elif ctx.job.get("suggested_by_platform"):
+            elif is_suggested_lead:
                 # Platform-suggested jobs are a calibration signal:
-                # FINN/LinkedIn's algorithm already vetted this as relevant to Lars's profile.
+                # FINN/LinkedIn suggestions are already pre-vetted by the source platform.
                 # Never let the semantic filter kill it — let the LLM decide.
                 ctx.triage = None
                 pre = list(ctx.notes.get("pre_signals") or [])
@@ -432,7 +459,7 @@ def triage_stage_factory(
 
         # Propagate platform_suggested signal from pre-filter stage into LLM output.
         # This survives all the way to the ledger so we can identify calibration mismatches.
-        if ctx.job.get("suggested_by_platform") and "platform_suggested" not in (out.signals or []):
+        if is_suggested_lead and "platform_suggested" not in (out.signals or []):
             out.signals = list(dict.fromkeys((out.signals or []) + ["platform_suggested"]))
 
         # Merge any pre-LLM override signals stored in ctx.notes into out.signals.
