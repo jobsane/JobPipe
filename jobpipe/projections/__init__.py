@@ -13,6 +13,7 @@ from .reactive_resume import (
     build_tailored_cv_plan,
     build_tailored_cv_projection,
 )
+from .rr_patch import build_rr_patch
 
 __all__ = [
     "build_payload",
@@ -22,6 +23,7 @@ __all__ = [
     "build_jobsync_document_refs",
     "build_jobsync_job_summary",
     "build_resume_import_projection",
+    "build_rr_patch",
     "build_tailored_cv_plan",
     "build_tailored_cv_projection",
     "export",

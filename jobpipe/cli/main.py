@@ -20,6 +20,7 @@ DEFAULT_CONFIG_PATH = repo_root() / "configs" / "pipeline.v1.yaml"
 DEFAULT_ENV_PATH = repo_root() / ".env"
 
 MODULE_COMMANDS = {
+    "apply-reactive-resume-patch": "jobpipe.cli.apply_reactive_resume_patch",
     "author-package": "jobpipe.authoring.author_cli",
     "bootstrap-state-db": "jobpipe.cli.bootstrap_state_db",
     "bounded-intake": "jobpipe.cli.bounded_intake",
