@@ -200,8 +200,12 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     csv_url = (args.csv_url or os.environ.get("JOBPIPE_CSV_URL", "")).strip()
     sheet_url = (args.sheet_url or os.environ.get("JOBPIPE_SHEET_URL", "")).strip()
-    if not csv_url and not sheet_url:
-        raise SystemExit("Provide --csv-url or --sheet-url, or set JOBPIPE_CSV_URL/JOBPIPE_SHEET_URL in .env")
+    supabase_url = os.environ.get("JOBPIPE_SUPABASE_URL", "").strip()
+    supabase_key = os.environ.get("JOBPIPE_SUPABASE_KEY", "").strip()
+    use_supabase = bool(supabase_url and supabase_key)
+    if not use_supabase and not csv_url and not sheet_url:
+        raise SystemExit("Provide --csv-url or --sheet-url, or set JOBPIPE_CSV_URL/JOBPIPE_SHEET_URL in .env, "
+                         "or set JOBPIPE_SUPABASE_URL + JOBPIPE_SUPABASE_KEY for Supabase intake.")
 
     py = sys.executable
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -255,15 +259,21 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(f"[drain_queue] max_loops reached ({args.max_loops}). Stopping.")
             break
 
-        pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv", "--data-root", str(paths.data_root)]
-        if csv_url:
-            pull_cmd += ["--csv-url", csv_url]
+        if use_supabase:
+            pull_cmd = [py, "-m", "jobpipe.cli.pull_supabase_jobs", "--data-root", str(paths.data_root)]
+            pull_cmd += ["--out", str(nav_connector_path), "--state", str(state_path)]
+            if not args.no_only_changed:
+                pull_cmd += ["--only-changed"]
         else:
-            pull_cmd += ["--sheet-url", sheet_url]
-        pull_cmd += ["--out", str(nav_connector_path), "--state", str(state_path)]
-        pull_cmd += ["--expired-out", str(expired_path)]
-        if not args.no_only_changed:
-            pull_cmd += ["--only-changed"]
+            pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv", "--data-root", str(paths.data_root)]
+            if csv_url:
+                pull_cmd += ["--csv-url", csv_url]
+            else:
+                pull_cmd += ["--sheet-url", sheet_url]
+            pull_cmd += ["--out", str(nav_connector_path), "--state", str(state_path)]
+            pull_cmd += ["--expired-out", str(expired_path)]
+            if not args.no_only_changed:
+                pull_cmd += ["--only-changed"]
         if args.status_filter and args.status_filter.upper() != "ALL":
             pull_cmd += ["--status-filter", args.status_filter]
         if args.no_skip_expired_deadline:
