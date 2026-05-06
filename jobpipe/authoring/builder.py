@@ -108,6 +108,9 @@ def build_authoring_case_context(
             "motivation_brief": na.motivation_brief,
         }
 
+    adv = job_ctx.advantage_assessment_v3
+    ns = job_ctx.narrative_strategy_v3
+
     return AuthoringCaseContext(
         candidate_id=candidate_id,
         job_id=job_ctx.job_id,
@@ -117,4 +120,12 @@ def build_authoring_case_context(
         selected_evidence=selected_evidence,
         narrative_brief=narrative_brief,
         artifact_plan=None,
+        advantage_type=adv.advantage_type if adv else None,
+        differentiation_signals=list(adv.differentiation_signals) if adv else [],
+        neutralizing_evidence=list(adv.neutralizing_evidence) if adv else [],
+        recruiter_hook=adv.recruiter_hook or None if adv else None,
+        narrative_positioning_angle=ns.positioning_angle if ns else None,
+        narrative_brand_frame=ns.brand_frame if ns else None,
+        narrative_why_me_now=ns.why_me_now if ns else None,
+        cover_letter_strategy=ns.cover_letter_strategy if ns else None,
     )

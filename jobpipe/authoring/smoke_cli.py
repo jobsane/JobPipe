@@ -24,6 +24,7 @@ from jobpipe.core.candidate_data import (
     default_candidate_id,
     load_candidate_profile_pack,
 )
+from jobpipe.core.schema import AdvantageAssessmentV3, NarrativeStrategyV3
 from jobpipe.model.schema import (
     JobContext,
     JobParse,
@@ -157,6 +158,8 @@ def build_context_for_job(
     triage_data = _optional_stage(job_dir, "01_triage.json")
     pm_data = _optional_stage(job_dir, "03_profile_match.json", "04_profile_match.json")
     pivot_data = _optional_stage(job_dir, "04_pivot.json", "05_pivot.json")
+    adv_v3_data = _optional_stage(job_dir, "09_advantage_assessment_v3.json")
+    ns_v3_data = _optional_stage(job_dir, "10_narrative_strategy_v3.json")
 
     if not moderator_data:
         raise ValueError(
@@ -190,6 +193,8 @@ def build_context_for_job(
         profile_match=_try_validate(ProfileMatchOut, pm_data),
         pivot=_try_validate(PivotOut, pivot_data),
         moderator=ModeratorOut.model_validate(moderator_data),
+        advantage_assessment_v3=_try_validate(AdvantageAssessmentV3, adv_v3_data),
+        narrative_strategy_v3=_try_validate(NarrativeStrategyV3, ns_v3_data),
         notes={},
     )
 
