@@ -187,12 +187,12 @@ def test_build_context_for_job_happy_path(monkeypatch: pytest.MonkeyPatch, work_
         lambda *, candidate_id: f"profile for {candidate_id}",
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._load_resume_context",
-        lambda: {"resume_work": [], "resume_projects": [], "resume_education": []},
+        "jobpipe.authoring.smoke_cli.load_or_build_profile_layer_for_paths",
+        lambda paths: MagicMock(name="mock_layer"),
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._build_application_pack_contexts",
-        lambda ctx, resume_ctx: (decision_ctx, evidence_ctx, narrative_ctx),
+        "jobpipe.authoring.smoke_cli._build_contexts_from_profile_layer",
+        lambda layer, job_ctx, candidate_id: (decision_ctx, evidence_ctx, narrative_ctx),
     )
 
     def fake_build(job_ctx, got_decision, got_evidence, got_narrative, *, candidate_id, evaluation_id):
@@ -360,12 +360,12 @@ def test_build_context_for_job_loads_v3_stage_files(
         lambda *, candidate_id: "profile",
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._load_resume_context",
-        lambda: {},
+        "jobpipe.authoring.smoke_cli.load_or_build_profile_layer_for_paths",
+        lambda paths: MagicMock(name="mock_layer"),
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._build_application_pack_contexts",
-        lambda ctx, resume_ctx: (MagicMock(), MagicMock(), MagicMock()),
+        "jobpipe.authoring.smoke_cli._build_contexts_from_profile_layer",
+        lambda layer, job_ctx, candidate_id: (MagicMock(), MagicMock(), MagicMock()),
     )
 
     def capture_build(job_ctx, *_args, **_kwargs):
@@ -398,12 +398,12 @@ def test_build_context_for_job_v3_absent_when_no_stage_files(
         lambda *, candidate_id: "profile",
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._load_resume_context",
-        lambda: {},
+        "jobpipe.authoring.smoke_cli.load_or_build_profile_layer_for_paths",
+        lambda paths: MagicMock(name="mock_layer"),
     )
     monkeypatch.setattr(
-        "jobpipe.authoring.smoke_cli._build_application_pack_contexts",
-        lambda ctx, resume_ctx: (MagicMock(), MagicMock(), MagicMock()),
+        "jobpipe.authoring.smoke_cli._build_contexts_from_profile_layer",
+        lambda layer, job_ctx, candidate_id: (MagicMock(), MagicMock(), MagicMock()),
     )
 
     def capture_build(job_ctx, *_args, **_kwargs):

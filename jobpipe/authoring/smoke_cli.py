@@ -24,7 +24,21 @@ from jobpipe.core.candidate_data import (
     default_candidate_id,
     load_candidate_profile_pack,
 )
+from jobpipe.core.paths import get_jobpipe_paths
+from jobpipe.core.profile_layer import ProfileLayerBundle, load_or_build_profile_layer_for_paths
 from jobpipe.core.schema import AdvantageAssessmentV3, NarrativeStrategyV3
+from jobpipe.decision.models import (
+    CandidateEvidenceContext,
+    CandidateEvidenceSelection,
+    CandidateEvidenceUnit,
+    CandidateNarrativeContext,
+    CandidateNarrativeProfile,
+    DecisionContext,
+    JobDecisionDimension,
+    JobDecisionTable,
+    JobNarrativeAssessment,
+    JobSelectionAssessment,
+)
 from jobpipe.model.schema import (
     JobContext,
     JobParse,
@@ -34,30 +48,153 @@ from jobpipe.model.schema import (
     RunMeta,
     TriageOut,
 )
+
 # ---------------------------------------------------------------------------
-# Stubs for helpers removed in the profile_layer refactor.
-# The real pipeline now uses build_authoring_context(profile_layer_bundle).
-# These stubs keep the smoke CLI importable and the monkeypatch points alive
-# for existing tests.  Replace with profile_layer wiring when adapting.
+# Profile-layer context assembly helpers
 # ---------------------------------------------------------------------------
 
 
-def _load_resume_context() -> dict:
-    """Stub: replaced by profile_layer in the pipeline (kept for smoke-CLI compat)."""
-    return {}
+def _source_type_for_atom(raw: str) -> str:
+    """Map EvidenceAtom.source_type → CandidateEvidenceSourceType literal."""
+    if raw == "role":
+        return "work_highlight"
+    if raw == "project":
+        return "project_case"
+    return "summary_claim"
 
 
-def _build_application_pack_contexts(job_ctx, resume_ctx):  # type: ignore[no-untyped-def]
-    """Stub: replaced by build_authoring_context(profile_layer_bundle).
+def _build_contexts_from_profile_layer(
+    layer: ProfileLayerBundle,
+    job_ctx: JobContext,
+    candidate_id: str,
+) -> tuple[DecisionContext, CandidateEvidenceContext, CandidateNarrativeContext]:
+    """Build the three authoring contexts from a ProfileLayerBundle + job stage data.
 
-    Raises NotImplementedError when called without monkeypatching so callers
-    know they must migrate to the profile_layer approach.
+    Replaces the old LLM-agent-backed ``_build_application_pack_contexts`` stub.
+    Scores are derived deterministically from ``profile_match`` and ``moderator``
+    stage outputs; the narrative profile is assembled from profile layer data.
     """
-    raise NotImplementedError(
-        "_build_application_pack_contexts was removed in the profile_layer refactor. "
-        "Use build_authoring_context(load_or_build_profile_layer_for_paths(paths)) "
-        "from jobpipe.core.profile_layer instead."
+    # ---------- Evidence ---------------------------------------------------
+    evidence_units = [
+        CandidateEvidenceUnit(
+            evidence_unit_id=atom.evidence_atom_id,
+            candidate_id=candidate_id,
+            source_type=_source_type_for_atom(atom.source_type),  # type: ignore[arg-type]
+            source_ref=atom.source_id,
+            canonical_text=atom.text,
+            rewrite_policy="light_rewrite_only",
+            role_family_tags=atom.tags[:4],
+            domain_tags=atom.domains[:4],
+            capability_tags=atom.skills[:4],
+        )
+        for atom in layer.evidence_atoms
+    ]
+
+    selected_ids = set(layer.authoring_profile.selected_evidence_atom_ids)
+    atom_by_id = {a.evidence_atom_id: a for a in layer.evidence_atoms}
+    selected_atoms = [atom_by_id[aid] for aid in selected_ids if aid in atom_by_id]
+    if not selected_atoms:
+        # Fall back to highest-strength atoms when authoring profile has no selection
+        selected_atoms = sorted(layer.evidence_atoms, key=lambda a: a.strength_score, reverse=True)[:8]
+
+    selected_units = [
+        CandidateEvidenceSelection(
+            evidence_unit_id=atom.evidence_atom_id,
+            source_type=_source_type_for_atom(atom.source_type),  # type: ignore[arg-type]
+            source_ref=atom.source_id,
+            canonical_text=atom.text,
+            rewrite_policy="light_rewrite_only",
+            relevance_score=atom.strength_score,
+            matched_role_family_tags=atom.tags[:4],
+            matched_domain_tags=atom.domains[:4],
+            matched_capability_tags=atom.skills[:4],
+            selection_reason="Selected from profile layer authoring profile.",
+        )
+        for atom in selected_atoms
+    ]
+
+    evidence_ctx = CandidateEvidenceContext(
+        candidate_evidence_units=evidence_units,
+        selected_evidence_units=selected_units,
     )
+
+    # ---------- Narrative ---------------------------------------------------
+    pm = job_ctx.profile_match
+    fit_score = pm.fit_score if pm else 60
+
+    np_ = layer.narrative_profile
+    ps = layer.profile_snapshot
+    narrative_profile = CandidateNarrativeProfile(
+        narrative_version_id="profile_layer:v1",
+        candidate_id=candidate_id,
+        source_kind="profile_pack_heuristic",
+        core_identity=list(np_.preferred_positioning[:4]),
+        future_direction=list(ps.target_roles[:4]),
+        pivot_thesis=[],
+        narrative_summary=(np_.operator_notes or layer.motivation_language or "").strip(),
+    )
+    job_narrative_assessment = JobNarrativeAssessment(
+        direction_fit_score=fit_score,
+        motivation_fit_score=fit_score,
+        pivot_credibility_score=fit_score,
+        story_strength_score=fit_score,
+        assessment_reason="Derived from profile_match fit_score.",
+        motivation_brief=layer.motivation_language or "",
+    )
+    narrative_ctx = CandidateNarrativeContext(
+        narrative_profile=narrative_profile,
+        job_narrative_assessment=job_narrative_assessment,
+    )
+
+    # ---------- Decision ---------------------------------------------------
+    match_level = pm.match_level if pm else "medium"
+    _level_map: dict[str, str] = {"strong": "strong", "medium": "viable", "weak": "fragile"}
+    dim_level = _level_map.get(match_level, "viable")
+
+    mod = job_ctx.moderator
+    mod_decision = _enum_val(mod.final_decision) if mod else "APPLY_CANDIDATE"
+    _action_map: dict[str, str] = {
+        "APPLY": "pursue_now",
+        "APPLY_CANDIDATE": "review_then_pursue",
+        "MONITOR": "monitor",
+        "SKIP": "skip",
+    }
+    act_now = _action_map.get(mod_decision, "review_then_pursue")
+    confidence = float(mod.confidence if mod else 0.7)
+
+    def _dim(key: str) -> JobDecisionDimension:
+        return JobDecisionDimension(
+            dimension_key=key,  # type: ignore[arg-type]
+            level=dim_level,  # type: ignore[arg-type]
+            score=fit_score,
+            reason=f"Derived from profile_match.fit_score={fit_score}.",
+        )
+
+    decision_table = JobDecisionTable(
+        can_do=_dim("can_do"),
+        can_get=_dim("can_get"),
+        should_want=_dim("should_want"),
+        can_explain=_dim("can_explain"),
+        act_now=act_now,  # type: ignore[arg-type]
+        confidence_score=confidence,
+        table_reason="Derived from profile_match and moderator stage outputs.",
+    )
+    selection_assessment = JobSelectionAssessment(
+        structural_pass=True,
+        screenability_score=fit_score,
+        title_continuity_score=fit_score,
+        domain_continuity_score=fit_score,
+        ambiguity_risk_score=max(0, 100 - fit_score),
+        evidence_burden_score=fit_score,
+        selection_risk_level="medium",  # type: ignore[arg-type]
+        assessment_reason="Derived from profile_match fit_score.",
+    )
+    decision_ctx = DecisionContext(
+        selection_assessment=selection_assessment,
+        decision_table=decision_table,
+    )
+
+    return decision_ctx, evidence_ctx, narrative_ctx
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +309,6 @@ def build_context_for_job(
 
     # --- Candidate static inputs ---------------------------------------------
     profile_pack_text = load_candidate_profile_pack(candidate_id=effective_candidate_id)
-    resume_ctx = _load_resume_context()  # canonical compacted shape
 
     # --- Assemble JobContext --------------------------------------------------
     # Builder guards: job_ctx.moderator and job_ctx.parsed MUST be present.
@@ -198,12 +334,11 @@ def build_context_for_job(
         notes={},
     )
 
-    # --- Build the three derived contexts via the PRODUCTION helper ---------
-    # _build_application_pack_contexts(ctx, resume_ctx) -> (decision, evidence, narrative)
-    # using the correct Mapping[str, Any] / profile_pack str / evidence-unit-list
-    # call shape. This is the same function application_pack_stage uses in prod.
-    decision_ctx, evidence_ctx, narrative_ctx = _build_application_pack_contexts(
-        job_ctx, resume_ctx
+    # --- Build the three derived contexts from the profile layer ------------
+    paths = get_jobpipe_paths()
+    layer = load_or_build_profile_layer_for_paths(paths)
+    decision_ctx, evidence_ctx, narrative_ctx = _build_contexts_from_profile_layer(
+        layer, job_ctx, effective_candidate_id
     )
 
     # --- Call the pure constructor -------------------------------------------
