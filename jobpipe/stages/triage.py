@@ -129,11 +129,6 @@ def _get_postals(job: dict) -> list[str]:
     return postals
 
 
-def _get_postal(job: dict) -> str:
-    ps = _get_postals(job)
-    return ps[0] if ps else ""
-
-
 TRIAGE_INSTRUCTIONS_TEMPLATE = """
 Du er en effektiv førsteinntaksagent. Du filtrerer stillinger for en kandidat.
 
