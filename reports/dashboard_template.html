@@ -3501,7 +3501,7 @@ function renderSettings() {
       '<div class="builder-section">' +
         '<h4>Reactive Resume</h4>' +
         '<div class="builder-field"><label><input type="checkbox" id="settingsReactiveEnabled"' + checkedAttr(!!reactive.enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable Reactive Resume launch target</label></div>' +
-        '<div class="builder-field"><label>Base URL</label><input type="text" id="settingsReactiveUrl" value="' + esc(reactive.base_url || "") + '"' + (SERVER_MODE ? '' : ' readonly') + '></div>' +
+        '<div class="builder-field"><label>Base URL</label><input type="text" id="settingsReactiveUrl" placeholder="http://localhost:3000" value="' + esc(reactive.base_url || "") + '"' + (SERVER_MODE ? '' : ' readonly') + '></div>' +
         '<div class="detail-note">Status: ' + settingsStatusPill(reactive.status) + '</div>' +
       '</div>' +
       '<div class="builder-section" id="gmailOnboardingSection">' +

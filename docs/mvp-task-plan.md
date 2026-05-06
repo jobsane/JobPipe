@@ -2764,7 +2764,7 @@ After Topic 36 lands, the authoring endpoints can be removed from `dashboard_ser
 
 ## Topic 32. External Authoring Completion And Saveback Hardening
 
-Status: pending
+Status: done on 2026-05-06
 
 Scope:
 - complete the current external authoring launch/saveback seam without collapsing external tools into JobPipe
