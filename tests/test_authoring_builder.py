@@ -271,6 +271,65 @@ def test_determinism() -> None:
     assert build_authoring_case_context(**inputs) == build_authoring_case_context(**inputs)
 
 
+def test_v3_advantage_fields_wired_from_job_ctx() -> None:
+    from jobpipe.core.schema import AdvantageAssessmentV3
+
+    adv = AdvantageAssessmentV3(
+        advantage_type="strong_fit",
+        differentiation_signals=["deep product leadership", "public sector exposure"],
+        neutralizing_evidence=["5 years product management"],
+        recruiter_hook="Product leader with public sector credibility.",
+        stretch_level="low",
+        review_priority=80,
+        confidence=85,
+        summary="Strong fit.",
+    )
+    job_ctx = _job_ctx().model_copy(update={"advantage_assessment_v3": adv})
+
+    result = _build(job_ctx=job_ctx)
+
+    assert result.advantage_type == "strong_fit"
+    assert result.differentiation_signals == ["deep product leadership", "public sector exposure"]
+    assert result.neutralizing_evidence == ["5 years product management"]
+    assert result.recruiter_hook == "Product leader with public sector credibility."
+
+
+def test_v3_narrative_fields_wired_from_job_ctx() -> None:
+    from jobpipe.core.schema import NarrativeStrategyV3
+
+    ns = NarrativeStrategyV3(
+        positioning_angle="Product leader with public sector credibility.",
+        brand_frame="Strategic product leader.",
+        why_me_now="Rare combination of product and public sector.",
+        top_value_props=["Product leadership", "Public sector"],
+        cv_focus_order=["roadmap", "stakeholder alignment"],
+        cover_letter_strategy="Lead with public sector angle.",
+        confidence=82,
+        summary="Strong narrative.",
+    )
+    job_ctx = _job_ctx().model_copy(update={"narrative_strategy_v3": ns})
+
+    result = _build(job_ctx=job_ctx)
+
+    assert result.narrative_positioning_angle == "Product leader with public sector credibility."
+    assert result.narrative_brand_frame == "Strategic product leader."
+    assert result.narrative_why_me_now == "Rare combination of product and public sector."
+    assert result.cover_letter_strategy == "Lead with public sector angle."
+
+
+def test_v3_fields_are_absent_when_job_ctx_has_no_v3() -> None:
+    result = _build()  # default _job_ctx() has no v3 fields
+
+    assert result.advantage_type is None
+    assert result.differentiation_signals == []
+    assert result.neutralizing_evidence == []
+    assert result.recruiter_hook is None
+    assert result.narrative_positioning_angle is None
+    assert result.narrative_brand_frame is None
+    assert result.narrative_why_me_now is None
+    assert result.cover_letter_strategy is None
+
+
 def test_no_crewai_import() -> None:
     jobpipe_dir = Path("jobpipe")
     hits: list[tuple[Path, str]] = []

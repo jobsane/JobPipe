@@ -319,6 +319,106 @@ def test_validate_flag_absent_returns_zero(
     assert _run(args) == 0
 
 
+def _minimal_advantage_v3_dict() -> dict:
+    return {
+        "advantage_type": "strong_fit",
+        "differentiation_signals": ["deep product leadership"],
+        "neutralizing_evidence": ["5 years PM experience"],
+        "recruiter_hook": "Product leader with public sector credibility.",
+        "stretch_level": "low",
+        "review_priority": 80,
+        "confidence": 85,
+        "summary": "Strong fit for this role.",
+    }
+
+
+def _minimal_narrative_v3_dict() -> dict:
+    return {
+        "positioning_angle": "Product leader with public sector credibility.",
+        "brand_frame": "Strategic product leader.",
+        "why_me_now": "Rare combination of product and public sector.",
+        "top_value_props": ["Product leadership", "Public sector"],
+        "cv_focus_order": ["roadmap", "stakeholder alignment"],
+        "cover_letter_strategy": "Lead with public sector angle.",
+        "confidence": 82,
+        "summary": "Strong narrative.",
+    }
+
+
+def test_build_context_for_job_loads_v3_stage_files(
+    monkeypatch: pytest.MonkeyPatch, work_tmp: Path
+) -> None:
+    root = work_tmp / "artifacts"
+    job_dir = _write_canonical_run(root, "run-1", "job-1")
+    _write_json(job_dir / "09_advantage_assessment_v3.json", _minimal_advantage_v3_dict())
+    _write_json(job_dir / "10_narrative_strategy_v3.json", _minimal_narrative_v3_dict())
+
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli.load_candidate_profile_pack",
+        lambda *, candidate_id: "profile",
+    )
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli._load_resume_context",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli._build_application_pack_contexts",
+        lambda ctx, resume_ctx: (MagicMock(), MagicMock(), MagicMock()),
+    )
+
+    def capture_build(job_ctx, *_args, **_kwargs):
+        captured["job_ctx"] = job_ctx
+        return _sentinel_context()
+
+    monkeypatch.setattr("jobpipe.authoring.smoke_cli.build_authoring_case_context", capture_build)
+
+    build_context_for_job(artifacts_root=root, run_id="run-1", job_id="job-1", candidate_id="cand-1")
+
+    ctx = captured["job_ctx"]
+    assert ctx.advantage_assessment_v3 is not None
+    assert ctx.advantage_assessment_v3.advantage_type == "strong_fit"
+    assert ctx.advantage_assessment_v3.recruiter_hook == "Product leader with public sector credibility."
+    assert ctx.narrative_strategy_v3 is not None
+    assert ctx.narrative_strategy_v3.positioning_angle == "Product leader with public sector credibility."
+    assert ctx.narrative_strategy_v3.cover_letter_strategy == "Lead with public sector angle."
+
+
+def test_build_context_for_job_v3_absent_when_no_stage_files(
+    monkeypatch: pytest.MonkeyPatch, work_tmp: Path
+) -> None:
+    root = work_tmp / "artifacts"
+    _write_canonical_run(root, "run-1", "job-1")  # no v3 files
+
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli.load_candidate_profile_pack",
+        lambda *, candidate_id: "profile",
+    )
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli._load_resume_context",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        "jobpipe.authoring.smoke_cli._build_application_pack_contexts",
+        lambda ctx, resume_ctx: (MagicMock(), MagicMock(), MagicMock()),
+    )
+
+    def capture_build(job_ctx, *_args, **_kwargs):
+        captured["job_ctx"] = job_ctx
+        return _sentinel_context()
+
+    monkeypatch.setattr("jobpipe.authoring.smoke_cli.build_authoring_case_context", capture_build)
+
+    build_context_for_job(artifacts_root=root, run_id="run-1", job_id="job-1", candidate_id="cand-1")
+
+    ctx = captured["job_ctx"]
+    assert ctx.advantage_assessment_v3 is None
+    assert ctx.narrative_strategy_v3 is None
+
+
 def test_no_crewai_import() -> None:
     text = Path("jobpipe/authoring/smoke_cli.py").read_text(encoding="utf-8")
 
