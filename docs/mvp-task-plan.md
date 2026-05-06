@@ -2569,7 +2569,7 @@ Validation:
 
 ## Topic 30. Tailoring Plan And Deterministic Resume Compilation
 
-Status: active
+Status: done on 2026-05-06
 
 Scope:
 - turn the new person/profile spine into a deterministic job-specific resume composition layer
@@ -2641,7 +2641,7 @@ Validation criteria:
 
 ## Topic 31. Authoring Session, Concurrent Chat, And Patch Tracking
 
-Status: pending
+Status: done on 2026-05-06
 
 Scope:
 - turn authoring from one broad draft blob into a case-scoped shared workspace where chat and manual editing can happen in parallel
