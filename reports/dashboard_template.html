@@ -3143,76 +3143,68 @@ async function saveSettings() {
   }
 }
 
-// ── Gmail onboarding checklist ─────────────────────────────────────────────
-
-function _stepIcon(done) {
-  return done
-    ? '<span style="color:var(--green);font-size:1.1em;margin-right:6px;">✓</span>'
-    : '<span style="color:var(--text-soft);margin-right:6px;">○</span>';
-}
+// ── Gmail connector section ────────────────────────────────────────────────
 
 function _renderGmailOnboarding(gmail) {
   const credOk = !!gmail.credentials_present;
   const tokenOk = !!gmail.token_present;
   const fullyReady = credOk && tokenOk;
+  const credPath = gmail.credentials_path || '<JobpipeData>/reports/gmail_credentials.json';
 
-  // Always show checkboxes for enable/disable (regardless of readiness)
-  let checkboxes =
+  const checkboxes =
     '<div class="builder-field"><label><input type="checkbox" id="settingsGmailStatus"' +
       checkedAttr(!!gmail.status_detection_enabled) + (SERVER_MODE ? '' : ' disabled') +
       '> Enable Gmail status detection</label></div>' +
     '<div class="builder-field"><label><input type="checkbox" id="settingsGmailLeads"' +
       checkedAttr(!!gmail.lead_intake_enabled) + (SERVER_MODE ? '' : ' disabled') +
-      '> Enable mailbox lead intake</label></div>' +
-    '<div class="detail-note" style="margin-bottom:8px;">Status: ' + settingsStatusPill(gmail.status) + '</div>';
+      '> Enable mailbox lead intake</label></div>';
 
   if (fullyReady) {
-    // Fully configured — show compact status + flow paths
     return checkboxes +
-      '<div class="detail-note" style="color:var(--green);">✓ Gmail OAuth authorized and ready.</div>' +
-      '<div class="detail-note">Lead target: ' + esc(gmail.lead_target_path || 'not set') + '</div>' +
-      '<div class="detail-note">Status target: ' + esc(gmail.status_target_path || 'not set') + '</div>';
+      '<div class="detail-note">Status: ' + settingsStatusPill("ready") + ' Gmail authorized.</div>';
   }
 
-  // Onboarding checklist
-  const credPath = gmail.credentials_path || '<JobpipeData>/reports/gmail_credentials.json';
+  // Not yet authorized — show compact status + a single "Set up" toggle
+  const setupId = "gmailSetupDetails";
+  const statusNote = credOk
+    ? 'Credentials present — authorization needed.'
+    : 'Not connected.';
 
-  let steps =
-    '<div style="margin:10px 0 4px;font-weight:600;font-size:0.85em;color:var(--text-soft);letter-spacing:.04em;text-transform:uppercase;">Setup steps</div>' +
-    '<ol style="list-style:none;padding:0;margin:0;">' +
-      '<li style="margin-bottom:8px;">' +
-        _stepIcon(false) +
-        '<span>Create a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:var(--blue);">Google Cloud OAuth2 Desktop App</a> credential and enable the Gmail API.</span>' +
-      '</li>' +
-      '<li style="margin-bottom:8px;">' +
-        _stepIcon(credOk) +
-        '<span>Download <code>credentials.json</code> and save it to:<br>' +
+  const setupToggle =
+    '<div class="detail-note" style="margin-top:6px;">' +
+      'Status: ' + settingsStatusPill("disabled") +
+      ' ' + esc(statusNote) +
+      ' <a href="#" onclick="(function(e){e.preventDefault();var d=document.getElementById(\'' + setupId + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';})(event)" style="color:var(--blue);font-size:0.87em;margin-left:6px;">Set up ›</a>' +
+    '</div>';
+
+  // Setup steps — hidden by default
+  let authStep;
+  if (SERVER_MODE) {
+    authStep =
+      '<button id="gmailOAuthBtn" onclick="startGmailOAuth()" ' +
+        (credOk ? '' : 'disabled title="Place credentials.json first" ') +
+        'style="margin-top:4px;padding:4px 14px;cursor:pointer;' + (credOk ? '' : 'opacity:.45;cursor:not-allowed;') + '">' +
+        'Authorize with Google' +
+      '</button>' +
+      ' <span id="gmailOAuthStatus" style="font-size:0.85em;color:var(--text-soft);"></span>';
+  } else {
+    authStep = '<span style="color:var(--text-soft);font-size:0.87em;">Start the live server first, then authorize here.</span>';
+  }
+
+  const steps =
+    '<div id="' + setupId + '" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface-b,#1c2230);border-radius:6px;">' +
+      '<ol style="list-style:decimal;padding-left:18px;margin:0;line-height:1.8;">' +
+        '<li><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:var(--blue);">Create a Google Cloud OAuth2 Desktop App credential</a> and enable the Gmail API.</li>' +
+        '<li>Download <code>credentials.json</code> and save it to:<br>' +
           '<code style="font-size:0.82em;color:var(--text-soft);">' + esc(credPath) + '</code>' +
-          (credOk ? '' : '<span style="color:var(--amber);margin-left:6px;">⚠ missing</span>') +
-        '</span>' +
-      '</li>' +
-      '<li style="margin-bottom:8px;">' +
-        _stepIcon(tokenOk) +
-        (SERVER_MODE
-          ? '<span>Authorize via browser:<br>' +
-              '<button id="gmailOAuthBtn" onclick="startGmailOAuth()" ' +
-                (credOk ? '' : 'disabled ') +
-                'style="margin-top:4px;padding:4px 12px;cursor:pointer;' + (credOk ? '' : 'opacity:.5;cursor:not-allowed;') + '">' +
-                'Start OAuth authorization' +
-              '</button>' +
-              '<span id="gmailOAuthStatus" style="margin-left:10px;font-size:0.85em;color:var(--text-soft);"></span>' +
-            '</span>'
-          : '<span>Start authorization (requires server mode — run <code>python -m jobpipe.cli.dashboard_server</code> first).' +
-              (tokenOk ? '' : '<span style="color:var(--amber);margin-left:6px;">⚠ token missing</span>') +
-            '</span>') +
-      '</li>' +
-      '<li style="margin-bottom:4px;">' +
-        _stepIcon(false) +
-        '<span>Enable the toggles above and save settings.</span>' +
-      '</li>' +
-    '</ol>';
+          (credOk ? ' <span style="color:var(--green);">✓</span>' : '') +
+        '</li>' +
+        '<li>' + authStep + '</li>' +
+        '<li>Enable the toggles above and save.</li>' +
+      '</ol>' +
+    '</div>';
 
-  return checkboxes + steps;
+  return checkboxes + setupToggle + steps;
 }
 
 async function startGmailOAuth() {
@@ -3220,19 +3212,18 @@ async function startGmailOAuth() {
   const statusEl = document.getElementById("gmailOAuthStatus");
   if (!btn || !statusEl) return;
   btn.disabled = true;
-  statusEl.textContent = "Starting…";
+  statusEl.textContent = "Opening browser…";
   try {
     const res = await fetch(apiUrl("/api/gmail/authorize"), { method: "POST" });
     const data = await res.json();
     if (!res.ok || data.error) {
-      statusEl.textContent = data.message || data.error || "Failed to start.";
+      statusEl.textContent = data.message || data.error || "Failed.";
       statusEl.style.color = "var(--red)";
       btn.disabled = false;
       return;
     }
-    statusEl.textContent = "Browser window opened — complete authorization there.";
+    statusEl.textContent = "Complete authorization in the browser window.";
     statusEl.style.color = "var(--blue)";
-    // Poll until done
     _pollGmailOAuthStatus(0);
   } catch(e) {
     statusEl.textContent = "Request failed: " + e.message;
@@ -3242,14 +3233,14 @@ async function startGmailOAuth() {
 }
 
 async function _pollGmailOAuthStatus(attempt) {
-  if (attempt > 60) return; // stop after ~5 min
+  if (attempt > 60) return;
   try {
     const res = await fetch(apiUrl("/api/gmail/status"));
     const data = await res.json();
     const statusEl = document.getElementById("gmailOAuthStatus");
     if (!statusEl) return;
     if (data.setup_status === "done" || data.token_present) {
-      statusEl.textContent = "✓ Authorization complete. Reload the page to continue.";
+      statusEl.textContent = "✓ Done — reload to see updated status.";
       statusEl.style.color = "var(--green)";
       return;
     }
@@ -3266,7 +3257,7 @@ async function _pollGmailOAuthStatus(attempt) {
   }
 }
 
-// ── End Gmail onboarding ───────────────────────────────────────────────────
+// ── End Gmail connector ────────────────────────────────────────────────────
 
 function renderSettings() {
   const settings = DATA.settings || {};
