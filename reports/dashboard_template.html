@@ -3112,6 +3112,131 @@ async function saveSettings() {
   }
 }
 
+// ── Gmail onboarding checklist ─────────────────────────────────────────────
+
+function _stepIcon(done) {
+  return done
+    ? '<span style="color:var(--green);font-size:1.1em;margin-right:6px;">✓</span>'
+    : '<span style="color:var(--text-soft);margin-right:6px;">○</span>';
+}
+
+function _renderGmailOnboarding(gmail) {
+  const credOk = !!gmail.credentials_present;
+  const tokenOk = !!gmail.token_present;
+  const fullyReady = credOk && tokenOk;
+
+  // Always show checkboxes for enable/disable (regardless of readiness)
+  let checkboxes =
+    '<div class="builder-field"><label><input type="checkbox" id="settingsGmailStatus"' +
+      checkedAttr(!!gmail.status_detection_enabled) + (SERVER_MODE ? '' : ' disabled') +
+      '> Enable Gmail status detection</label></div>' +
+    '<div class="builder-field"><label><input type="checkbox" id="settingsGmailLeads"' +
+      checkedAttr(!!gmail.lead_intake_enabled) + (SERVER_MODE ? '' : ' disabled') +
+      '> Enable mailbox lead intake</label></div>' +
+    '<div class="detail-note" style="margin-bottom:8px;">Status: ' + settingsStatusPill(gmail.status) + '</div>';
+
+  if (fullyReady) {
+    // Fully configured — show compact status + flow paths
+    return checkboxes +
+      '<div class="detail-note" style="color:var(--green);">✓ Gmail OAuth authorized and ready.</div>' +
+      '<div class="detail-note">Lead target: ' + esc(gmail.lead_target_path || 'not set') + '</div>' +
+      '<div class="detail-note">Status target: ' + esc(gmail.status_target_path || 'not set') + '</div>';
+  }
+
+  // Onboarding checklist
+  const credPath = gmail.credentials_path || '<JobpipeData>/reports/gmail_credentials.json';
+
+  let steps =
+    '<div style="margin:10px 0 4px;font-weight:600;font-size:0.85em;color:var(--text-soft);letter-spacing:.04em;text-transform:uppercase;">Setup steps</div>' +
+    '<ol style="list-style:none;padding:0;margin:0;">' +
+      '<li style="margin-bottom:8px;">' +
+        _stepIcon(false) +
+        '<span>Create a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:var(--blue);">Google Cloud OAuth2 Desktop App</a> credential and enable the Gmail API.</span>' +
+      '</li>' +
+      '<li style="margin-bottom:8px;">' +
+        _stepIcon(credOk) +
+        '<span>Download <code>credentials.json</code> and save it to:<br>' +
+          '<code style="font-size:0.82em;color:var(--text-soft);">' + esc(credPath) + '</code>' +
+          (credOk ? '' : '<span style="color:var(--amber);margin-left:6px;">⚠ missing</span>') +
+        '</span>' +
+      '</li>' +
+      '<li style="margin-bottom:8px;">' +
+        _stepIcon(tokenOk) +
+        (SERVER_MODE
+          ? '<span>Authorize via browser:<br>' +
+              '<button id="gmailOAuthBtn" onclick="startGmailOAuth()" ' +
+                (credOk ? '' : 'disabled ') +
+                'style="margin-top:4px;padding:4px 12px;cursor:pointer;' + (credOk ? '' : 'opacity:.5;cursor:not-allowed;') + '">' +
+                'Start OAuth authorization' +
+              '</button>' +
+              '<span id="gmailOAuthStatus" style="margin-left:10px;font-size:0.85em;color:var(--text-soft);"></span>' +
+            '</span>'
+          : '<span>Start authorization (requires server mode — run <code>python -m jobpipe.cli.dashboard_server</code> first).' +
+              (tokenOk ? '' : '<span style="color:var(--amber);margin-left:6px;">⚠ token missing</span>') +
+            '</span>') +
+      '</li>' +
+      '<li style="margin-bottom:4px;">' +
+        _stepIcon(false) +
+        '<span>Enable the toggles above and save settings.</span>' +
+      '</li>' +
+    '</ol>';
+
+  return checkboxes + steps;
+}
+
+async function startGmailOAuth() {
+  const btn = document.getElementById("gmailOAuthBtn");
+  const statusEl = document.getElementById("gmailOAuthStatus");
+  if (!btn || !statusEl) return;
+  btn.disabled = true;
+  statusEl.textContent = "Starting…";
+  try {
+    const res = await fetch(apiUrl("/api/gmail/authorize"), { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      statusEl.textContent = data.message || data.error || "Failed to start.";
+      statusEl.style.color = "var(--red)";
+      btn.disabled = false;
+      return;
+    }
+    statusEl.textContent = "Browser window opened — complete authorization there.";
+    statusEl.style.color = "var(--blue)";
+    // Poll until done
+    _pollGmailOAuthStatus(0);
+  } catch(e) {
+    statusEl.textContent = "Request failed: " + e.message;
+    statusEl.style.color = "var(--red)";
+    btn.disabled = false;
+  }
+}
+
+async function _pollGmailOAuthStatus(attempt) {
+  if (attempt > 60) return; // stop after ~5 min
+  try {
+    const res = await fetch(apiUrl("/api/gmail/status"));
+    const data = await res.json();
+    const statusEl = document.getElementById("gmailOAuthStatus");
+    if (!statusEl) return;
+    if (data.setup_status === "done" || data.token_present) {
+      statusEl.textContent = "✓ Authorization complete. Reload the page to continue.";
+      statusEl.style.color = "var(--green)";
+      return;
+    }
+    if (data.setup_status === "error") {
+      statusEl.textContent = "Error: " + (data.setup_message || "OAuth failed");
+      statusEl.style.color = "var(--red)";
+      const btn = document.getElementById("gmailOAuthBtn");
+      if (btn) btn.disabled = false;
+      return;
+    }
+    setTimeout(() => _pollGmailOAuthStatus(attempt + 1), 5000);
+  } catch(e) {
+    setTimeout(() => _pollGmailOAuthStatus(attempt + 1), 8000);
+  }
+}
+
+// ── End Gmail onboarding ───────────────────────────────────────────────────
+
 function renderSettings() {
   const settings = DATA.settings || {};
   const targeting = settings.targeting || {};
@@ -3192,13 +3317,9 @@ function renderSettings() {
         '<div class="builder-field"><label>Base URL</label><input type="text" id="settingsReactiveUrl" value="' + esc(reactive.base_url || "") + '"' + (SERVER_MODE ? '' : ' readonly') + '></div>' +
         '<div class="detail-note">Status: ' + settingsStatusPill(reactive.status) + '</div>' +
       '</div>' +
-      '<div class="builder-section">' +
+      '<div class="builder-section" id="gmailOnboardingSection">' +
         '<h4>Gmail connector</h4>' +
-        '<div class="builder-field"><label><input type="checkbox" id="settingsGmailStatus"' + checkedAttr(!!gmail.status_detection_enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable Gmail status detection</label></div>' +
-        '<div class="builder-field"><label><input type="checkbox" id="settingsGmailLeads"' + checkedAttr(!!gmail.lead_intake_enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable mailbox lead intake</label></div>' +
-        '<div class="detail-note">Status: ' + settingsStatusPill(gmail.status) + ' | credentials ' + esc(gmail.credentials_present ? "present" : "missing") + ' | token ' + esc(gmail.token_present ? "present" : "missing") + '</div>' +
-        '<div class="detail-note">Lead intake target: ' + esc(gmail.lead_target_path || "Not set") + ' | flow: ' + esc(gmail.lead_flow || "unknown") + '</div>' +
-        '<div class="detail-note">Status update target: ' + esc(gmail.status_target_path || "Not set") + ' | flow: ' + esc(gmail.status_flow || "unknown") + '</div>' +
+        _renderGmailOnboarding(gmail) +
       '</div>' +
     '</div>';
 

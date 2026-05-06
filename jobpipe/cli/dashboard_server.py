@@ -83,6 +83,10 @@ AUTHORING_STATE_VERSION = "jobpipe.authoring-state.v1"
 # ── Background generation tracker ──
 _gen_status: dict[str, str] = {}   # job_id → "running" | "done" | "error:<msg>"
 _gen_lock = threading.Lock()
+
+# ── Gmail OAuth setup tracker ──
+_gmail_setup_status: dict[str, Any] = {}  # keys: "status", "message", "started_at"
+_gmail_setup_lock = threading.Lock()
 _STAGE_ALIASES = {"parse": "parsed", "moderate": "moderator"}
 _DEFAULT_STAGE_ORDER = [
     "triage",
@@ -274,6 +278,40 @@ def _run_automation_action(action_key: str) -> Dict[str, Any]:
         "summary": f"Unknown automation action: {action_key}",
         "log_excerpt": f"Unknown automation action: {action_key}",
     }
+
+
+def _gmail_oauth_status() -> Dict[str, Any]:
+    """Return current Gmail OAuth readiness without starting anything."""
+    with _gmail_setup_lock:
+        setup = dict(_gmail_setup_status)
+    return {
+        "credentials_present": PATHS.gmail_credentials_path.exists(),
+        "token_present": PATHS.gmail_token_path.exists(),
+        "credentials_path": str(PATHS.gmail_credentials_path),
+        "token_path": str(PATHS.gmail_token_path),
+        "setup_status": setup.get("status", "idle"),
+        "setup_message": setup.get("message", ""),
+        "setup_started_at": setup.get("started_at", ""),
+    }
+
+
+def _run_gmail_oauth_setup() -> None:
+    """Background worker: run scan_gmail --setup."""
+    with _gmail_setup_lock:
+        _gmail_setup_status.update({"status": "running", "message": "Browser consent window opened. Complete authorization there.", "started_at": _utc_now_z()})
+    try:
+        result = _run_subprocess_action(
+            [sys.executable, "-m", "jobpipe.cli.scan_gmail", "--setup"],
+            timeout=300,
+        )
+        with _gmail_setup_lock:
+            if result["exit_code"] == 0:
+                _gmail_setup_status.update({"status": "done", "message": result["summary"]})
+            else:
+                _gmail_setup_status.update({"status": "error", "message": result.get("log_excerpt") or result["summary"]})
+    except Exception as exc:
+        with _gmail_setup_lock:
+            _gmail_setup_status.update({"status": "error", "message": str(exc)})
 
 
 def _start_automation_run(action_key: str) -> Dict[str, Any]:
@@ -1291,6 +1329,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/resume":
             self._get_resume()
 
+        elif path == "/api/gmail/status":
+            self._send_json(_gmail_oauth_status())
+
         elif path.startswith("/download/"):
             # /download/<job_id>/filename.ext
             parts = path[len("/download/"):].strip("/").split("/", 1)
@@ -1378,6 +1419,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._post_draft(job_id, body)
         elif path == "/api/chat":
             self._post_chat(body)
+        elif path == "/api/gmail/authorize":
+            self._post_gmail_authorize()
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -1744,6 +1787,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"reply": reply})
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
+
+    def _post_gmail_authorize(self):
+        """Start Gmail OAuth setup in a background thread (opens browser consent)."""
+        with _gmail_setup_lock:
+            current = _gmail_setup_status.get("status", "idle")
+        if current == "running":
+            self._send_json({"ok": True, "status": "already_running", **_gmail_oauth_status()})
+            return
+        if not PATHS.gmail_credentials_path.exists():
+            self._send_json(
+                {
+                    "error": "credentials_missing",
+                    "message": f"Gmail credentials file not found at {PATHS.gmail_credentials_path}. "
+                    "Download it from Google Cloud Console (OAuth2 Desktop App) and place it there, then retry.",
+                },
+                400,
+            )
+            return
+        t = threading.Thread(target=_run_gmail_oauth_setup, daemon=True)
+        t.start()
+        self._send_json({"ok": True, "status": "started", **_gmail_oauth_status()})
 
     def _post_rebuild(self):
         try:

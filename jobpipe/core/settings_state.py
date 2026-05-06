@@ -292,6 +292,8 @@ def build_settings_payload(
                 "lead_intake_enabled": bool(gmail_state["lead_intake_enabled"]),
                 "credentials_present": gmail_credentials_present,
                 "token_present": gmail_token_present,
+                "credentials_path": str(paths.gmail_credentials_path),
+                "token_path": str(paths.gmail_token_path),
                 "status": _status_label(enabled=gmail_enabled, ready=gmail_ready, partial=gmail_partial),
                 "lead_target_path": str(paths.jobs_delta_path),
                 "status_target_path": str(paths.application_state_path),
