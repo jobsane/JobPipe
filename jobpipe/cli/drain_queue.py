@@ -181,6 +181,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
     ap.add_argument("--sync-ledger-after", action="store_true", default=True, help="Sync ledger from out_runs after processing (default: on).")
     ap.add_argument("--no-sync-ledger-after", dest="sync_ledger_after", action="store_false", help="Disable ledger sync after run.")
+    ap.add_argument("--sync-primary-db-after", action="store_true", default=True, help="Sync primary jobpipe.sqlite (job_evaluations) after processing (default: on).")
+    ap.add_argument("--no-sync-primary-db-after", dest="sync_primary_db_after", action="store_false", help="Disable primary DB sync after run.")
 
     args = ap.parse_args(argv)
     paths = get_jobpipe_paths(args.data_root or None)
@@ -409,6 +411,25 @@ def main(argv: Optional[list[str]] = None) -> None:
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
+
+    # Sync primary jobpipe.sqlite (job_evaluations) so prepare_application can find new jobs
+    if args.sync_primary_db_after and total_rows_processed > 0 and paths.data_root:
+        primary_db = paths.data_root / "db" / "jobpipe.sqlite"
+        sync_eval_cmd = [
+            py,
+            "-m",
+            "jobpipe.cli.sync_evaluations",
+            "--out",
+            str(out_dir),
+            "--reports",
+            str(reports_dir),
+            "--db",
+            str(primary_db),
+            "--include-description",
+        ]
+        if expired_path.exists():
+            sync_eval_cmd += ["--expired-file", str(expired_path)]
+        run(sync_eval_cmd)
 
     # Write run summary to AGENT_STATUS.md so any Cowork session sees current state immediately
     project_root = Path(__file__).resolve().parents[2]

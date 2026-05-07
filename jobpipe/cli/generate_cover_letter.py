@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Any, List, Mapping, Optional
@@ -18,6 +19,17 @@ from jobpipe.projections.dashboard import build_payload
 from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+
+
+def _load_supplement(profile_pack_path: str, filename: str) -> str | None:
+    """Load a supplementary profile file from the same directory as profile_pack, if it exists."""
+    try:
+        p = Path(profile_pack_path).parent / filename
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return None
 
 
 def _find_job_row(payload: dict, job_id: str) -> dict:
@@ -38,6 +50,8 @@ def build_authoring_context(
     candidate_id: str,
     *,
     artifact_plan: dict | None = None,
+    voice_guide: str | None = None,
+    motivation_context: str | None = None,
 ) -> AuthoringCaseContext:
     """Build an AuthoringCaseContext from a dashboard payload row.
 
@@ -99,6 +113,49 @@ def build_authoring_context(
         "motivation_brief": na.motivation_brief,
     }
 
+    # --- Unpack v3 signals from raw JSON blobs (direct columns are often None) ---
+    def _raw(key: str) -> dict:
+        v = row.get(key)
+        if not v:
+            return {}
+        try:
+            return json.loads(v) if isinstance(v, str) else (v or {})
+        except Exception:
+            return {}
+
+    raw_narrative = _raw("raw_narrative_strategy_v3_json")
+    raw_advantage = _raw("raw_advantage_assessment_v3_json")
+    raw_match = _raw("raw_match_json")
+
+    cover_letter_strategy = (
+        str(row.get("cover_letter_strategy") or "").strip()
+        or str(raw_narrative.get("cover_letter_strategy") or "").strip()
+        or None
+    )
+    differentiation_signals = (
+        list(row.get("differentiation_signals") or [])
+        or list(raw_advantage.get("differentiation_signals") or [])
+    )
+    recruiter_hook = (
+        str(row.get("recruiter_hook") or "").strip()
+        or str(raw_advantage.get("recruiter_hook") or "").strip()
+        or None
+    )
+    neutralizing_evidence = (
+        list(row.get("neutralizing_evidence") or [])
+        or list(raw_advantage.get("neutralizing_evidence") or [])
+    )
+    narrative_why_me_now = (
+        str(row.get("narrative_why_me_now") or "").strip()
+        or str(raw_narrative.get("why_me_now") or "").strip()
+        or None
+    )
+
+    # Enrich decision_brief with fit gaps from raw_match_json
+    gaps = list(raw_match.get("gaps") or [])
+    if gaps:
+        decision_brief["fit_gaps"] = gaps[:4]
+
     return AuthoringCaseContext(
         candidate_id=candidate_id,
         job_id=str(row.get("job_id") or "").strip(),
@@ -110,10 +167,13 @@ def build_authoring_context(
         artifact_plan=artifact_plan,
         narrative_positioning_angle=str(row.get("narrative_positioning_angle") or "").strip() or None,
         narrative_brand_frame=str(row.get("narrative_brand_frame") or "").strip() or None,
-        cover_letter_strategy=str(row.get("cover_letter_strategy") or "").strip() or None,
-        differentiation_signals=list(row.get("differentiation_signals") or []),
-        recruiter_hook=str(row.get("recruiter_hook") or "").strip() or None,
-        neutralizing_evidence=list(row.get("neutralizing_evidence") or []),
+        cover_letter_strategy=cover_letter_strategy,
+        differentiation_signals=differentiation_signals,
+        recruiter_hook=recruiter_hook,
+        neutralizing_evidence=neutralizing_evidence,
+        narrative_why_me_now=narrative_why_me_now,
+        voice_guide=voice_guide,
+        motivation_context=motivation_context,
     )
 
 
@@ -153,7 +213,18 @@ def main(argv: Optional[List[str]] = None) -> None:
     profile_pack = load_candidate_profile_pack(str(runtime.profile_pack_path), candidate_id=args.candidate_id, db_path=db_path)
     resume_json = load_candidate_resume_json(str(runtime.resume_json_path), candidate_id=args.candidate_id, db_path=db_path)
 
-    ctx = build_authoring_context(row, profile_pack, resume_json, args.candidate_id)
+    voice_guide = _load_supplement(str(runtime.profile_pack_path), "cover_letter_voice.md")
+    motivation_context = _load_supplement(str(runtime.profile_pack_path), "motivation.md")
+    if voice_guide:
+        print(f"  Voice guide: loaded ({len(voice_guide)} chars)")
+    if motivation_context:
+        print(f"  Motivation:  loaded ({len(motivation_context)} chars)")
+
+    ctx = build_authoring_context(
+        row, profile_pack, resume_json, args.candidate_id,
+        voice_guide=voice_guide,
+        motivation_context=motivation_context,
+    )
     validation = validate_authoring_context(ctx)
     if not validation.passed:
         for failure in validation.failures:

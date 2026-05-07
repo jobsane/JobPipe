@@ -5,14 +5,15 @@ import argparse
 import datetime as _dt
 import json
 import os
+import sqlite3
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, Any, List, Optional
 
 import uuid
 
 from jobpipe.authoring.cover_letter_generator import generate_cover_letter
 from jobpipe.authoring.validation import validate_authoring_context
-from jobpipe.cli.generate_cover_letter import build_authoring_context, _find_job_row
+from jobpipe.cli.generate_cover_letter import build_authoring_context, _find_job_row, _load_supplement
 from jobpipe.core.candidate_data import load_candidate_profile_pack, load_candidate_resume_json
 from jobpipe.core.io import load_env_file, now_iso
 from jobpipe.core.settings_state import load_settings_state
@@ -22,6 +23,26 @@ from jobpipe.projections.rr_patch import build_rr_patch
 from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_choices
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+
+
+def _load_row_from_ledger(job_id: str, ledger_path: Path) -> Optional[Dict[str, Any]]:
+    """Load a job row directly from ledger.sqlite as fallback when jobpipe.sqlite doesn't have it."""
+    if not ledger_path or not ledger_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(ledger_path))
+        conn.row_factory = sqlite3.Row
+        r = conn.execute("SELECT * FROM ledger WHERE job_id = ?", (job_id,)).fetchone()
+        conn.close()
+        if r is None:
+            return None
+        row = dict(r)
+        # Normalise field name: ledger uses 'employer', payload uses 'employer_name'
+        if "employer_name" not in row and "employer" in row:
+            row["employer_name"] = row["employer"]
+        return row
+    except Exception:
+        return None
 
 
 def _build_artifact_plan(plan, projection) -> dict:
@@ -53,8 +74,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--candidate-id", default=_DEFAULT_CANDIDATE_ID)
     parser.add_argument("--profile", default="", help="Optional profile_pack.md override")
     parser.add_argument("--resume-json", default="", help="Optional resume.json override (must be RR format)")
-    parser.add_argument("--model", default="gpt-4o-mini", help="OpenAI model to use for cover letter generation")
+    parser.add_argument("--model", default="gpt-4o", help="OpenAI model to use for cover letter generation")
     parser.add_argument("--out-dir", default="", help="Output directory override (default: exports/)")
+    parser.add_argument("--ledger-sqlite", default="", help="Path to ledger.sqlite — used as fallback when primary DB doesn't have the job")
     args = parser.parse_args(argv)
 
     load_env_file(Path(".env"))
@@ -72,7 +94,21 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     db_path = runtime.primary_db_path
     payload = build_payload(runtime.artifacts_root, primary_db_path_=db_path, candidate_id=args.candidate_id)
-    row = _find_job_row(payload, args.job_id)
+    row: Optional[Dict[str, Any]] = None
+    try:
+        row = _find_job_row(payload, args.job_id)
+    except SystemExit:
+        # Primary DB (jobpipe.sqlite) doesn't have this job — try ledger.sqlite fallback.
+        ledger_path = Path(args.ledger_sqlite) if args.ledger_sqlite else None
+        if ledger_path is None and runtime.data_root:
+            ledger_path = runtime.data_root / "reports" / "ledger.sqlite"
+        row = _load_row_from_ledger(args.job_id, ledger_path)
+        if row is None:
+            raise SystemExit(
+                f"job_id not found in canonical payload or ledger: {args.job_id}. "
+                "Run sync_ledger then retry."
+            )
+        print(f"  [ledger fallback] Loaded {args.job_id} from ledger.sqlite")
     profile_pack = load_candidate_profile_pack(str(runtime.profile_pack_path), candidate_id=args.candidate_id, db_path=db_path)
     resume_json = load_candidate_resume_json(str(runtime.resume_json_path), candidate_id=args.candidate_id, db_path=db_path)
 
@@ -173,12 +209,20 @@ def main(argv: Optional[List[str]] = None) -> None:
     print()
     print("[3/3] Generating cover letter ...")
     artifact_plan = _build_artifact_plan(plan, projection)
+    voice_guide = _load_supplement(str(runtime.profile_pack_path), "cover_letter_voice.md")
+    motivation_context = _load_supplement(str(runtime.profile_pack_path), "motivation.md")
+    if voice_guide:
+        print(f"  Voice guide: loaded ({len(voice_guide)} chars)")
+    if motivation_context:
+        print(f"  Motivation:  loaded ({len(motivation_context)} chars)")
     ctx = build_authoring_context(
         row,
         profile_pack,
         resume_json,
         args.candidate_id,
         artifact_plan=artifact_plan,
+        voice_guide=voice_guide,
+        motivation_context=motivation_context,
     )
     validation = validate_authoring_context(ctx)
     if not validation.passed:

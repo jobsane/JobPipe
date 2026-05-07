@@ -3,52 +3,172 @@ from __future__ import annotations
 
 import json
 import os
+from typing import List
 
 import openai
 
 from jobpipe.authoring.case_context import AuthoringCaseContext
 
-_SYSTEM_PROMPT = """Du er en norsk jobbsøkningsassistent.
+# Phrases that must never appear in the output — even when they come from input evidence.
+# detect-and-retry uses this list.
+_HARD_BANNED: List[str] = [
+    # Generic team/process clichés
+    "tverrfaglige team",
+    "tverrfaglig team",
+    "tverrfaglig samarbeid",
+    "kontinuerlig forbedring",
+    "interessenter",
+    "endringsprosesser",
+    "brukervennlige løsninger",
+    "skape verdi",
+    "reell verdi",
+    "praktisk og resultatorientert",
+    "motivert for å bidra",
+    "spesielt motivert",
+    "cross-functional",
+    "sterk teknisk",
+    "sterk forståelse",
+    "sterk kommunikator",
+    "sterke resultater",
+    "offentlig sektor",
+    "rask tilpasningsevne",
+    "vilje til å bygge",
+    "tverrfaglig koordinering",
+    # User-in-center buzzwords
+    "brukeren i sentrum",
+    "brukerfokus",
+    "helhetlige løsninger",
+    # Weak gap apology patterns (all variants)
+    "selv om jeg ikke har eksplisitt erfaring",
+    "selv om jeg ikke har direkte erfaring",
+    "selv om jeg mangler direkte erfaring",
+    "selv om jeg mangler eksplisitt erfaring",
+    "rask til å tilpasse meg",
+    "raskt å tilpasse meg",
+    "raskt tilpasse meg",
+    "bygge nødvendig domenekunnskap",
+    "bygge nødvendig kunnskap",
+    "tilegne meg ny domenekunnskap",
+    "tilegne meg kunnskap om",
+    # Generic closing phrases — "looking forward to" variants
+    "robuste og fleksible løsninger",
+    "ser frem til å bidra med min kompetanse",
+    "ser frem til muligheten til å",
+    "ser frem til å kunne",
+    "ser frem til å bringe",
+    "ser frem til å anvende",
+    "ser frem til å kombinere",
+    "anvende min kompetanse",
+    "bringe min kompetanse",
+    "solid fundament for å bidra",
+    # Generic "support their goals" variants
+    "støtte deres mål om",
+    "støtte bane nor",
+    "i deres mål om",
+    "bidra til utviklingen av",
+    "bidra til bane nors",
+    "bidra til deres",
+    "i en ny kontekst",
+    "en spennende mulighet for meg",
+    "kombinere min praktiske erfaring med",
+    "kombinere min erfaring med den strategiske",
+]
 
-Du mottar jobbsøknadskontekst som JSON og skriver et skreddersydd søknadsbrev på norsk.
 
-Regler:
-- Skriv på bokmål, direkte og troverdig — ingen klisjeer.
-- Brevet skal ha 3–4 korte avsnitt: åpning, kjernekompetanse/erfaring, motivasjon, avslutning.
-- Bruk konkrete eksempler fra selected_evidence og cv_selected_bullets. Finn ikke opp erfaringer.
-- Speil cv_focus fra decision_brief og claim_targets fra artifact_plan for å understreke det arbeidsgiveren verdsetter.
-- Unngå fraser som «engasjert lagspiller», «sterk kommunikator», «brennende opptatt av».
-- Avslutt med tydelig initiativ, f.eks. «Ser frem til å høre fra dere.»
-- Ikke ta med sted/dato, adresse eller hilsenfrase øverst — bare selve brevteksten.
-- Maks 350 ord.
+def _banned_violations(text: str) -> List[str]:
+    t = text.lower()
+    return [p for p in _HARD_BANNED if p.lower() in t]
 
-Hvis cover_letter_strategy er tilstede:
-- Følg den overordnede strategien beskrevet i cover_letter_strategy nøye.
+_SYSTEM_PROMPT = """Du er en norsk søknadsassistent. Du skriver motivasjonsbrev — ikke CV-oppsummeringer.
 
-Hvis narrative_positioning_angle er tilstede:
-- La denne vinkelen prege åpningsavsnittet og tonen gjennom hele brevet.
+CV-en gjør den faktamessige tunge løftingen. Brevets oppgave er å svare på tre spørsmål rekrutterer stiller seg:
+1. Hvorfor vil du ha akkurat denne jobben?
+2. Hva er det ved denne rollen og denne arbeidsgiveren som treffer deg spesifikt?
+3. Hvorfor nå — hva gjør dette til riktig tidspunkt for deg?
 
-Hvis narrative_brand_frame er tilstede:
-- Bruk denne rammen til å posisjonere kandidatens profil konsistent.
+Bruk `narrative_why_me_now`, `cover_letter_strategy` og `recruiter_hook` til å svare på disse. Evidens fra `selected_evidence` og `motivation_context` støtter argumentet — men er ikke selve argumentet.
 
-Hvis narrative_why_me_now er tilstede:
-- Sørg for at brevet svarer tydelig på dette spørsmålet, gjerne i motivasjonsavsnittet.
+Dersom `voice_guide` er inkludert, følg stilreglene der. Dersom `motivation_context` er inkludert, bruk det som faktabase — men skriv aldri inn noe som ikke er direkte relevant for denne spesifikke stillingen.
 
-Hvis differentiation_signals er tilstede:
-- Vev inn ett eller to av de sterkeste signalene naturlig i teksten — ikke som en liste.
+## Absolutte regler
 
-Hvis recruiter_hook er tilstede:
-- Bruk dette som inspirasjon til åpningssetningen eller første avsnitt.
+1. **Verdiframe — gjelder hele brevet.** Hvert punkt skal svare på spørsmålet «hva får arbeidsgiveren?», ikke «hva har jeg gjort?». Dette betyr to ting i praksis:
+   - Setninger starter ikke med «Jeg» — arbeidsgiveren er protagonisten, kandidaten er løsningen som dukker opp.
+   - Formuleringen snur fra selvbeskrivelse til levert verdi: ikke «Jeg har syv års erfaring med ePages» men «Syv år med ePages på tvers av 12 markeder gir [arbeidsgiver] en produkteier som ikke trenger onboarding på tjenestestyring».
+   «Jeg» er tillatt som grammatisk lim midt i en setning («Som produkteier hos Brownells koordinerte jeg...»), aldri som åpningsord.
 
-Hvis neutralizing_evidence er tilstede:
-- Brevet kan proaktivt adressere potensielle gap med disse bevisene — ærlig og uten unnskyldninger.
+2. **Fakta fra konteksten — aldri oppfinn.** Hvert avsnitt MÅ inneholde minst ett konkret navn (selskap, prosjekt, verktøy) fra `selected_evidence` eller `motivation_context`.
 
-Hvis artifact_plan er tilstede:
-- Brevet skal være konsistent med cv_headline og cv_summary.
-- cv_selected_bullets representerer det som allerede vises i CV-en — bekreft og utdyp, ikke bare gjenta.
-- cv_suppressed_items er erfaring som IKKE er i CV-en. Brevet kan kort adressere relevante gap
-  (f.eks. manglende sertifisering, kortere erfaring i et felt) — ærlig og uten unnskyldninger.
+3. **Evidens-avsnittet er tett.** 2–4 konkrete navn per avsnitt der evidens brukes — men dette er støtten, ikke hele brevet.
+
+4. **HARD BLOCK — disse frasene er totalforbudt.** De må ALDRI forekomme i output — selv om de finnes i job description, evidence eller motivation_context. Kopier aldri fra inputen.
+
+   **Eksakt forbudte strenger (søk og ødelegg):**
+   - «tverrfaglige team» / «tverrfaglig team» / «tverrfaglig samarbeid»
+   - «kontinuerlig forbedring»
+   - «praktisk og resultatorientert», «skape verdi», «reell verdi», «brukervennlige løsninger»
+   - «interessenter», «endringsprosesser»
+   - «engasjert», «motivert for å bidra», «brennende opptatt av», «sterk kommunikator»
+   - «offentlig sektor» (med mindre det er eksplisitt i profilen), «cross-functional»
+   - Aldri oppgi karakterer eller grades — nevn prosjektnavn og tema, ikke resultatet
+   - Enhver setning som kunne stå i hvem som helst sitt brev
+
+   **Alternativ når du trenger å uttrykke konseptet:**
+   - «tverrfaglige team» → navngi de faktiske teamene/funksjonene: «scrum-teamet hos Brownells», «Merkle og Møller Mobility Group»
+   - «kontinuerlig forbedring» → beskriv hva som ble forbedret konkret: «reduserte onboarding-tid», «utrulling av Zendesk i 12 markeder»
+
+5. **Gap nevnes maks én gang, i én setning, aldri i åpningen.** Koble gapet til noe konkret som skjedde i mellomtiden (BI, prosjekter). Ikke unnskylde.
+
+6. **3–4 avsnitt, 300–400 ord.** Ikke kortere, ikke lenger.
+
+7. **Bare brevteksten.** Ingen «Til [selskap]», ingen «Med vennlig hilsen», ingen [Navn]. Kurs er ikke arbeidserfaring. BI Executive Master-moduler med prosjektnavn er substansiell evidens.
+
+## Struktur — "Språklig bue"
+
+Brevet har en gjennomgående bue: hvert avsnitt svarer på det neste spørsmålet rekrutterer stiller seg.
+
+**Avsnitt 1 — Rollen og organisasjonsutfordringen**
+IKKE begynn med «Jeg» eller selvintroduksjon. Ramm inn hva rollen faktisk sitter i — hvilken spenning, utfordring eller veikryss denne arbeidsgiveren er i. Bruk `cover_letter_strategy` eller `recruiter_hook`. Slutt med én setning som knytter kandidatprofilen til nettopp dette skjæringspunktet.
+Spørsmålet dette svarer: «Forstår du hva jobben faktisk er?»
+
+**Avsnitt 2 — Operasjonelt bevis**
+Navngi selskaper, verktøy og prosjekter. Eksempel-tetthet:
+> «Som prosjektleder hos Merkle (Dentsu) koordinerte jeg CRM-integrerte løsninger for Møller Mobility Group (Adobe Campaign) og dynamiske kampanjer for Jaguar Land Rover. I Brownells Europe var jeg produkteier for e-handelsplattform og markedsföringsplattform på tvers av 12 land — inkludert utrulling av Zendesk i 12 markeder, fem nye nettbutikker og regulatorisk etterlevelse (GDPR, PSD2, Watchdog Elite).»
+Spørsmålet dette svarer: «Kan du faktisk gjøre jobben?»
+
+**Avsnitt 3 — Motivasjon: Hvorfor denne jobben, hvorfor nå**
+Dette er hjerteavsnittet. Bruk `narrative_why_me_now` direkte hvis tilgjengelig. Dersom `narrative_why_me_now` er tomt, bygg avsnittets kjerne fra `motivation_context` — finn det som er genuint sant og spesifikt for AKKURAT DENNE arbeidsgiveren og rollen, ikke generisk «samfunnsnytte». Koble BI-studiene (modulnavn, prosjektnavn — aldri karakterer) eksplisitt til det arbeidsgiveren etterspør: ikke bare «jeg studerer X», men «[Prosjekt X] handlet om nettopp [Y] som er det dere trenger her». Nevn gap her hvis nødvendig (én setning, koblet til BI eller annet konkret). Avslutt med initiativ-setning fra `voice_guide`-mønsteret.
+Spørsmålet dette svarer: «Hvorfor vil du ha akkurat denne jobben — og hvorfor nå?»
+
+**Avsnitt 4 (valgfritt, maks 2 setninger):** Lokal tilknytning eller personlig kontekst hvis det tilfører noe ekte.
+
+## Bruk av valgfrie felt
+
+- `narrative_why_me_now` → hjerteavsnittet — alltid inkluder hvis tilgjengelig. Dersom tomt: bruk `motivation_context` til å konstruere et genuint, stillingsspecifikt avsnitt 3
+- `cover_letter_strategy` → åpningsvinkel, følg den nøye
+- `recruiter_hook` → inspirasjon til første setning
+- `narrative_positioning_angle` → tonen gjennom hele brevet
+- `differentiation_signals` → velg 1–2 å veve inn i evidens-avsnittet
+- `neutralizing_evidence` → bruk kun hvis det faktisk nøytraliserer et reelt gap
+- `fit_gaps` i decision_brief → adresser bare det viktigste, én setning
+- `voice_guide` → stilregler og register (cool er default), åpnings-hooks og avslutninger
+- `motivation_context` → faktabase for verktøy, roller og prosjekter — bruk kun det som er relevant
 """
+
+_COT_PROMPT = """Du er en søknadsekspert. Du skal IKKE skrive et brev. Du skal gjøre en intern verdivurdering i punktform.
+
+Svar KUN med korte analytiske punkter — ikke avsnitt, ikke brevtekst.
+
+1. UTFORDRING: [én setning om arbeidsgiverens egentlige problem/veikryss]
+2. VERDIFRAME:
+   - [selskap/prosjekt A] → [hva arbeidsgiveren konkret får]
+   - [selskap/prosjekt B] → [hva arbeidsgiveren konkret får]
+   - [utdanning/modul] → [hva arbeidsgiveren konkret får]
+3. POSISJONERING: [én setning om hva denne kandidaten har som de fleste søkere mangler]
+4. ÅPNER: [én setning som åpner brevet med arbeidsgiverens situasjon — ingen «Jeg», ingen kandidatønske]
+5. HVA ARBEIDSGIVEREN FÅR (oppsummert): [én setning]
+
+Maks 150 ord totalt. Bare punkter."""
 
 _COVER_LETTER_TOOL: dict = {
     "type": "function",
@@ -72,7 +192,7 @@ _COVER_LETTER_TOOL: dict = {
 def generate_cover_letter(
     ctx: AuthoringCaseContext,
     *,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-4o",
 ) -> str:
     """Call the OpenAI API to write a Norwegian cover letter. Returns the letter text."""
     payload: dict = {
@@ -98,26 +218,85 @@ def generate_cover_letter(
         payload["recruiter_hook"] = ctx.recruiter_hook
     if ctx.neutralizing_evidence:
         payload["neutralizing_evidence"] = ctx.neutralizing_evidence
+    if ctx.voice_guide:
+        payload["voice_guide"] = ctx.voice_guide
+    if ctx.motivation_context:
+        payload["motivation_context"] = ctx.motivation_context
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    response = client.chat.completions.create(
-        model=model,
-        max_tokens=1500,
-        tools=[_COVER_LETTER_TOOL],
-        tool_choice={"type": "function", "function": {"name": "cover_letter"}},
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-    )
-    choice = response.choices[0]
-    if choice.message.tool_calls:
-        call = choice.message.tool_calls[0]
-        try:
-            args = json.loads(call.function.arguments)
-            return str(args.get("cover_letter", "")).strip()
-        except Exception:
-            pass
-    return ""
+    payload_json = json.dumps(payload, ensure_ascii=False)
+
+    # ── Pass 1: Chain-of-thought value reasoning ──────────────────────────────
+    # Ask the model to reason through "what does the employer get?" before writing.
+    # The reasoning becomes the assistant turn in the generation conversation,
+    # so the value frame is in the model's working context when it writes.
+    cot_reasoning = ""
+    try:
+        cot_response = client.chat.completions.create(
+            model=model,
+            max_tokens=500,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": _COT_PROMPT},
+                {"role": "user", "content": payload_json},
+            ],
+        )
+        cot_reasoning = (cot_response.choices[0].message.content or "").strip()
+    except Exception:
+        pass  # CoT is best-effort; fall through to direct generation
+
+    # ── Pass 2: Letter generation with CoT reasoning in context ───────────────
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": payload_json},
+    ]
+    if cot_reasoning:
+        # Inject reasoning as assistant turn → triggers "write from this" pattern
+        messages.append({"role": "assistant", "content": cot_reasoning})
+        messages.append({
+            "role": "user",
+            "content": (
+                "Skriv nå motivasjonsbrevet basert på verdivurderingen over. "
+                "Følg alle regler i systempromptet nøye."
+            ),
+        })
+
+    def _extract(response) -> str:
+        choice = response.choices[0]
+        if choice.message.tool_calls:
+            call = choice.message.tool_calls[0]
+            try:
+                args = json.loads(call.function.arguments)
+                return str(args.get("cover_letter", "")).strip()
+            except Exception:
+                pass
+        return ""
+
+    for attempt in range(3):
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=1500,
+            temperature=0.3,
+            tools=[_COVER_LETTER_TOOL],
+            tool_choice={"type": "function", "function": {"name": "cover_letter"}},
+            messages=messages,
+        )
+        letter = _extract(response)
+        violations = _banned_violations(letter)
+        if not violations:
+            return letter
+        # Retry: tell the model exactly what to fix
+        correction = (
+            f"Utkastet ditt inneholdt disse totalforbudte frasene: {violations}. "
+            "Disse frasene er forbudt selv om de finnes i evidens-dataene. "
+            "Skriv brevet helt om. Erstatt forbudte fraser med konkrete selskaps-, team- eller prosjektnavn "
+            "(f.eks. «scrum-teamet hos Brownells», «CRM-teamet hos Møller»). "
+            "Ingen av de forbudte frasene skal forekomme i det nye utkastet."
+        )
+        # Append assistant message (tool call) + correction as user turn
+        messages.append(response.choices[0].message)
+        messages.append({"role": "user", "content": correction})
+
+    return letter  # return last attempt even if still imperfect
 
 
 __all__ = ["generate_cover_letter"]
