@@ -5,6 +5,38 @@ import copy
 import re
 from typing import Any
 
+
+def _filter_li_items(html: str, keep_indices: set[int]) -> str:
+    """Return html with only the <li> elements at the given indices kept.
+
+    RR stores bullets as <li><p>text</p></li> inside the description field.
+    We rebuild the outer wrapper (everything before the first <li> and after
+    the last </li>) with only the selected bullets.
+    """
+    # Split into: prefix (everything up to first <li>), li blocks, suffix
+    li_pattern = re.compile(r"(<li\b[^>]*>.*?</li>)", re.DOTALL | re.IGNORECASE)
+    parts = li_pattern.split(html)
+    # parts alternates: [prefix, li_0, between, li_1, between, ..., suffix]
+    li_blocks = [p for i, p in enumerate(parts) if i % 2 == 1]
+    non_li_parts = [p for i, p in enumerate(parts) if i % 2 == 0]
+
+    if not li_blocks:
+        return html  # no bullets — return as-is
+
+    kept = [li_blocks[i] for i in sorted(keep_indices) if i < len(li_blocks)]
+    if not kept:
+        # All bullets removed — return just the summary paragraph (prefix before <ul>)
+        prefix = re.split(r"<ul\b", html, maxsplit=1, flags=re.IGNORECASE)[0]
+        return prefix.strip() or ""
+
+    # Rebuild: prefix + <ul> + kept bullets + </ul>
+    prefix = non_li_parts[0] if non_li_parts else ""
+    # Ensure we have a <ul> wrapper
+    has_ul = bool(re.search(r"<ul\b", prefix, re.IGNORECASE))
+    if has_ul:
+        return prefix + "".join(kept) + "</ul>"
+    return prefix + "<ul>" + "".join(kept) + "</ul>"
+
 from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
 from jobpipe.model import ReactiveResumeTailoredCVPlan, ReactiveResumeTailoredCVProjection
 
@@ -83,6 +115,14 @@ def _apply_experience_suppression(
     normalized: dict[str, Any],
     plan: ReactiveResumeTailoredCVPlan,
 ) -> None:
+    """Filter individual bullets within each work entry to only selected ones.
+
+    For each visible experience item:
+    - count how many <li> bullets it has
+    - determine which bullet indices are NOT suppressed (i.e. selected)
+    - rewrite item["description"] keeping only selected <li> elements
+    - if all bullets are suppressed, hide the entire entry
+    """
     suppressed_refs = set(plan.suppressed_items)
     sections = result.get("sections")
     if not isinstance(sections, dict):
@@ -105,13 +145,23 @@ def _apply_experience_suppression(
             continue
         highlights = matching.get("highlights") or []
         if not highlights:
-            continue
-        all_suppressed = all(
-            f"work:{company or 'unknown'}:{position or 'unknown'}:{idx}" in suppressed_refs
-            for idx in range(len(highlights))
-        )
-        if all_suppressed:
+            continue  # no bullets to filter
+
+        c = company or "unknown"
+        p = position or "unknown"
+        keep_indices: set[int] = {
+            idx for idx in range(len(highlights))
+            if f"work:{c}:{p}:{idx}" not in suppressed_refs
+        }
+
+        if not keep_indices:
             item["hidden"] = True
+            continue
+
+        # Surgically rewrite description HTML to only include selected bullets
+        description = str(item.get("description") or "")
+        if description:
+            item["description"] = _filter_li_items(description, keep_indices)
 
 
 def _find_work_entry(
