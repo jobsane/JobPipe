@@ -79,3 +79,7 @@ class AuthoringCaseContext:
     narrative_brand_frame: str | None = None
     narrative_why_me_now: str | None = None
     cover_letter_strategy: str | None = None
+
+    # Supplementary profile files — loaded at runtime when present alongside profile_pack
+    voice_guide: str | None = None        # content of cover_letter_voice.md
+    motivation_context: str | None = None  # content of motivation.md

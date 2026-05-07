@@ -2896,7 +2896,7 @@ Validation:
 
 ## Topic 33. Live Operator Flow And Real-Data Cutover
 
-Status: pending
+Status: in progress — authoring chat + cover letter generation quality done; full live run with RR still pending
 
 Scope:
 - prove that the refined JobPipe → Reactive Resume → document workflow is actually easier to use on real jobs
@@ -2965,7 +2965,7 @@ Validation:
 
 ## Topic 33.5. JobSane CrewAI Crew — Scaffold And Implementation
 
-Status: pending (prereq: Topic 33 done)
+Status: done on 2026-05-06
 
 Scope:
 - turn `C:\Users\larsv\jobsane\` (local clone of `unikill066/smart-agentic-ats-resume`) into a

@@ -71,6 +71,13 @@ pipeline_error.json
 # Axon code intelligence index
 .axon/
 
+# Repomix output files
+repomix-output.md
+repomix-output.xml
+repomix-src.xml
+repomix*.xml
+repomix*.md
+
 # MCP server config (localhost URLs, machine-specific)
 .mcp.json
 
