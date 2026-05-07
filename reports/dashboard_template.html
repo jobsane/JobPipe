@@ -588,6 +588,19 @@ tbody td {
   text-decoration: none;
   cursor: pointer;
 }
+.doc-state-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.doc-state-none      { background:#eee; color:#666; }
+.doc-state-generating{ background:#fff3cd; color:#856404; }
+.doc-state-ready     { background:#d1e7dd; color:#0a3622; }
+.doc-state-partial   { background:#fde8c9; color:#7a3e00; }
+.doc-state-error     { background:#f8d7da; color:#6d1519; }
 
 .action-btn:hover { border-color: var(--border-strong); }
 
@@ -2939,17 +2952,44 @@ function loadCoverLetterPreview(jobId) {
     .catch(() => { el.textContent = "(Could not load cover letter.)"; });
 }
 
+var _DOC_STATE_LABEL = {
+  "no-docs":   {text: "No documents",   cls: "doc-state-none"},
+  "generating":{text: "Generating…",    cls: "doc-state-generating"},
+  "ready":     {text: "Ready",          cls: "doc-state-ready"},
+  "partial":   {text: "Incomplete",     cls: "doc-state-partial"},
+  "error":     {text: "Error",          cls: "doc-state-error"},
+};
+
 function loadLastPrepared(jobId) {
   var labelEl = document.getElementById("lastPreparedLabel");
   if (!labelEl) return;
   fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/prepare-application/status"))
     .then(r => r.json())
-    .then(data => {
-      if (data && data.status === "done" && data.outputs && data.outputs.audit_path) {
-        labelEl.textContent = "Last prepared: " + (data.prepared_at || "");
-      }
-    })
+    .then(data => { _renderDocState(labelEl, data); })
     .catch(() => {});
+}
+
+function _renderDocState(el, data) {
+  if (!data) return;
+  var docState = data.document_state || (data.status === "error" ? "error" : "no-docs");
+  var info = _DOC_STATE_LABEL[docState] || {text: docState, cls: "doc-state-none"};
+  var parts = [];
+  // State badge
+  parts.push('<span class="doc-state-badge ' + info.cls + '">' + info.text + '</span>');
+  // Timestamp
+  if (data.prepared_at) {
+    var ts = data.prepared_at.replace("T", " ").replace("Z", " UTC").slice(0, 19) + " UTC";
+    parts.push('<span style="color:#888;font-size:0.82em">Last prepared: ' + esc(ts) + '</span>');
+  }
+  // Error detail
+  if (data.status === "error" && data.message) {
+    parts.push('<span style="color:#c0392b;font-size:0.82em">' + esc(data.message.slice(0, 120)) + '</span>');
+  }
+  // Next action
+  if (data.next_action) {
+    parts.push('<span style="color:#555;font-size:0.82em;font-style:italic">' + esc(data.next_action) + '</span>');
+  }
+  el.innerHTML = parts.join('<br>');
 }
 
 function loadAuthoringSession(jobId) {

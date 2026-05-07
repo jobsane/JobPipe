@@ -129,6 +129,57 @@ def _utc_now_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+_DOC_STATE_NEXT_ACTIONS: dict[str, str] = {
+    "no-docs": "Click Prepare Application to generate a tailored CV and cover letter.",
+    "generating": "Generation in progress — check back in a moment.",
+    "ready": "Review cover letter. Open Reactive Resume to export PDF, then mark as shortlisted.",
+    "partial": "One or more output files are missing — re-run Prepare Application.",
+    "error": "Generation failed — check the error message and retry.",
+}
+
+
+def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
+    """Return an enriched status dict with document_state and next_action.
+
+    Reads the exports directory to determine current document state.
+    Called when no in-memory record exists (server restart or first load).
+    """
+    exports = PATHS.data_root / "exports"
+    audit_path = exports / f"tailoring_audit_{job_id}.json"
+    cv_path = exports / f"reactive_resume_patched_{job_id}.json"
+    letter_path = exports / f"cover_letter_{job_id}.md"
+
+    result = dict(base)
+    if not audit_path.exists():
+        result["document_state"] = "no-docs"
+        result["next_action"] = _DOC_STATE_NEXT_ACTIONS["no-docs"]
+        return result
+
+    # Audit exists — read prepared_at from it
+    try:
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+        result["prepared_at"] = audit.get("compiled_at", "")
+        result["outputs"] = {
+            "cv_path": str(cv_path),
+            "letter_path": str(letter_path),
+            "audit_path": str(audit_path),
+        }
+    except Exception:
+        audit = {}
+
+    cv_ok = cv_path.exists()
+    letter_ok = letter_path.exists()
+    if cv_ok and letter_ok:
+        doc_state = "ready"
+    else:
+        doc_state = "partial"
+
+    result["status"] = "done"
+    result["document_state"] = doc_state
+    result["next_action"] = _DOC_STATE_NEXT_ACTIONS[doc_state]
+    return result
+
+
 def _clean_profile_draft(draft: Dict[str, Any]) -> Dict[str, str]:
     clean: Dict[str, str] = {}
     for key, value in draft.items():
@@ -1878,6 +1929,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _get_prepare_application_status(self, job_id: str):
         with _prep_lock:
             status = dict(_prep_status.get(job_id, {"status": "idle", "message": "", "outputs": {}}))
+        # When idle (no in-memory record), check filesystem for existing artefacts
+        # so the state survives server restarts.
+        if status.get("status") == "idle":
+            status = _compute_doc_state_from_disk(job_id, status)
         self._send_json(status)
 
     def _post_prepare_application(self, job_id: str, body: dict):
@@ -2186,14 +2241,36 @@ def _run_prepare_application(job_id: str, model: str) -> None:
             "letter_path": str(exports / f"cover_letter_{job_id}.md"),
             "audit_path": str(exports / f"tailoring_audit_{job_id}.json"),
         }
+        cv_ok = Path(outputs["cv_path"]).exists()
+        letter_ok = Path(outputs["letter_path"]).exists()
+        doc_state = "ready" if (cv_ok and letter_ok) else "partial"
         with _prep_lock:
-            _prep_status[job_id] = {"status": "done", "message": "Generation complete.", "outputs": outputs, "prepared_at": _utc_now_z()}
+            _prep_status[job_id] = {
+                "status": "done",
+                "message": "Generation complete.",
+                "outputs": outputs,
+                "prepared_at": _utc_now_z(),
+                "document_state": doc_state,
+                "next_action": _DOC_STATE_NEXT_ACTIONS[doc_state],
+            }
     except SystemExit as e:
         with _prep_lock:
-            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
+            _prep_status[job_id] = {
+                "status": "error",
+                "message": str(e),
+                "outputs": {},
+                "document_state": "error",
+                "next_action": _DOC_STATE_NEXT_ACTIONS["error"],
+            }
     except Exception as e:
         with _prep_lock:
-            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
+            _prep_status[job_id] = {
+                "status": "error",
+                "message": str(e),
+                "outputs": {},
+                "document_state": "error",
+                "next_action": _DOC_STATE_NEXT_ACTIONS["error"],
+            }
 
 
 def _stage_output_path(job_dir: Path, cfg, stage_name: str) -> Path:
