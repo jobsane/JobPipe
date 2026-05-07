@@ -83,3 +83,6 @@ class AuthoringCaseContext:
     # Supplementary profile files — loaded at runtime when present alongside profile_pack
     voice_guide: str | None = None        # content of cover_letter_voice.md
     motivation_context: str | None = None  # content of motivation.md
+
+    # Language routing — "no" | "en" | "" (auto-detect via language_routing.detect_job_language)
+    language_override: str = ""

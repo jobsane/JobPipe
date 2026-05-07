@@ -1,4 +1,4 @@
-"""Deterministic validation rules for AuthoringCaseContext.
+"""Deterministic validation rules for authoring context and generated documents.
 
 All rules are pure, offline, and deterministic: no LLM calls, no network
 access, no randomness, no time dependence.
@@ -8,6 +8,11 @@ Findings are encoded as prefixed strings in DocumentValidationResult.failures
 not modified.
 
 Scoring: score = clamp(1.0 - (errors * 0.2 + warnings * 0.05), 0.0, 1.0)
+
+Two entry points:
+- validate_authoring_context(ctx) — validates the input context before generation
+- validate_document_content(draft, language, selected_evidence, doc_type) — validates
+  the generated document text after generation
 """
 
 from __future__ import annotations
@@ -163,6 +168,207 @@ def validate_authoring_context(ctx: AuthoringCaseContext) -> DocumentValidationR
 
     for rule in _RULES:
         failures, warnings = rule(ctx)
+        all_failures.extend(failures)
+        all_warnings.extend(warnings)
+
+    return DocumentValidationResult(
+        passed=all_failures == [],
+        score=_compute_score(len(all_failures), len(all_warnings)),
+        failures=all_failures,
+        warnings=all_warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Document content validation (post-generation)
+# ---------------------------------------------------------------------------
+
+# Word count limits per document type.
+_DOC_WORD_LIMITS: dict[str, tuple[int, int]] = {
+    "cover_letter": (150, 600),
+    "cv": (100, 1200),
+}
+_DEFAULT_WORD_LIMITS: tuple[int, int] = (50, 1200)
+
+# English banned phrases — mirror of the Norwegian list in cover_letter_generator.py
+# but for English job ads. Patterns that signal generic, non-evidence-based writing.
+_HARD_BANNED_EN: list[str] = [
+    # Generic team/process clichés
+    "cross-functional teams",
+    "continuous improvement",
+    "stakeholders",
+    "change management",
+    "user-friendly solutions",
+    "create value",
+    "deliver value",
+    "results-oriented",
+    "motivated to contribute",
+    "strong technical skills",
+    "strong communication skills",
+    "strong understanding",
+    "public sector",
+    # Weak gap apology patterns
+    "although i don't have direct experience",
+    "although i lack direct experience",
+    "quickly adapt to",
+    "build the necessary knowledge",
+    "acquire the necessary knowledge",
+    # Generic closing phrases
+    "looking forward to contributing",
+    "looking forward to the opportunity",
+    "looking forward to bringing my skills",
+    "apply my skills",
+    "bring my expertise",
+    "solid foundation for contributing",
+    # Generic goal-support variants
+    "support your goals",
+    "contribute to the development of",
+    "an exciting opportunity for me",
+    "combine my experience with",
+]
+
+# Norwegian banned phrases — same canonical list as in cover_letter_generator.py.
+# Duplicated here so document validation is self-contained (no import from generator).
+_HARD_BANNED_NO: list[str] = [
+    "tverrfaglige team",
+    "tverrfaglig team",
+    "tverrfaglig samarbeid",
+    "kontinuerlig forbedring",
+    "interessenter",
+    "endringsprosesser",
+    "brukervennlige løsninger",
+    "skape verdi",
+    "reell verdi",
+    "praktisk og resultatorientert",
+    "motivert for å bidra",
+    "spesielt motivert",
+    "cross-functional",
+    "sterk teknisk",
+    "sterk forståelse",
+    "sterk kommunikator",
+    "sterke resultater",
+    "offentlig sektor",
+    "rask tilpasningsevne",
+    "vilje til å bygge",
+    "tverrfaglig koordinering",
+    "brukeren i sentrum",
+    "brukerfokus",
+    "helhetlige løsninger",
+    "selv om jeg ikke har eksplisitt erfaring",
+    "selv om jeg ikke har direkte erfaring",
+    "selv om jeg mangler direkte erfaring",
+    "selv om jeg mangler eksplisitt erfaring",
+    "rask til å tilpasse meg",
+    "raskt å tilpasse meg",
+    "raskt tilpasse meg",
+    "bygge nødvendig domenekunnskap",
+    "bygge nødvendig kunnskap",
+    "tilegne meg ny domenekunnskap",
+    "tilegne meg kunnskap om",
+    "robuste og fleksible løsninger",
+    "ser frem til å bidra med min kompetanse",
+    "ser frem til muligheten til å",
+    "ser frem til å kunne",
+    "ser frem til å bringe",
+    "ser frem til å anvende",
+    "ser frem til å kombinere",
+    "anvende min kompetanse",
+    "bringe min kompetanse",
+    "solid fundament for å bidra",
+    "støtte deres mål om",
+    "i deres mål om",
+    "bidra til utviklingen av",
+    "bidra til deres",
+    "i en ny kontekst",
+    "en spennende mulighet for meg",
+    "kombinere min praktiske erfaring med",
+    "kombinere min erfaring med den strategiske",
+]
+
+_BANNED_BY_LANGUAGE: dict[str, list[str]] = {
+    "no": _HARD_BANNED_NO,
+    "en": _HARD_BANNED_EN,
+}
+
+
+def _doc_word_count_rule(
+    draft: str, doc_type: str
+) -> tuple[list[str], list[str]]:
+    lo, hi = _DOC_WORD_LIMITS.get(doc_type, _DEFAULT_WORD_LIMITS)
+    count = len(draft.split())
+    if count < lo:
+        return (
+            [f"[word_count_too_short] {doc_type} has {count} words (minimum {lo})"],
+            [],
+        )
+    if count > hi:
+        return (
+            [f"[word_count_too_long] {doc_type} has {count} words (maximum {hi})"],
+            [],
+        )
+    return [], []
+
+
+def _doc_banned_phrases_rule(
+    draft: str, language: str
+) -> tuple[list[str], list[str]]:
+    banned = _BANNED_BY_LANGUAGE.get(language, _HARD_BANNED_NO)
+    t = draft.lower()
+    hits = [p for p in banned if p.lower() in t]
+    failures = [
+        f"[banned_phrase] document contains forbidden phrase: {p!r}" for p in hits
+    ]
+    return failures, []
+
+
+def _doc_evidence_reference_rule(
+    draft: str, selected_evidence: list[dict]
+) -> tuple[list[str], list[str]]:
+    """Warn when no evidence unit name or id appears in the draft."""
+    if not selected_evidence:
+        return [], []
+
+    evidence_terms: list[str] = []
+    for unit in selected_evidence:
+        for key in ("employer", "company", "project", "evidence_unit_id", "title", "role"):
+            val = unit.get(key)
+            if isinstance(val, str) and len(val) > 3:
+                evidence_terms.append(val.lower())
+
+    draft_lower = draft.lower()
+    if not any(term in draft_lower for term in evidence_terms):
+        return [], [
+            "[no_evidence_reference] document does not appear to reference any "
+            "evidence unit (employer, project, or role name)"
+        ]
+    return [], []
+
+
+def validate_document_content(
+    draft: str,
+    language: str,
+    selected_evidence: list[dict],
+    doc_type: str = "cover_letter",
+) -> DocumentValidationResult:
+    """Validate generated document text after generation.
+
+    Args:
+        draft: The generated document text.
+        language: 'no' or 'en' — determines which banned-phrase list is used.
+        selected_evidence: Evidence units from the authoring context (may be empty).
+        doc_type: 'cover_letter' or 'cv' — determines word count limits.
+
+    Returns a DocumentValidationResult with the same schema as validate_authoring_context.
+    """
+    all_failures: list[str] = []
+    all_warnings: list[str] = []
+
+    for rule_fn, args in [
+        (_doc_word_count_rule, (draft, doc_type)),
+        (_doc_banned_phrases_rule, (draft, language)),
+        (_doc_evidence_reference_rule, (draft, selected_evidence)),
+    ]:
+        failures, warnings = rule_fn(*args)
         all_failures.extend(failures)
         all_warnings.extend(warnings)
 

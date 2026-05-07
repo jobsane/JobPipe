@@ -1,4 +1,8 @@
-"""Generate a Norwegian cover letter using the OpenAI API."""
+"""Generate a cover letter using the OpenAI API.
+
+Language is determined by the job ad: Norwegian by default, English for English
+job ads. Override via ctx.language_override ('no' | 'en').
+"""
 from __future__ import annotations
 
 import json
@@ -8,6 +12,7 @@ from typing import List
 import openai
 
 from jobpipe.authoring.case_context import AuthoringCaseContext
+from jobpipe.authoring.language_routing import get_document_language
 
 # Phrases that must never appear in the output — even when they come from input evidence.
 # detect-and-retry uses this list.
@@ -75,9 +80,42 @@ _HARD_BANNED: List[str] = [
 ]
 
 
-def _banned_violations(text: str) -> List[str]:
+_HARD_BANNED_EN: List[str] = [
+    "cross-functional teams",
+    "continuous improvement",
+    "stakeholders",
+    "change management",
+    "user-friendly solutions",
+    "create value",
+    "deliver value",
+    "results-oriented",
+    "motivated to contribute",
+    "strong technical skills",
+    "strong communication skills",
+    "strong understanding",
+    "public sector",
+    "although i don't have direct experience",
+    "although i lack direct experience",
+    "quickly adapt to",
+    "build the necessary knowledge",
+    "acquire the necessary knowledge",
+    "looking forward to contributing",
+    "looking forward to the opportunity",
+    "looking forward to bringing my skills",
+    "apply my skills",
+    "bring my expertise",
+    "solid foundation for contributing",
+    "support your goals",
+    "contribute to the development of",
+    "an exciting opportunity for me",
+    "combine my experience with",
+]
+
+
+def _banned_violations(text: str, language: str = "no") -> List[str]:
+    banned = _HARD_BANNED_EN if language == "en" else _HARD_BANNED
     t = text.lower()
-    return [p for p in _HARD_BANNED if p.lower() in t]
+    return [p for p in banned if p.lower() in t]
 
 _SYSTEM_PROMPT = """Du er en norsk søknadsassistent. Du skriver motivasjonsbrev — ikke CV-oppsummeringer.
 
@@ -155,6 +193,62 @@ Spørsmålet dette svarer: «Hvorfor vil du ha akkurat denne jobben — og hvorf
 - `motivation_context` → faktabase for verktøy, roller og prosjekter — bruk kun det som er relevant
 """
 
+_SYSTEM_PROMPT_EN = """You are an English-language job application assistant. You write cover letters — not CV summaries.
+
+The CV handles the factual heavy lifting. The letter answers three questions the recruiter asks:
+1. Why do you want this specific job?
+2. What is it about this role and this employer that fits you specifically?
+3. Why now — what makes this the right moment for you?
+
+Use `narrative_why_me_now`, `cover_letter_strategy`, and `recruiter_hook` to answer these. Evidence from `selected_evidence` and `motivation_context` supports the argument — it is not the argument itself.
+
+## Absolute rules
+
+1. **Value frame — applies to the whole letter.** Every point answers "what does the employer get?", not "what have I done?".
+   - Sentences do not start with "I" — the employer is the protagonist, the candidate is the solution that emerges.
+   - Flip from self-description to delivered value: not "I have seven years of experience with ePages" but "Seven years with ePages across 12 markets gives [employer] a product owner who needs no onboarding on service governance".
+   "I" is allowed as grammatical glue mid-sentence, never as an opener.
+
+2. **Facts from context — never invent.** Every paragraph MUST contain at least one concrete name (company, project, tool) from `selected_evidence` or `motivation_context`.
+
+3. **Evidence paragraph is dense.** 2–4 concrete names per paragraph where evidence is used.
+
+4. **HARD BLOCK — these phrases are totally forbidden.** They MUST NEVER appear in output.
+
+5. **Gap mentioned at most once, in one sentence, never in the opening.** Link the gap to something concrete that happened in the meantime. Do not apologise.
+
+6. **3–4 paragraphs, 300–450 words.** Not shorter, not longer.
+
+7. **Letter text only.** No "To [company]", no "Yours sincerely", no [Name].
+
+## Structure
+
+**Paragraph 1 — The role and the organisational challenge**
+Do NOT start with "I" or self-introduction. Frame what the role actually sits inside. Use `cover_letter_strategy` or `recruiter_hook`.
+
+**Paragraph 2 — Operational evidence**
+Name companies, tools, and projects. High example density.
+
+**Paragraph 3 — Motivation: why this job, why now**
+This is the core paragraph. Use `narrative_why_me_now` directly if available.
+
+**Paragraph 4 (optional, max 2 sentences):** Local connection or personal context if it adds something genuine.
+"""
+
+_COT_PROMPT_EN = """You are an application expert. Do NOT write a letter. Do an internal value assessment in bullet points.
+
+Reply ONLY with short analytical bullets — no paragraphs, no letter text.
+
+1. CHALLENGE: [one sentence about the employer's real problem]
+2. VALUE FRAME:
+   - [company/project A] → [what the employer concretely gets]
+   - [company/project B] → [what the employer concretely gets]
+3. POSITIONING: [one sentence on what this candidate has that most applicants lack]
+4. OPENER: [one sentence opening the letter with the employer's situation — no "I", no candidate wish]
+5. WHAT THE EMPLOYER GETS (summary): [one sentence]
+
+Max 150 words total. Bullets only."""
+
 _COT_PROMPT = """Du er en søknadsekspert. Du skal IKKE skrive et brev. Du skal gjøre en intern verdivurdering i punktform.
 
 Svar KUN med korte analytiske punkter — ikke avsnitt, ikke brevtekst.
@@ -194,7 +288,14 @@ def generate_cover_letter(
     *,
     model: str = "gpt-4o",
 ) -> str:
-    """Call the OpenAI API to write a Norwegian cover letter. Returns the letter text."""
+    """Call the OpenAI API to write a cover letter. Language is auto-detected from the job ad.
+
+    Returns the letter text. Language can be forced via ctx.language_override ('no' | 'en').
+    """
+    language = get_document_language(ctx)
+    system_prompt = _SYSTEM_PROMPT_EN if language == "en" else _SYSTEM_PROMPT
+    cot_prompt = _COT_PROMPT_EN if language == "en" else _COT_PROMPT
+
     payload: dict = {
         "job_id": ctx.job_id,
         "job_summary": ctx.job_summary,
@@ -236,7 +337,7 @@ def generate_cover_letter(
             max_tokens=500,
             temperature=0.3,
             messages=[
-                {"role": "system", "content": _COT_PROMPT},
+                {"role": "system", "content": cot_prompt},
                 {"role": "user", "content": payload_json},
             ],
         )
@@ -246,7 +347,7 @@ def generate_cover_letter(
 
     # ── Pass 2: Letter generation with CoT reasoning in context ───────────────
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": payload_json},
     ]
     if cot_reasoning:
@@ -281,17 +382,26 @@ def generate_cover_letter(
             messages=messages,
         )
         letter = _extract(response)
-        violations = _banned_violations(letter)
+        violations = _banned_violations(letter, language)
         if not violations:
             return letter
         # Retry: tell the model exactly what to fix
-        correction = (
-            f"Utkastet ditt inneholdt disse totalforbudte frasene: {violations}. "
-            "Disse frasene er forbudt selv om de finnes i evidens-dataene. "
-            "Skriv brevet helt om. Erstatt forbudte fraser med konkrete selskaps-, team- eller prosjektnavn "
-            "(f.eks. «scrum-teamet hos Brownells», «CRM-teamet hos Møller»). "
-            "Ingen av de forbudte frasene skal forekomme i det nye utkastet."
-        )
+        if language == "en":
+            correction = (
+                f"Your draft contained these forbidden phrases: {violations}. "
+                "These phrases are banned even if they appear in the evidence data. "
+                "Rewrite the letter completely. Replace forbidden phrases with concrete "
+                "company, team, or project names. "
+                "None of the forbidden phrases may appear in the new draft."
+            )
+        else:
+            correction = (
+                f"Utkastet ditt inneholdt disse totalforbudte frasene: {violations}. "
+                "Disse frasene er forbudt selv om de finnes i evidens-dataene. "
+                "Skriv brevet helt om. Erstatt forbudte fraser med konkrete selskaps-, team- eller prosjektnavn "
+                "(f.eks. «scrum-teamet hos Brownells», «CRM-teamet hos Møller»). "
+                "Ingen av de forbudte frasene skal forekomme i det nye utkastet."
+            )
         # Append assistant message (tool call) + correction as user turn
         messages.append(response.choices[0].message)
         messages.append({"role": "user", "content": correction})
