@@ -156,15 +156,10 @@ def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
         result["next_action"] = _DOC_STATE_NEXT_ACTIONS["no-docs"]
         return result
 
-    # Audit exists — read prepared_at from it
+    # Audit exists — read prepared_at and validation from it
     try:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
         result["prepared_at"] = audit.get("compiled_at", "")
-        result["outputs"] = {
-            "cv_path": str(cv_path),
-            "letter_path": str(letter_path),
-            "audit_path": str(audit_path),
-        }
         if "validation" in audit:
             result["validation"] = audit["validation"]
     except Exception:
@@ -172,6 +167,22 @@ def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
 
     cv_ok = cv_path.exists()
     letter_ok = letter_path.exists()
+
+    # Only include paths for files that actually exist; list missing ones separately
+    outputs: dict = {"audit_path": str(audit_path)}
+    missing: list[str] = []
+    if cv_ok:
+        outputs["cv_path"] = str(cv_path)
+    else:
+        missing.append("reactive_resume_patched")
+    if letter_ok:
+        outputs["letter_path"] = str(letter_path)
+    else:
+        missing.append("cover_letter")
+    result["outputs"] = outputs
+    if missing:
+        result["missing_files"] = missing
+
     if cv_ok and letter_ok:
         doc_state = "ready"
     else:
@@ -181,6 +192,33 @@ def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
     result["document_state"] = doc_state
     result["next_action"] = _DOC_STATE_NEXT_ACTIONS[doc_state]
     return result
+
+
+def _doc_state_for_job(job_id: str) -> str:
+    """Return the document_state string for a single job from disk or memory."""
+    with _prep_lock:
+        mem = dict(_prep_status.get(job_id, {}))
+    if mem.get("status") in ("running",):
+        return "generating"
+    if mem.get("document_state"):
+        return mem["document_state"]
+    exports = PATHS.data_root / "exports"
+    audit_path = exports / f"tailoring_audit_{job_id}.json"
+    if not audit_path.exists():
+        return "no-docs"
+    cv_ok = (exports / f"reactive_resume_patched_{job_id}.json").exists()
+    letter_ok = (exports / f"cover_letter_{job_id}.md").exists()
+    return "ready" if (cv_ok and letter_ok) else "partial"
+
+
+def _enrich_payload_with_doc_states(payload: dict) -> None:
+    """Add doc_state to each APPLY/APPLY_STRONGLY job in-place (fast disk scan)."""
+    actionable_decisions = {"APPLY", "APPLY_STRONGLY"}
+    for job in payload.get("jobs", []):
+        if job.get("final_decision") in actionable_decisions:
+            job_id = str(job.get("job_id") or "")
+            if job_id:
+                job["doc_state"] = _doc_state_for_job(job_id)
 
 
 def _clean_profile_draft(draft: Dict[str, Any]) -> Dict[str, str]:
@@ -1446,6 +1484,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 profile_draft_path=PROFILE_DRAFT_PATH,
                 settings_path=SETTINGS_STATE_PATH,
             )
+            _enrich_payload_with_doc_states(payload)
             self._send_json(payload)
         except Exception as e:
             self._send_json({"error": str(e)}, 500)

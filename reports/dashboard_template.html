@@ -3008,13 +3008,18 @@ function _renderDocState(el, data) {
       parts.push('<span style="color:#856404;font-size:0.80em;margin-left:8px">⚠ ' + esc(w) + '</span>');
     });
   }
-  // Document download link (cover letter)
+  // Document download link (cover letter) — only when the file actually exists
   var jobId = window._currentJobId;
-  if (jobId && (docState === "ready" || docState === "final" || docState === "partial") && data.outputs && data.outputs.letter_path) {
+  if (jobId && data.outputs && data.outputs.letter_path) {
     var fname = "cover_letter_" + jobId + ".md";
     var dlUrl = apiUrl("/download/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(fname));
     parts.push('<a href="' + dlUrl + '" download="' + esc(fname) + '" style="font-size:0.82em;color:#1a6dbf;text-decoration:underline">⬇ Download cover letter (.md)</a>');
   }
+  // Missing file warnings
+  var missing = data.missing_files || [];
+  missing.forEach(function(mf) {
+    parts.push('<span style="color:#856404;font-size:0.80em">⚠ Missing: ' + esc(mf) + ' — re-run Prepare Application</span>');
+  });
   // Next action
   if (data.next_action) {
     parts.push('<span style="color:#555;font-size:0.82em;font-style:italic">' + esc(data.next_action) + '</span>');
@@ -3793,6 +3798,32 @@ function renderAutomations() {
   scheduleAutomationPoll();
 }
 
+function _docStateChip(j) {
+  // For non-APPLY jobs fall back to legacy pack_ready chip
+  var isActionable = j.final_decision === "APPLY" || j.final_decision === "APPLY_STRONGLY";
+  if (!isActionable) {
+    return '<span class="mini-chip">' + esc(j.pack_ready ? "Pack ready" : "Pack pending") + '</span>';
+  }
+  var ds = j.doc_state || (j.pack_ready ? "ready" : "no-docs");
+  var label = {
+    "no-docs":   "No docs",
+    "generating":"Generating…",
+    "ready":     "Docs ready",
+    "partial":   "Docs partial",
+    "error":     "Gen error",
+    "final":     "Finalised",
+  }[ds] || ds;
+  var style = {
+    "no-docs":   "background:#eee;color:#666",
+    "generating":"background:#fff3cd;color:#856404",
+    "ready":     "background:#d1e7dd;color:#0a3622",
+    "partial":   "background:#fde8c9;color:#7a3e00",
+    "error":     "background:#f8d7da;color:#6d1519",
+    "final":     "background:#d1e7dd;color:#0a3622",
+  }[ds] || "";
+  return '<span class="mini-chip" style="' + style + '">' + esc(label) + '</span>';
+}
+
 function renderWorkspaceRows(rows, emptyText) {
   if (!rows.length) return '<div class="empty-block">' + esc(emptyText) + "</div>";
   return rows.map(j => {
@@ -3811,7 +3842,7 @@ function renderWorkspaceRows(rows, emptyText) {
         '<div class="chip-cloud">' +
           '<span class="mini-chip">' + esc(sourceLabel) + '</span>' +
           '<span class="mini-chip">' + esc(status.text) + '</span>' +
-          '<span class="mini-chip">' + esc(j.pack_ready ? "Pack ready" : "Pack pending") + '</span>' +
+          _docStateChip(j) +
           '<span class="mini-chip">' + esc(String(docs)) + ' docs</span>' +
         '</div>' +
         '<div class="item-detail">' + esc(j.recommendation_reason || j.triage_explanation || "No recommendation narrative is stored for this role yet.") + '</div>' +
