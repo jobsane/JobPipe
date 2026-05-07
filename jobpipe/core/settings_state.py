@@ -45,6 +45,7 @@ def _blank_state() -> Dict[str, Any]:
             "reactive_resume": {
                 "enabled": False,
                 "base_url": "http://localhost:3000",
+                "token": "",
             },
             "document_workspace": {
                 "enabled": False,
@@ -83,6 +84,7 @@ def _sanitize_state(raw: Dict[str, Any]) -> Dict[str, Any]:
         "reactive_resume": {
             "enabled": _clean_bool(reactive_resume.get("enabled")),
             "base_url": _clean_text(reactive_resume.get("base_url")) or "http://localhost:3000",
+            "token": _clean_text(reactive_resume.get("token")),
         },
         "document_workspace": {
             "enabled": _clean_bool(document_workspace.get("enabled")),
@@ -242,6 +244,7 @@ def build_settings_payload(
     reactive_state = state["integrations"]["reactive_resume"]
     reactive_enabled = bool(reactive_state["enabled"])
     reactive_base_url = reactive_state["base_url"]
+    reactive_token = reactive_state.get("token", "")
     reactive_ready = bool(reactive_enabled and reactive_base_url)
     reactive_partial = bool(reactive_enabled and reactive_base_url)
 
@@ -276,6 +279,7 @@ def build_settings_payload(
             "reactive_resume": {
                 "enabled": reactive_enabled,
                 "base_url": reactive_base_url,
+                "token": reactive_token,
                 "status": _status_label(enabled=reactive_enabled, ready=reactive_ready, partial=reactive_partial),
             },
             "document_workspace": {
