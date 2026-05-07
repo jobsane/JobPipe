@@ -1,0 +1,72 @@
+name: "Bug"
+description: "Something is broken or behaves incorrectly. Include reproduction steps."
+title: "Fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Include a minimal reproduction. If the bug involves private data (job IDs, API keys,
+        personal details) do not paste it here — describe the shape of the data instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What is broken?
+      description: "One sentence. What does it do vs. what it should do?"
+      placeholder: "validate_document_content() returns passed=True for a draft containing 'interessenter'."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps
+      description: "Minimal steps to reproduce. Include the exact command."
+      placeholder: |
+        1. Call validate_document_content("Vi jobber med alle interessenter.", "no", [], "cover_letter")
+        2. Check result.passed
+        3. Actual: True — Expected: False
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Suspected Location
+      description: "Which file(s) most likely contain the fault?"
+      placeholder: "jobpipe/authoring/validation.py — _doc_banned_phrases_rule()"
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Definition of Fixed
+      description: "What test or command proves the bug is gone?"
+      placeholder: |
+        - pytest tests/test_document_validation_golden.py passes
+        - compile_check.py passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: "What should NOT change as part of this fix?"
+      placeholder: "Do not change the scoring formula. Do not add new banned phrases."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Critical — blocks core workflow"
+        - "High — incorrect result in normal use"
+        - "Medium — edge case or degraded behaviour"
+        - "Low — cosmetic or minor"
+    validations:
+      required: true

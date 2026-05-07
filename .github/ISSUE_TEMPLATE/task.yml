@@ -1,0 +1,95 @@
+name: "Task"
+description: "A concrete, bounded implementation unit. Use for agent-ready or human-led work."
+title: "Task: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Fill in all required fields before assigning to an agent or starting work.**
+        Label with `agent-ready` if the scope is bounded and testable without product judgment.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: Task
+      description: "What needs to be built or changed? One sentence."
+      placeholder: "Implement X in module Y so that Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope — files and boundaries
+      description: "Which files or packages does this touch? What is explicitly out of scope?"
+      placeholder: |
+        In scope: jobpipe/authoring/validation.py, tests/test_validation.py
+        Out of scope: CLI commands, dashboard template, DB schema
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "Bullet list. Each criterion must be verifiable without running the whole app."
+      placeholder: |
+        - validate_document_content() returns failures for banned phrases
+        - test coverage added for Norwegian and English lists
+        - compile_check.py passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation Command
+      description: "Exact command(s) to run to verify the task is complete."
+      placeholder: |
+        .venv\Scripts\python.exe compile_check.py
+        .venv\Scripts\python.exe -m pytest tests/test_validation.py -v
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: "What this task deliberately does not do."
+      placeholder: "Does not change the scoring formula. Does not add new banned phrases."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: delegation
+    attributes:
+      label: Delegation
+      options:
+        - "Agent-ready — bounded, testable, no product ambiguity"
+        - "Human-led — needs product judgment or sensitive changes"
+        - "Needs decision — blocked on a product/architecture choice"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options:
+        - "XS — under 2 hours"
+        - "S — half a day"
+        - "M — 1–2 days"
+        - "L — 3–5 days"
+        - "XL — over a week (consider splitting)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation_impact
+    attributes:
+      label: Documentation Impact
+      description: "Which canonical docs need updating? Write 'None' if no doc changes are required."
+      placeholder: "AGENT_STATUS.md — update authoring workstream section. None otherwise."
+    validations:
+      required: true

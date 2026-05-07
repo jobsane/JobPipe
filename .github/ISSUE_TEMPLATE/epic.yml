@@ -1,0 +1,91 @@
+name: "Epic"
+description: "A large outcome spanning multiple milestones. Decomposes into Stories and Features."
+title: "Epic: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An epic defines a major product capability or infrastructure investment. It is
+        never implemented directly — it is broken into Stories and Features first.
+        Update the child list as decomposition progresses.
+
+  - type: textarea
+    id: problem_statement
+    attributes:
+      label: Problem Statement
+      description: "What user or system problem does this epic solve?"
+      placeholder: "Candidates have no structured way to generate, review, and track tailored application documents per job."
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired Outcome
+      description: "What does success look like for the user and the system?"
+      placeholder: "Candidate can generate a tailored CV and cover letter for any APPLY job, see validation status, and mark the package as final — all within the dashboard."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "Which subsystems, modules, or external systems does this epic touch?"
+      placeholder: |
+        In scope: authoring pipeline, dashboard shell, exports directory
+        Out of scope: Supabase backend, mobile, multi-user
+    validations:
+      required: true
+
+  - type: textarea
+    id: child_stories
+    attributes:
+      label: Child Stories / Features
+      description: "List the child issues this epic decomposes into (link once created)."
+      placeholder: |
+        - [ ] Feature: language routing and quality spec
+        - [ ] Story: document state in dashboard
+        - [ ] Story: refine and save-final controls
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Epic-Level Acceptance Criteria
+      description: "High-level checks that confirm the full epic is done."
+      placeholder: |
+        - All R1 milestone issues closed
+        - Live operator run completed end-to-end
+        - Authoring quality spec covers both CV and cover letter
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: "What is explicitly deferred to a later epic or removed from scope."
+      placeholder: "Does not cover auto-apply. Does not add recruiter portal integration."
+    validations:
+      required: true
+
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Target Milestones
+      description: "Which GitHub milestones does this epic span?"
+      placeholder: "R1 (CV and Cover Letter Loop), R2 (Closed Application Loop)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: documentation_impact
+    attributes:
+      label: Documentation Impact
+      description: "Which canonical docs need substantial updates when this closes?"
+      placeholder: "PRODUCT_VISION.md, docs/architecture-plan.md, DASHBOARD_SPEC.md, docs/authoring-quality-spec.md"
+    validations:
+      required: true

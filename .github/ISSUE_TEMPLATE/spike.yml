@@ -1,0 +1,71 @@
+name: "Spike"
+description: "Time-boxed research or discovery with a bounded, documented output."
+title: "Spike: "
+labels: ["spike"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A spike answers a specific question. It ends with a written recommendation,
+        not with shipped code. If you find yourself implementing during a spike, stop
+        and open a Task or Feature issue instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question to Answer
+      description: "The specific question this spike must answer. One sentence."
+      placeholder: "Can Supabase Realtime broadcast job-selection events to the dashboard without polling?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Research Scope
+      description: "What sources, codebases, or experiments are in scope? What is out of scope?"
+      placeholder: |
+        In scope: Supabase Realtime docs, the existing dashboard server routes
+        Out of scope: actual implementation, DB migration, auth changes
+    validations:
+      required: true
+
+  - type: textarea
+    id: timebox
+    attributes:
+      label: Time-box
+      description: "Maximum time to spend. Anything beyond this is a separate issue."
+      placeholder: "4 hours"
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected Output
+      description: "What must exist at the end? A doc, a decision record, a prototype?"
+      placeholder: |
+        A written recommendation in docs/ or a comment on this issue covering:
+        - feasibility verdict (yes / conditional / no)
+        - key constraint or risk
+        - recommended next step
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: "What the spike must not produce."
+      placeholder: "No production code. No DB migrations. No new dependencies added."
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation_impact
+    attributes:
+      label: Documentation Impact
+      description: "Where should the recommendation be written?"
+      placeholder: "Recommendation written as a comment on this issue. If adopted, update docs/architecture-plan.md."
+    validations:
+      required: true

@@ -1,0 +1,90 @@
+name: "Sprint Closure"
+description: "Checkpoint record for a completed sprint or topic batch. Captures validation, doc state, and handoff."
+title: "Sprint closure: "
+labels: ["sprint-closure"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill this in when closing a sprint or completing a significant topic batch.
+        This record is the canonical handoff note — it is what the next agent or
+        human session reads to understand what shipped and what is still open.
+
+  - type: textarea
+    id: shipped
+    attributes:
+      label: What Shipped
+      description: "List the issues or PRs closed in this sprint."
+      placeholder: |
+        - #132 Quality spec and validator contract
+        - #131 Language routing and document validation
+        - #81 Regenerate / refine / save-final dashboard controls
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation_run
+    attributes:
+      label: Validation Run
+      description: "What validation commands were run and what was the result?"
+      placeholder: |
+        compile_check.py — 127 files OK
+        pytest tests/ -q — 33 passed
+        .\go.ps1 -DryRun — 2 jobs processed, ledger updated, dashboard opened
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: docs_updated
+    attributes:
+      label: Documentation Updated
+      options:
+        - label: "AGENT_STATUS.md — workstream section updated"
+        - label: "AUDIT.md — new issues or resolved items recorded"
+        - label: "Subsystem docs updated (DASHBOARD_SPEC.md, authoring-quality-spec.md, etc.)"
+        - label: "No doc changes needed for this sprint"
+
+  - type: textarea
+    id: open_items
+    attributes:
+      label: Open Items / Known Gaps
+      description: "Anything that was started but not finished, or discovered but deferred."
+      placeholder: |
+        - Topic 33 live operator run still requires manual RR integration
+        - Issue #88 event contract deferred to next sprint
+    validations:
+      required: false
+
+  - type: textarea
+    id: audit_notes
+    attributes:
+      label: Audit Notes
+      description: "Any new tech debt, data quality issues, or regressions discovered this sprint."
+      placeholder: |
+        - runtime/paths.py repo-fallback bug discovered and fixed (#77)
+        - No regressions observed in compile check or existing tests
+    validations:
+      required: false
+
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Handoff State
+      description: "What does the next agent or session need to know to continue safely?"
+      placeholder: |
+        Branch: claude/nervous-pike-bd0f2f
+        All changes are pushed and compile-checked.
+        Next task: Issue #88 (event contract doc) or Issue #54 (board health check).
+        No pending migrations or broken state.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: sync_readiness
+    attributes:
+      label: Sync Readiness
+      options:
+        - label: "Branch is pushed and compile-checked"
+        - label: "PR is open or changes are ready for review"
+        - label: "No uncommitted work that would confuse the next session"
+        - label: "AGENT_STATUS.md reflects current state"

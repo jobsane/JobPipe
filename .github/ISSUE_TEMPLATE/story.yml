@@ -1,0 +1,83 @@
+name: "Story / Feature"
+description: "A user-facing capability deliverable as one or more tasks. Decomposes into Task issues."
+title: "Feature: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A story describes a user outcome. It is broken down into Task issues before
+        any implementation starts. Acceptance criteria here apply at the story level —
+        each child Task will have its own criteria.
+
+  - type: textarea
+    id: user_story
+    attributes:
+      label: User Story
+      description: "As [role], I can [capability] so that [value]."
+      placeholder: "As the candidate, I can see the latest document state for a job without remembering which file was generated last."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "Which subsystems or files are involved? What is explicitly out of scope?"
+      placeholder: |
+        In scope: dashboard payload enrichment, doc state chip in job list
+        Out of scope: Supabase realtime, auth changes, mobile layout
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "Observable outcomes that confirm the story is done, from the user's perspective."
+      placeholder: |
+        - Reopening the dashboard shows doc state for APPLY jobs without clicking each one
+        - Missing files show a warning, not a broken download link
+        - The path used is JOBPIPE_DATA_DIR, not a repo-local path
+    validations:
+      required: true
+
+  - type: textarea
+    id: child_tasks
+    attributes:
+      label: Child Tasks
+      description: "List the Task issues this story decomposes into (link once created)."
+      placeholder: |
+        - [ ] #76 Enrich /api/data payload with doc state
+        - [ ] #80 Render doc state chip in job list card
+    validations:
+      required: false
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: "What this story does not cover."
+      placeholder: "Does not push doc state to Supabase. Does not add new generation models."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size Estimate
+      options:
+        - "S — 1–2 tasks"
+        - "M — 3–5 tasks"
+        - "L — 6+ tasks (consider splitting)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation_impact
+    attributes:
+      label: Documentation Impact
+      description: "Which canonical docs change when this ships?"
+      placeholder: "AGENT_STATUS.md — update document-state workstream. DASHBOARD_SPEC.md if payload schema changes."
+    validations:
+      required: true
