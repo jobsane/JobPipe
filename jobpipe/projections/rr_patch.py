@@ -67,6 +67,7 @@ def build_rr_patch(
     _apply_summary(result, projection, plan)
     _apply_section_visibility(result, plan)
     _apply_experience_suppression(result, normalized, plan)
+    _apply_skills_ordering(result, plan)
 
     return result
 
@@ -176,3 +177,40 @@ def _find_work_entry(
         ):
             return entry
     return None
+
+
+def _apply_skills_ordering(result: dict[str, Any], plan: ReactiveResumeTailoredCVPlan) -> None:
+    """Reorder visible skills items by relevance to job claim_targets.
+
+    Hidden items are preserved at the end in their original order.
+    Scoring: count how many words from claim_targets appear in the skill name or keywords.
+    """
+    sections = result.get("sections")
+    if not isinstance(sections, dict):
+        return
+    skills_section = sections.get("skills")
+    if not isinstance(skills_section, dict):
+        return
+    items = skills_section.get("items") or []
+    if not items:
+        return
+
+    claim_words: set[str] = set()
+    for claim in plan.claim_targets:
+        for word in re.split(r"[\s,./;:()\-]+", claim.lower()):
+            if len(word) > 3:
+                claim_words.add(word)
+
+    def _score(item: dict[str, Any]) -> int:
+        if not isinstance(item, dict):
+            return 0
+        text = " ".join(filter(None, [
+            str(item.get("name") or ""),
+            " ".join(item.get("keywords") or []),
+        ])).lower()
+        return sum(1 for w in claim_words if w in text)
+
+    visible = [it for it in items if isinstance(it, dict) and not it.get("hidden")]
+    hidden = [it for it in items if not isinstance(it, dict) or it.get("hidden")]
+    visible.sort(key=_score, reverse=True)
+    skills_section["items"] = visible + hidden

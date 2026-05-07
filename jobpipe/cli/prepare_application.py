@@ -25,6 +25,25 @@ from jobpipe.runtime.data_sources import resolve_profile_paths, runtime_profile_
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 
+def _load_project_references(profile_pack_path: str) -> str:
+    """Load project_references/*.md files from the same directory as profile_pack.
+
+    Returns a concatenated markdown string, or empty string if the directory doesn't exist.
+    """
+    refs_dir = Path(profile_pack_path).parent / "project_references"
+    if not refs_dir.is_dir():
+        return ""
+    parts: list[str] = []
+    for md_file in sorted(refs_dir.glob("*.md")):
+        try:
+            content = md_file.read_text(encoding="utf-8").strip()
+            if content:
+                parts.append(f"---\n# {md_file.stem}\n\n{content}")
+        except Exception:
+            pass
+    return "\n\n".join(parts)
+
+
 def _load_row_from_ledger(job_id: str, ledger_path: Path) -> Optional[Dict[str, Any]]:
     """Load a job row directly from ledger.sqlite as fallback when jobpipe.sqlite doesn't have it."""
     if not ledger_path or not ledger_path.exists():
@@ -211,6 +230,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     artifact_plan = _build_artifact_plan(plan, projection)
     voice_guide = _load_supplement(str(runtime.profile_pack_path), "cover_letter_voice.md")
     motivation_context = _load_supplement(str(runtime.profile_pack_path), "motivation.md")
+    # Load project reference docs (project_references/*.md) as supplementary evidence context
+    project_refs_text = _load_project_references(str(runtime.profile_pack_path))
+    if project_refs_text:
+        motivation_context = (motivation_context or "") + "\n\n" + project_refs_text
     if voice_guide:
         print(f"  Voice guide: loaded ({len(voice_guide)} chars)")
     if motivation_context:
