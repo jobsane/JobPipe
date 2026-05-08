@@ -108,3 +108,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Add `drain_queue --merge-only` as the supported safety path for connector merge smoke tests.
 - Why: Manual helper calls prove the seam but are not repeatable operator behavior. A first-class CLI path lets agents validate NAV connector staging into a temp delta without source pulling, ledger sync, or `run_feed`.
 - Consequence: Future smoke tests should use `--merge-only` with explicit temp `--nav-connector`, `--leads-connector`, and `--delta` paths. Normal `drain_queue` behavior remains unchanged when `--merge-only` is not passed.
+
+- Date: 2026-05-08
+- Task: S5-HUB-02
+- Decision: Implement the first ApplicationWorkspaceHub cases adapter over JobPipe run artifacts, not the old dashboard, SQLite, or Supabase.
+- Why: The validated Supabase NAV path now produces normal JobPipe artifacts. Reading those artifacts gives JobDesk a real read model source while preserving Supabase as intake-only and keeping transport/storage migration behind the hub.
+- Consequence: `jobpipe.workspace.artifact_cases` is the first concrete cases capability. It must emit path-safe contracts, tolerate partial artifacts, skip failed pipeline jobs, and remain free of dashboard, Supabase, SQLite, API, and MCP dependencies.

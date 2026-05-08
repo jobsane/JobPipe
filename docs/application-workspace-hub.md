@@ -188,6 +188,21 @@ Contract modules:
 - `jobpipe.workspace.hub` owns the hub and capability protocols.
 - Implementations and adapters must live outside the contract layer.
 
+First adapter:
+
+- `jobpipe.workspace.artifact_cases.ArtifactCasesCapability` implements
+  `cases.list()` and `cases.get(case_id)` over one JobPipe run artifact
+  directory.
+- It reads `index.jsonl` plus per-job JSON artifacts such as `00_input.json`,
+  `01_triage.json`, `bridge_triage_features.json`,
+  `bridge_triage_decision_v3.json`, and `10_moderator.json`.
+- It skips jobs with `pipeline_error.json`, tolerates missing optional
+  artifacts, and returns partial read models where later-stage outputs are not
+  present.
+- It exposes safe `ArtifactRef` IDs derived from artifact names only. It must
+  not expose raw local filesystem paths, old dashboard payloads, Supabase rows,
+  SQLite handles, or transport-specific objects.
+
 ## Second Implementation Slice
 
 Second slice: **documents and value draft contract**.
