@@ -154,6 +154,21 @@ def main(argv: Optional[list[str]] = None) -> None:
         default="",
         help=f"Delta JSONL path (default: {_DEFAULT_PATHS.jobs_delta_path})",
     )
+    ap.add_argument(
+        "--nav-connector",
+        default="",
+        help=f"NAV connector JSONL path (default: {_DEFAULT_PATHS.nav_connector_path})",
+    )
+    ap.add_argument(
+        "--leads-connector",
+        default="",
+        help=f"Lead connector JSONL path (default: {_DEFAULT_PATHS.leads_connector_path})",
+    )
+    ap.add_argument(
+        "--merge-only",
+        action="store_true",
+        help="Merge connector staging into --delta and exit before pulling, ledger sync, or run-feed.",
+    )
 
     ap.add_argument("--batch-size", type=int, default=50, help="How many jobs to process per batch (default: 50)")
     ap.add_argument("--max-total-jobs", type=int, default=0, help="Stop after processing this many jobs in total (0 = no cap).")
@@ -186,7 +201,6 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     args = ap.parse_args(argv)
     paths = get_jobpipe_paths(args.data_root or None)
-    bootstrap_private_data(paths, include_artifacts=True)
 
     env_file = Path(args.env_file) if args.env_file else paths.env_file
     profile_path = Path(args.profile) if args.profile else paths.profile_pack_path
@@ -195,9 +209,26 @@ def main(argv: Optional[list[str]] = None) -> None:
     reports_dir = Path(args.reports) if args.reports else paths.reports_dir
     state_path = Path(args.state) if args.state else paths.jobs_state_path
     delta_path = Path(args.delta) if args.delta else paths.jobs_delta_path
-    nav_connector_path = paths.nav_connector_path
-    leads_connector_path = paths.leads_connector_path
+    nav_connector_path = Path(args.nav_connector) if args.nav_connector else paths.nav_connector_path
+    leads_connector_path = Path(args.leads_connector) if args.leads_connector else paths.leads_connector_path
 
+    if args.merge_only:
+        merge_summary = rebuild_intake_queue(
+            nav_path=nav_connector_path,
+            leads_path=leads_connector_path,
+            out_path=delta_path,
+        )
+        print(
+            "[drain_queue] merge-only: "
+            f"nav={merge_summary['nav_records']} "
+            f"leads={merge_summary['lead_records']} "
+            f"merged={merge_summary['merged_records']} "
+            f"out={delta_path}"
+        )
+        print("[drain_queue] merge-only: run_feed skipped.")
+        return
+
+    bootstrap_private_data(paths, include_artifacts=True)
     load_env_file(env_file)
 
     csv_url = (args.csv_url or os.environ.get("JOBPIPE_CSV_URL", "")).strip()

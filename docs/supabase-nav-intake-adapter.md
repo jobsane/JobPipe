@@ -222,11 +222,14 @@ Recommended direct smoke:
 ```powershell
 python -m jobpipe.cli.pull_supabase_jobs --data-root <JOBPIPE_DATA_ROOT> --limit 5 --dry-run --no-only-changed
 python -m jobpipe.cli.pull_supabase_jobs --data-root <JOBPIPE_DATA_ROOT> --limit 5 --out <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\nav_smoke.jsonl --state <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\nav_smoke_state.json --no-only-changed
+python -m jobpipe.cli.drain_queue --merge-only --nav-connector <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\nav_smoke.jsonl --leads-connector <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\empty_leads.jsonl --delta <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\jobs_delta_smoke.jsonl
 ```
 
 The first command validates read/map behavior without writing connector output
 or state. The second writes only to the ignored runtime temp directory so the
 actual CLI write path can be tested without touching the normal connector queue.
+The third validates the connector merge seam through the supported
+`drain_queue` CLI and exits before source pulling, ledger sync, or `run_feed`.
 
 Recommended operator path:
 
@@ -240,6 +243,11 @@ python -m jobpipe.cli.drain_queue --data-root <JOBPIPE_DATA_ROOT> --batch-size 5
 `drain_queue` should remain the normal seam because it handles connector
 refresh, merge, dedupe, batching, ledger filtering, run-feed execution, and
 sync-back into local JobPipe state.
+
+For smoke tests that must stop before the pipeline, use
+`python -m jobpipe.cli.drain_queue --merge-only` with explicit temp
+`--nav-connector`, `--leads-connector`, and `--delta` paths under
+`<JOBPIPE_DATA_ROOT>\.jobpipe_tmp\`.
 
 ## Output Storage Decision
 

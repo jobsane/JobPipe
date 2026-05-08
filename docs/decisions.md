@@ -102,3 +102,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Keep `public.jobs` as the default Supabase NAV intake relation and allow `public.jobs_active` only through explicit configuration until hosted view exposure is validated.
 - Why: `public.jobs` with explicit `status=eq.ACTIVE` and `expires_at > now` is the existing proven route. Supabase REST can expose views, but view access still depends on schema exposure, grants, and RLS behavior, so switching defaults before live validation would add avoidable intake risk.
 - Consequence: `pull_supabase_jobs.py` accepts only `jobs` and `jobs_active`, skips incomplete rows before they reach AI processing, preserves NAV-only fields as connector metadata, and leaves output in current JobPipe SQLite/artifact storage with Supabase write-back deferred.
+
+- Date: 2026-05-08
+- Task: S5-SB-05
+- Decision: Add `drain_queue --merge-only` as the supported safety path for connector merge smoke tests.
+- Why: Manual helper calls prove the seam but are not repeatable operator behavior. A first-class CLI path lets agents validate NAV connector staging into a temp delta without source pulling, ledger sync, or `run_feed`.
+- Consequence: Future smoke tests should use `--merge-only` with explicit temp `--nav-connector`, `--leads-connector`, and `--delta` paths. Normal `drain_queue` behavior remains unchanged when `--merge-only` is not passed.
