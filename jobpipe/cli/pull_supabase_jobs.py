@@ -28,6 +28,9 @@ from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 _DEFAULT_PATHS = get_jobpipe_paths()
 
 _PAGE_SIZE = 1000  # Supabase default max
+_DEFAULT_SUPABASE_RELATION = "jobs"
+_ALLOWED_SUPABASE_RELATIONS = {"jobs", "jobs_active"}
+_SENSITIVE_RAW_KEYS = ("secret", "token", "apikey", "api_key", "authorization", "service_role", "bearer")
 
 
 def _utc_now() -> datetime:
@@ -47,6 +50,80 @@ def _parse_iso(s: str) -> datetime:
         return d.astimezone(timezone.utc)
     except Exception:
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _clean(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _relation_name(value: str) -> str:
+    relation = _clean(value) or _DEFAULT_SUPABASE_RELATION
+    if relation not in _ALLOWED_SUPABASE_RELATIONS:
+        allowed = ", ".join(sorted(_ALLOWED_SUPABASE_RELATIONS))
+        raise ValueError(f"Unsupported Supabase jobs relation '{relation}'. Allowed: {allowed}")
+    return relation
+
+
+def _json_array_text(value: object) -> str:
+    if value in ("", None):
+        return ""
+    if isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return json.dumps([text], ensure_ascii=False)
+        if isinstance(parsed, list):
+            return json.dumps(parsed, ensure_ascii=False)
+        return json.dumps([parsed], ensure_ascii=False)
+    return json.dumps([value], ensure_ascii=False)
+
+
+def _date_prefix(value: object) -> str:
+    text = _clean(value)
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    return text
+
+
+def _sanitize_raw_json(value: object) -> object:
+    if isinstance(value, dict):
+        clean: dict[str, object] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(marker in key_text.lower() for marker in _SENSITIVE_RAW_KEYS):
+                continue
+            clean[key_text] = _sanitize_raw_json(item)
+        return clean
+    if isinstance(value, list):
+        return [_sanitize_raw_json(item) for item in value]
+    return value
+
+
+def _latest_iso(existing: str, candidate: object) -> str:
+    candidate_text = _clean(candidate)
+    if not candidate_text:
+        return existing
+    if _parse_iso(candidate_text) > _parse_iso(existing):
+        return candidate_text
+    return existing
+
+
+def _missing_required_fields(job: dict) -> list[str]:
+    missing: list[str] = []
+    if not _clean(job.get("uuid")):
+        missing.append("id")
+    if not (_clean(job.get("normalized_title")) or _clean(job.get("title"))):
+        missing.append("title_or_role")
+    if not _clean(job.get("employer_name")):
+        missing.append("employer")
+    if not _clean(job.get("description_html")):
+        missing.append("description")
+    return missing
 
 
 def _fetch_json(url: str, headers: dict, retries: int = 4) -> list | dict:
@@ -74,10 +151,13 @@ def fetch_all_active_jobs(
     *,
     since: str = "",
     only_changed: bool = True,
+    relation: str = _DEFAULT_SUPABASE_RELATION,
+    include_raw_json: bool = False,
 ) -> list[dict]:
     """Fetch all ACTIVE, non-expired jobs from Supabase, paginated."""
     base = supabase_url.rstrip("/")
     now_str = _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    relation = _relation_name(relation)
 
     headers = {
         "apikey": supabase_key,
@@ -88,9 +168,10 @@ def fetch_all_active_jobs(
 
     # Build filter params (values must be URL-encoded — timestamps contain + signs)
     filters = [
-        "status=eq.ACTIVE",
         f"expires_at=gt.{quote(now_str, safe='')}",
     ]
+    if relation == "jobs":
+        filters.insert(0, "status=eq.ACTIVE")
     if only_changed and since:
         filters.append(f"updated_at=gt.{quote(since, safe='')}")
 
@@ -101,6 +182,8 @@ def fetch_all_active_jobs(
         "sector,occupation_level1,occupation_level2,"
         "extent,engagement_type,position_count,updated_at,status"
     )
+    if include_raw_json:
+        select_cols += ",raw_json"
 
     all_rows: list[dict] = []
     offset = 0
@@ -112,7 +195,7 @@ def fetch_all_active_jobs(
             f"limit={_PAGE_SIZE}",
             f"offset={offset}",
         ])
-        url = f"{base}/rest/v1/jobs?{params}"
+        url = f"{base}/rest/v1/{quote(relation, safe='')}?{params}"
         batch = _fetch_json(url, headers)
         if not isinstance(batch, list):
             break
@@ -126,38 +209,44 @@ def fetch_all_active_jobs(
 
 def _map_row(row: dict) -> dict:
     """Map a Supabase jobs row to the canonical JobPipe intake field names."""
-    job_id = str(row.get("id") or "").strip()
-    counties = row.get("counties") or []
+    job_id = _clean(row.get("id"))
+    application_due = _clean(row.get("application_due")) or _date_prefix(row.get("expires_at"))
 
-    return {
+    job = {
         "uuid": job_id,
         "job_id": job_id,
         # title: display headline
-        "title": str(row.get("title") or "").strip(),
+        "title": _clean(row.get("title")),
         # normalized_title: canonical role name — the key improvement over CSV
-        "normalized_title": str(row.get("role") or "").strip(),
-        "employer_name": str(row.get("employer") or "").strip(),
-        "description_html": str(row.get("description") or "").strip(),
-        "applicationUrl": str(row.get("application_url") or "").strip(),
-        "applicationDue": str(row.get("application_due") or "").strip(),
+        "normalized_title": _clean(row.get("role")),
+        "employer_name": _clean(row.get("employer")),
+        "description_html": _clean(row.get("description")),
+        "applicationUrl": _clean(row.get("application_url")),
+        "applicationDue": application_due,
         # location fields
-        "work_city": str(row.get("municipality") or row.get("location") or "").strip(),
-        "work_county": str(row.get("county") or "").strip(),
-        "work_postalCode": str(row.get("postal_code") or "").strip(),
-        "workLocations_json": json.dumps(counties, ensure_ascii=False) if counties else "",
+        "work_city": _clean(row.get("municipality") or row.get("location")),
+        "work_county": _clean(row.get("county")),
+        "work_postalCode": _clean(row.get("postal_code")),
+        "workLocations_json": _json_array_text(row.get("counties")),
         # taxonomy
-        "sector": str(row.get("sector") or "").strip(),
-        "occ_level1": str(row.get("occupation_level1") or "").strip(),
-        "occ_level2": str(row.get("occupation_level2") or "").strip(),
+        "sector": _clean(row.get("sector")),
+        "occ_level1": _clean(row.get("occupation_level1")),
+        "occ_level2": _clean(row.get("occupation_level2")),
         # structured fields (bonus — additive, not in current canonical but carried through)
-        "extent": str(row.get("extent") or "").strip(),
-        "engagement_type": str(row.get("engagement_type") or "").strip(),
-        "position_count": str(row.get("position_count") or "").strip(),
+        "extent": _clean(row.get("extent")),
+        "engagement_type": _clean(row.get("engagement_type")),
+        "position_count": _clean(row.get("position_count")),
         # dates
-        "ad_updated": str(row.get("updated_at") or row.get("published_at") or "").strip(),
+        "published_at": _clean(row.get("published_at")),
+        "updated_at": _clean(row.get("updated_at")),
+        "expires_at": _clean(row.get("expires_at")),
+        "ad_updated": _clean(row.get("updated_at") or row.get("published_at")),
         "sourceurl": f"https://arbeidsplassen.nav.no/stillinger/stilling/{job_id}",
-        "status": str(row.get("status") or "ACTIVE").strip(),
+        "status": _clean(row.get("status")) or "ACTIVE",
     }
+    if "raw_json" in row:
+        job["source_raw_json"] = _sanitize_raw_json(row.get("raw_json"))
+    return job
 
 
 def main() -> None:
@@ -167,6 +256,8 @@ def main() -> None:
     ap.add_argument("--data-root", default="", help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})")
     ap.add_argument("--out", default="", help=f"Output JSONL path (default: {_DEFAULT_PATHS.nav_connector_path})")
     ap.add_argument("--state", default="", help=f"State path for incremental tracking (default: {_DEFAULT_PATHS.jobs_state_path})")
+    ap.add_argument("--relation", default="", help="Supabase REST relation to read: jobs or jobs_active (default: jobs; env JOBPIPE_SUPABASE_RELATION)")
+    ap.add_argument("--include-raw-json", action="store_true", help="Include sanitized raw_json in local connector metadata when selected from Supabase")
     ap.add_argument("--only-changed", action="store_true", default=True, help="Fetch only jobs updated since last run (default: on)")
     ap.add_argument("--no-only-changed", dest="only_changed", action="store_false", help="Fetch all active jobs regardless of updated_at")
     ap.add_argument("--retries", type=int, default=4)
@@ -181,6 +272,7 @@ def main() -> None:
 
     supabase_url = (args.supabase_url or os.environ.get("JOBPIPE_SUPABASE_URL", "")).strip()
     supabase_key = (args.supabase_key or os.environ.get("JOBPIPE_SUPABASE_KEY", "")).strip()
+    relation = _relation_name(args.relation or os.environ.get("JOBPIPE_SUPABASE_RELATION", ""))
     if not supabase_url or not supabase_key:
         raise SystemExit("Provide --supabase-url/--supabase-key or set JOBPIPE_SUPABASE_URL/JOBPIPE_SUPABASE_KEY")
 
@@ -197,16 +289,29 @@ def main() -> None:
 
     since = prev.get("last_updated_at", "") if args.only_changed else ""
 
-    print(f"Fetching active jobs from Supabase (since={since or 'all'})...")
-    rows = fetch_all_active_jobs(supabase_url, supabase_key, since=since, only_changed=args.only_changed)
+    print(f"Fetching active jobs from Supabase relation={relation} (since={since or 'all'})...")
+    rows = fetch_all_active_jobs(
+        supabase_url,
+        supabase_key,
+        since=since,
+        only_changed=args.only_changed,
+        relation=relation,
+        include_raw_json=args.include_raw_json,
+    )
     print(f"Fetched {len(rows)} rows from Supabase.")
 
     out_lines: list[str] = []
     latest_updated_at = since
+    skipped_rows = 0
+    skipped_missing: dict[str, int] = {}
 
     for row in rows:
         job = _map_row(row)
-        if not job["uuid"]:
+        missing = _missing_required_fields(job)
+        if missing:
+            skipped_rows += 1
+            for field in missing:
+                skipped_missing[field] = skipped_missing.get(field, 0) + 1
             continue
 
         connector_job = prepare_connector_record(
@@ -219,9 +324,7 @@ def main() -> None:
         out_lines.append(json.dumps(connector_job, ensure_ascii=False))
 
         # Track latest updated_at for next incremental run
-        row_updated = str(row.get("updated_at") or "").strip()
-        if row_updated and row_updated > (latest_updated_at or ""):
-            latest_updated_at = row_updated
+        latest_updated_at = _latest_iso(latest_updated_at, row.get("updated_at"))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -238,6 +341,9 @@ def main() -> None:
     state_path.write_text(json.dumps(new_state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"Wrote {len(out_lines)} records to {out_path}")
+    if skipped_missing:
+        summary = ", ".join(f"{key}={value}" for key, value in sorted(skipped_missing.items()))
+        print(f"Skipped {skipped_rows} incomplete row(s): {summary}")
     print(f"State updated: last_updated_at={new_state['last_updated_at']}")
 
 

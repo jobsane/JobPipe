@@ -78,9 +78,12 @@ Google Sheet/CSV intake path.
 
 Expected hosted Supabase source: `public.jobs`.
 
-Useful view: `public.jobs_active`, which selects active rows only. The current
-JobPipe connector queries `public.jobs` directly with `status=eq.ACTIVE` and
-`expires_at > now`.
+Useful view: `public.jobs_active`, which selects active rows only. The hardened
+JobPipe connector defaults to `public.jobs` with explicit `status=eq.ACTIVE`
+and `expires_at > now` filters because that is the current proven route. It can
+read `public.jobs_active` explicitly through `--relation jobs_active` or
+`JOBPIPE_SUPABASE_RELATION=jobs_active` once the hosted view exposure/grants are
+validated.
 
 Columns expected by the current JobPipe connector:
 
@@ -111,7 +114,9 @@ Columns expected by the current JobPipe connector:
 
 The JobData migrations also keep `raw_json` in `public.jobs`. That is useful
 for provenance and future field extraction, but the JobPipe connector should
-not emit raw private payloads to JobDesk.
+not emit raw private payloads to JobDesk. The puller does not select `raw_json`
+by default. If `--include-raw-json` is used, obvious secret-bearing keys are
+removed before the raw source payload is written to local connector metadata.
 
 ## Canonical Mapping
 
@@ -154,6 +159,8 @@ Minimum required row fields before a record enters the normal JobPipe run:
 
 Rows missing title/role, employer, and description should be counted and
 reported by the connector rather than silently becoming high-cost AI inputs.
+The hardened puller skips rows missing source id, title/role, employer, or
+description and prints a missing-field summary.
 
 ## NAV-Only Metadata Preservation
 
@@ -185,8 +192,8 @@ the right preservation path for NAV-only fields.
 
 Source identity:
 
-- Source name should be `nav` or `nav_supabase`; prefer `nav` while the data is
-  still semantically the NAV broad feed.
+- Source name remains `nav` while the data is still semantically the NAV broad
+  feed.
 - Source job key is Supabase `jobs.id`.
 - Connector name remains `nav_feed`.
 - Connector source remains `nav`.
@@ -222,6 +229,7 @@ Recommended operator path:
 ```powershell
 $env:JOBPIPE_SUPABASE_URL = "<hosted Supabase URL>"
 $env:JOBPIPE_SUPABASE_KEY = "<service/backend key>"
+$env:JOBPIPE_SUPABASE_RELATION = "jobs"  # optional; allowed: jobs, jobs_active
 python -m jobpipe.cli.drain_queue --data-root <JOBPIPE_DATA_ROOT> --batch-size 50
 ```
 
@@ -244,30 +252,28 @@ JobPipe storage seam. It must not be coupled to NAV intake.
 ## Blockers Before Implementation
 
 - Confirm the live hosted Supabase schema matches JobData `main`; this audit
-  did not query the live database.
-- Decide whether the connector should read `public.jobs` with explicit filters
-  or `public.jobs_active`. The current code uses `public.jobs` with filters.
-- Add tests for `pull_supabase_jobs._map_row(...)` and query/select-column
-  expectations.
-- Decide whether source name should stay `nav` everywhere or become
-  `nav_supabase` only at source-record level.
-- Decide how to count/report rows with insufficient required fields.
+  and hardening slice did not query live data.
+- Validate whether `public.jobs_active` is exposed and granted correctly before
+  making it the default route.
+- Decide whether a later connector should emit structured `SourceEvent`
+  envelopes in addition to connector JSONL.
 
 ## Exact Next Implementation Task
 
-S5-SB-02 — Harden Supabase NAV Intake Puller
+S5-SB-03 — Hosted Supabase NAV Intake Smoke
 
-Goal: make the existing `pull_supabase_jobs.py` adapter production-safe without
-changing downstream JobPipe or JobDesk behavior.
+Goal: run a tiny read-only hosted Supabase smoke through the hardened
+`pull_supabase_jobs.py` adapter without changing downstream JobPipe or JobDesk
+behavior.
 
 Scope:
 
 - keep Supabase as intake source only;
-- add focused tests for `_map_row(...)`;
-- preserve NAV-only fields in connector payload/source metadata;
-- optionally switch read source to `jobs_active` if validated against hosted
-  Supabase;
-- add a dry-run/limit/report mode if absent;
+- use the hardened puller against hosted Supabase with a tiny read-only smoke
+  and non-secret logging;
+- decide whether `jobs_active` can become the default after live validation;
+- consider adding a dry-run/limit/report mode if operational smoke shows it is
+  still needed;
 - do not write to Supabase;
 - do not implement JobDesk read model;
 - do not add ApplicationWorkspaceHub storage adapter;

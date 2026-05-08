@@ -96,3 +96,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Treat hosted JobData Supabase as a NAV intake source only, feeding the existing JobPipe connector staging seam through `pull_supabase_jobs.py` and `drain_queue.py`.
 - Why: Supabase already contains NAV-ingested rows, but JobDesk's case read model is owned by JobDeskIntegrationGateway/ApplicationWorkspaceHub. The smallest safe integration is to map Supabase NAV rows into existing JobPipe intake records, then let the normal JobPipe run, catalog, SQLite, and artifact path own downstream outputs.
 - Consequence: Supabase NAV intake must not become a direct JobDesk dependency, ApplicationWorkspaceHub storage adapter, old-dashboard dependency, or write-back path. Future work should harden the existing puller and tests before adding any Supabase output/status adapter.
+
+- Date: 2026-05-08
+- Task: S5-SB-02
+- Decision: Keep `public.jobs` as the default Supabase NAV intake relation and allow `public.jobs_active` only through explicit configuration until hosted view exposure is validated.
+- Why: `public.jobs` with explicit `status=eq.ACTIVE` and `expires_at > now` is the existing proven route. Supabase REST can expose views, but view access still depends on schema exposure, grants, and RLS behavior, so switching defaults before live validation would add avoidable intake risk.
+- Consequence: `pull_supabase_jobs.py` accepts only `jobs` and `jobs_active`, skips incomplete rows before they reach AI processing, preserves NAV-only fields as connector metadata, and leaves output in current JobPipe SQLite/artifact storage with Supabase write-back deferred.
