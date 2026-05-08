@@ -84,3 +84,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Name the backend-side common connection point `ApplicationWorkspaceHub` and make it the owner of JobDesk-facing backend capability contracts, projections, command boundaries, adapter routing, and provenance-safe payloads.
 - Why: JobDesk needs a stable backend contract that can connect JobPipe, JobSane, JobData, Reactive Resume, future API/MCP wrappers, SQLite/artifacts, and later Supabase without depending on the legacy dashboard or exposing storage internals.
 - Consequence: New JobDesk integration work must target ApplicationWorkspaceHub capabilities first. The old dashboard may be referenced for behavior but must not become the dependency for JobDesk pathways.
+
+- Date: 2026-05-08
+- Task: S5-HUB-01
+- Decision: Place the initial hub contract skeleton in `jobpipe.workspace`, with storage-agnostic value objects in `jobpipe.workspace.contracts` and capability protocols in `jobpipe.workspace.hub`.
+- Why: The contracts need a neutral package that is not tied to the old dashboard, CLI server, storage adapter, API transport, or any single companion project.
+- Consequence: Future storage adapters, API/MCP wrappers, and JobDesk-facing projections must depend on `jobpipe.workspace` contracts instead of importing dashboard-era payloads.

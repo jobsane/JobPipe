@@ -182,6 +182,12 @@ if existing projection-store/boundary objects do not expose enough source data.
 That read helper must be read-only, narrow, and owned by the hub pathway rather
 than by the old dashboard.
 
+Contract modules:
+
+- `jobpipe.workspace.contracts` owns storage-agnostic read model value objects.
+- `jobpipe.workspace.hub` owns the hub and capability protocols.
+- Implementations and adapters must live outside the contract layer.
+
 ## Second Implementation Slice
 
 Second slice: **documents and value draft contract**.
@@ -277,4 +283,3 @@ Future agents must follow these rules:
 - Use small read-only fixtures for tests.
 - Keep generated context bundles ignored and unstaged.
 - Record every durable architecture decision in `docs/decisions.md`.
-
