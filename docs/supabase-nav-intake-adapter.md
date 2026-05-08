@@ -220,9 +220,13 @@ Upsert behavior:
 Recommended direct smoke:
 
 ```powershell
-python -m jobpipe.cli.pull_supabase_jobs --data-root <JOBPIPE_DATA_ROOT> --out <JOBPIPE_DATA_ROOT>\reports\nav_connector.jsonl --state <JOBPIPE_DATA_ROOT>\jobs_state.json --only-changed
-python -m jobpipe.cli.drain_queue --data-root <JOBPIPE_DATA_ROOT> --batch-size 10 --max-total-jobs 10
+python -m jobpipe.cli.pull_supabase_jobs --data-root <JOBPIPE_DATA_ROOT> --limit 5 --dry-run --no-only-changed
+python -m jobpipe.cli.pull_supabase_jobs --data-root <JOBPIPE_DATA_ROOT> --limit 5 --out <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\nav_smoke.jsonl --state <JOBPIPE_DATA_ROOT>\.jobpipe_tmp\nav_smoke_state.json --no-only-changed
 ```
+
+The first command validates read/map behavior without writing connector output
+or state. The second writes only to the ignored runtime temp directory so the
+actual CLI write path can be tested without touching the normal connector queue.
 
 Recommended operator path:
 
@@ -260,7 +264,7 @@ JobPipe storage seam. It must not be coupled to NAV intake.
 
 ## Exact Next Implementation Task
 
-S5-SB-03 — Hosted Supabase NAV Intake Smoke
+S5-SB-03C — Hosted Supabase NAV Intake CLI Smoke
 
 Goal: run a tiny read-only hosted Supabase smoke through the hardened
 `pull_supabase_jobs.py` adapter without changing downstream JobPipe or JobDesk
@@ -269,11 +273,11 @@ behavior.
 Scope:
 
 - keep Supabase as intake source only;
-- use the hardened puller against hosted Supabase with a tiny read-only smoke
-  and non-secret logging;
+- use the hardened puller CLI against hosted Supabase with `--limit 5` and
+  `--dry-run` first;
+- optionally run a second `--limit 5` smoke that writes only to
+  `<data-root>/.jobpipe_tmp/`;
 - decide whether `jobs_active` can become the default after live validation;
-- consider adding a dry-run/limit/report mode if operational smoke shows it is
-  still needed;
 - do not write to Supabase;
 - do not implement JobDesk read model;
 - do not add ApplicationWorkspaceHub storage adapter;

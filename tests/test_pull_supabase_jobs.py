@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 
 import pytest
 
@@ -151,7 +152,134 @@ def test_fetch_all_active_jobs_can_read_jobs_active_view(monkeypatch: pytest.Mon
     assert "status=eq.ACTIVE" not in urls[0]
 
 
+def test_fetch_all_active_jobs_limit_bounds_requested_page_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    urls: list[str] = []
+
+    def fake_fetch(url: str, headers: dict, retries: int = 4) -> list[dict]:
+        urls.append(url)
+        return [{"id": "1"}, {"id": "2"}]
+
+    monkeypatch.setattr(pull_supabase_jobs, "_fetch_json", fake_fetch)
+
+    rows = pull_supabase_jobs.fetch_all_active_jobs(
+        "https://example.supabase.co",
+        "key",
+        only_changed=False,
+        limit=2,
+    )
+
+    assert rows == [{"id": "1"}, {"id": "2"}]
+    assert len(urls) == 1
+    assert "limit=2" in urls[0]
+
+
 def test_fetch_all_active_jobs_rejects_unknown_relation() -> None:
     with pytest.raises(ValueError, match="Unsupported Supabase jobs relation"):
         pull_supabase_jobs.fetch_all_active_jobs("https://example.supabase.co", "key", relation="jobs;drop")
 
+
+def test_main_dry_run_does_not_write_output_or_state(tmp_path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    out_path = tmp_path / "nav_connector.jsonl"
+    state_path = tmp_path / "jobs_state.json"
+
+    monkeypatch.setenv("JOBPIPE_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("JOBPIPE_SUPABASE_KEY", "redacted-key")
+    monkeypatch.setattr(pull_supabase_jobs, "bootstrap_private_data", lambda paths, include_artifacts=False: [])
+    monkeypatch.setattr(pull_supabase_jobs, "load_env_file", lambda path: None)
+
+    seen: dict[str, object] = {}
+
+    def fake_fetch_all_active_jobs(*args, **kwargs) -> list[dict]:
+        seen.update(kwargs)
+        return [
+            {
+                "id": "nav-1",
+                "title": "Product Manager",
+                "role": "Product Manager",
+                "employer": "Example AS",
+                "description": "Build products.",
+                "updated_at": "2026-05-08T10:00:00Z",
+            }
+        ]
+
+    monkeypatch.setattr(pull_supabase_jobs, "fetch_all_active_jobs", fake_fetch_all_active_jobs)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "pull_supabase_jobs",
+            "--data-root",
+            str(tmp_path),
+            "--out",
+            str(out_path),
+            "--state",
+            str(state_path),
+            "--limit",
+            "1",
+            "--dry-run",
+            "--no-only-changed",
+        ],
+    )
+
+    pull_supabase_jobs.main()
+
+    captured = capsys.readouterr().out
+    assert "Dry run: would write 1 records" in captured
+    assert "Dry run: state unchanged" in captured
+    assert not out_path.exists()
+    assert not state_path.exists()
+    assert seen["limit"] == 1
+    assert seen["only_changed"] is False
+    assert seen["relation"] == "jobs"
+
+
+def test_main_writes_limited_smoke_output_and_state(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out_path = tmp_path / "nav_connector.jsonl"
+    state_path = tmp_path / "jobs_state.json"
+
+    monkeypatch.setenv("JOBPIPE_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("JOBPIPE_SUPABASE_KEY", "redacted-key")
+    monkeypatch.setattr(pull_supabase_jobs, "bootstrap_private_data", lambda paths, include_artifacts=False: [])
+    monkeypatch.setattr(pull_supabase_jobs, "load_env_file", lambda path: None)
+    monkeypatch.setattr(
+        pull_supabase_jobs,
+        "now_iso",
+        lambda: "2026-05-08T12:00:00Z",
+    )
+
+    def fake_fetch_all_active_jobs(*args, **kwargs) -> list[dict]:
+        return [
+            {
+                "id": "nav-1",
+                "title": "Product Manager",
+                "role": "Product Manager",
+                "employer": "Example AS",
+                "description": "Build products.",
+                "updated_at": "2026-05-08T10:00:00Z",
+            }
+        ]
+
+    monkeypatch.setattr(pull_supabase_jobs, "fetch_all_active_jobs", fake_fetch_all_active_jobs)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "pull_supabase_jobs",
+            "--data-root",
+            str(tmp_path),
+            "--out",
+            str(out_path),
+            "--state",
+            str(state_path),
+            "--limit",
+            "1",
+            "--no-only-changed",
+        ],
+    )
+
+    pull_supabase_jobs.main()
+
+    record = json.loads(out_path.read_text(encoding="utf-8").strip())
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert record["job_id"] == "nav-1"
+    assert record["intake_channel"] == "supabase"
+    assert record["intake_connector_name"] == "nav_feed"
+    assert state["last_updated_at"] == "2026-05-08T10:00:00Z"

@@ -153,11 +153,13 @@ def fetch_all_active_jobs(
     only_changed: bool = True,
     relation: str = _DEFAULT_SUPABASE_RELATION,
     include_raw_json: bool = False,
+    limit: int = 0,
 ) -> list[dict]:
     """Fetch all ACTIVE, non-expired jobs from Supabase, paginated."""
     base = supabase_url.rstrip("/")
     now_str = _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     relation = _relation_name(relation)
+    max_rows = max(0, int(limit or 0))
 
     headers = {
         "apikey": supabase_key,
@@ -189,10 +191,16 @@ def fetch_all_active_jobs(
     offset = 0
 
     while True:
+        page_size = _PAGE_SIZE
+        if max_rows:
+            remaining = max_rows - len(all_rows)
+            if remaining <= 0:
+                break
+            page_size = min(page_size, remaining)
         params = "&".join(filters + [
             f"select={select_cols}",
             "order=updated_at.asc",
-            f"limit={_PAGE_SIZE}",
+            f"limit={page_size}",
             f"offset={offset}",
         ])
         url = f"{base}/rest/v1/{quote(relation, safe='')}?{params}"
@@ -200,9 +208,9 @@ def fetch_all_active_jobs(
         if not isinstance(batch, list):
             break
         all_rows.extend(batch)
-        if len(batch) < _PAGE_SIZE:
+        if len(batch) < page_size:
             break
-        offset += _PAGE_SIZE
+        offset += page_size
 
     return all_rows
 
@@ -258,6 +266,8 @@ def main() -> None:
     ap.add_argument("--state", default="", help=f"State path for incremental tracking (default: {_DEFAULT_PATHS.jobs_state_path})")
     ap.add_argument("--relation", default="", help="Supabase REST relation to read: jobs or jobs_active (default: jobs; env JOBPIPE_SUPABASE_RELATION)")
     ap.add_argument("--include-raw-json", action="store_true", help="Include sanitized raw_json in local connector metadata when selected from Supabase")
+    ap.add_argument("--limit", type=int, default=0, help="Maximum rows to read from Supabase (0 = no limit). Use for smoke tests.")
+    ap.add_argument("--dry-run", action="store_true", help="Read and map rows, but do not write connector output or state files.")
     ap.add_argument("--only-changed", action="store_true", default=True, help="Fetch only jobs updated since last run (default: on)")
     ap.add_argument("--no-only-changed", dest="only_changed", action="store_false", help="Fetch all active jobs regardless of updated_at")
     ap.add_argument("--retries", type=int, default=4)
@@ -297,6 +307,7 @@ def main() -> None:
         only_changed=args.only_changed,
         relation=relation,
         include_raw_json=args.include_raw_json,
+        limit=args.limit,
     )
     print(f"Fetched {len(rows)} rows from Supabase.")
 
@@ -326,25 +337,30 @@ def main() -> None:
         # Track latest updated_at for next incremental run
         latest_updated_at = _latest_iso(latest_updated_at, row.get("updated_at"))
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
+    if args.dry_run:
+        print(f"Dry run: would write {len(out_lines)} records to {out_path}")
+    else:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
 
-    # Update state
-    new_state = {
-        "fetched_at": now_iso(),
-        "source": "supabase",
-        "last_updated_at": latest_updated_at or since,
-        "rows": {},  # kept for compatibility with pull_sheets_csv state format
-    }
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(new_state, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    print(f"Wrote {len(out_lines)} records to {out_path}")
+        # Update state
+        new_state = {
+            "fetched_at": now_iso(),
+            "source": "supabase",
+            "last_updated_at": latest_updated_at or since,
+            "rows": {},  # kept for compatibility with pull_sheets_csv state format
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(new_state, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Wrote {len(out_lines)} records to {out_path}")
     if skipped_missing:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(skipped_missing.items()))
         print(f"Skipped {skipped_rows} incomplete row(s): {summary}")
-    print(f"State updated: last_updated_at={new_state['last_updated_at']}")
+    if args.dry_run:
+        print(f"Dry run: state unchanged; latest_seen_updated_at={latest_updated_at or since}")
+    else:
+        print(f"State updated: last_updated_at={new_state['last_updated_at']}")
 
 
 if __name__ == "__main__":
