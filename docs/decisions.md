@@ -78,3 +78,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: `jobpipe/stages/pipeline.py::build_stages` is the single source of truth; `run_feed.py` imports from it.
 - Why: `run_feed.py` carried a ~160-line duplicate of `build_stages` that was missing `triage_profile_summary`, `targeting_title_patterns`, and all v3 `cache_key_fn` parameters. The live path always used `run_feed.py`'s version (which shadowed `pipeline.py`), so no behaviour changed, but the drift created a latent correctness risk and confused future contributors about which definition was authoritative.
 - Consequence: `pipeline.py::build_stages` must always be kept current. `run_feed.py` must never re-introduce a local `build_stages`. Any new stage added to the supported order must be wired in `pipeline.py`.
+
+- Date: 2026-05-08
+- Task: S5-HUB-PLAN-01
+- Decision: Name the backend-side common connection point `ApplicationWorkspaceHub` and make it the owner of JobDesk-facing backend capability contracts, projections, command boundaries, adapter routing, and provenance-safe payloads.
+- Why: JobDesk needs a stable backend contract that can connect JobPipe, JobSane, JobData, Reactive Resume, future API/MCP wrappers, SQLite/artifacts, and later Supabase without depending on the legacy dashboard or exposing storage internals.
+- Consequence: New JobDesk integration work must target ApplicationWorkspaceHub capabilities first. The old dashboard may be referenced for behavior but must not become the dependency for JobDesk pathways.
