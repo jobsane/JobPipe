@@ -2,7 +2,11 @@
 
 jobpipe.core.schema is the canonical schema module (consolidated in the
 v3-triage refactor).  This file re-exports all core types from there, and
-defines the JobSync / ReactiveResume models that are not in core.schema.
+defines the ReactiveResume models that are not in core.schema.
+
+The JobSync* models lived here through the JobSync integration era; they
+were removed 2026-05-13 when JobDesk + workspace_server took over the
+human-review surface. Older specs and docs may still reference them.
 """
 
 from __future__ import annotations
@@ -43,87 +47,7 @@ from jobpipe.core.schema import (  # noqa: F401
 )
 
 # ── Additional type aliases ───────────────────────────────────────────────────
-JobSyncStatusEventType = Literal[
-    "shortlisted",
-    "called",
-    "applied",
-    "interview",
-    "second_interview",
-    "accepted",
-    "rejected",
-    "dismissed",
-]
 ReactiveResumeRenderTarget = Literal["reactive_resume_json", "docx", "pdf"]
-
-
-# ── JobSync models ────────────────────────────────────────────────────────────
-
-class JobSyncJobSummary(BaseModel):
-    job_id: str
-    title: str
-    employer: str = ""
-    location: str = ""
-    application_due: str = ""
-    source_url: str = ""
-    application_url: str = ""
-    updated_at: str = ""
-
-
-class JobSyncDecisionBrief(BaseModel):
-    final_decision: str
-    recommendation_reason: str = ""
-    decision_table_summary: str = ""
-    selection_risk_level: str = ""
-    top_claims: List[str] = Field(default_factory=list)
-    top_selection_signals: List[str] = Field(default_factory=list)
-    top_mitigation_moves: List[str] = Field(default_factory=list)
-    top_evidence_units: List[str] = Field(default_factory=list)
-    narrative_motivation_brief: str = ""
-
-
-class JobSyncDocumentRef(BaseModel):
-    document_id: str = ""
-    kind: str
-    status: str = ""
-    storage_path: str = ""
-    updated_at: str = ""
-
-
-class JobSyncApplicationCaseProjection(BaseModel):
-    job_summary: JobSyncJobSummary
-    decision_brief: JobSyncDecisionBrief
-    document_refs: List[JobSyncDocumentRef] = Field(default_factory=list)
-    current_application_status: str = ""
-    last_application_event_at: str = ""
-    next_action_hint: str = ""
-
-
-class JobSyncApplicationStatusEvent(BaseModel):
-    job_id: str
-    candidate_id: str
-    event_type: JobSyncStatusEventType
-    event_at: str
-    source: str = "jobsync"
-    notes: str = ""
-    metadata_json: Dict[str, Any] = Field(default_factory=dict)
-
-
-class JobSyncNoteEvent(BaseModel):
-    job_id: str
-    candidate_id: str
-    note_text: str
-    created_at: str
-    source: str = "jobsync"
-
-
-class JobSyncDocumentRefEvent(BaseModel):
-    job_id: str
-    candidate_id: str
-    document_kind: str
-    storage_path: str
-    status: str = ""
-    created_at: str
-    source: str = "jobsync"
 
 
 # ── ReactiveResume models ─────────────────────────────────────────────────────
@@ -240,14 +164,6 @@ __all__ = [
     "TriageFeatures",
     "TriageOut",
     # local models
-    "JobSyncStatusEventType",
-    "JobSyncJobSummary",
-    "JobSyncDecisionBrief",
-    "JobSyncDocumentRef",
-    "JobSyncApplicationCaseProjection",
-    "JobSyncApplicationStatusEvent",
-    "JobSyncNoteEvent",
-    "JobSyncDocumentRefEvent",
     "ReactiveResumeRenderTarget",
     "ReactiveResumeImportProjection",
     "ReactiveResumeTailoredCVPlan",

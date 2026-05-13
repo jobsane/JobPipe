@@ -1,5 +1,11 @@
 # Decisions Log
 
+> **Historical (2026-05-13).** This document predates the removal of the JobSync integration.
+> JobSync was an upstream/companion review surface that JobDesk + workspace_server have now replaced.
+> Sections referencing jobsync modules, CLIs, or schemas reflect the older architecture and are
+> kept for context only.
+
+
 Durable decisions and rationale live here. Live task state belongs in
 `docs/current-state.json`; task plans belong in `docs/execplans/`.
 

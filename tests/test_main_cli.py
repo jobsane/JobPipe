@@ -60,7 +60,6 @@ def test_run_dry_run_uses_local_delta_and_skips_drain_queue(tmp_path, monkeypatc
         "jobpipe.cli.run_feed",
         "jobpipe.cli.sync_evaluations",
         "jobpipe.cli.export_dashboard",
-        "jobpipe.cli.export_jobsync",
     ]
 
     run_feed_argv = calls[0][1]
@@ -106,7 +105,6 @@ def test_run_non_dry_run_keeps_drain_queue_flow(tmp_path, monkeypatch) -> None:
         "jobpipe.cli.drain_queue",
         "jobpipe.cli.sync_evaluations",
         "jobpipe.cli.export_dashboard",
-        "jobpipe.cli.export_jobsync",
     ]
 
 

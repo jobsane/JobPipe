@@ -1,5 +1,11 @@
 # Architecture
 
+> **Historical (2026-05-13).** This document predates the removal of the JobSync integration.
+> JobSync was an upstream/companion review surface that JobDesk + workspace_server have now replaced.
+> Sections referencing jobsync modules, CLIs, or schemas reflect the older architecture and are
+> kept for context only.
+
+
 This file describes the current runtime shape and the target boundary model at a high level.
 
 Canonical planning source:

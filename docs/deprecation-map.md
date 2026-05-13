@@ -1,5 +1,11 @@
 # Deprecation Map
 
+> **Historical (2026-05-13).** This document predates the removal of the JobSync integration.
+> JobSync was an upstream/companion review surface that JobDesk + workspace_server have now replaced.
+> Sections referencing jobsync modules, CLIs, or schemas reflect the older architecture and are
+> kept for context only.
+
+
 This file is the first-pass cleanup inventory for transitional and likely-stale paths.
 
 It is not a delete list.

@@ -16,7 +16,6 @@ from .catalog import (
     source_record_id,
 )
 from .data_sources import RuntimeProfile, resolve_profile_path, resolve_profile_paths, resolve_runtime_profile, runtime_profile_choices
-from .jobsync import record_jobsync_application_status_event
 from .reactive_resume import record_reactive_resume_document_ref
 from .paths import (
     application_state_path,
@@ -63,7 +62,6 @@ __all__ = [
     "primary_db_path",
     "profile_embedding_cache_path",
     "profile_pack_path",
-    "record_jobsync_application_status_event",
     "record_reactive_resume_document_ref",
     "repo_root",
     "resolve_profile_path",

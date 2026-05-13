@@ -539,7 +539,7 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
 
     state_path, profile_path, resume_path, profile_draft_path = _write_profile_sources(tmp_path)
     (tmp_path / ".env").write_text(
-        "OPENAI_API_KEY=test-openai\nJOBSYNC_SYNC_TOKEN=test-token\nJOBSYNC_BASE_URL=http://localhost:3737\n",
+        "OPENAI_API_KEY=test-openai\n",
         encoding="utf-8",
     )
     _write_json(tmp_path / "reports" / "gmail_credentials.json", {"installed": True})
@@ -552,7 +552,6 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
                 "domain_focus_text": "Offentlig sektor",
             },
             "integrations": {
-                "jobsync": {"enabled": True, "base_url": "http://localhost:3737"},
                 "reactive_resume": {"enabled": True, "base_url": "http://localhost:3000"},
                 "document_workspace": {"enabled": True, "base_url": "https://docs.example.test/workspace"},
                 "gmail": {"status_detection_enabled": True, "lead_intake_enabled": False},
@@ -637,7 +636,6 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
         "CRM-ansvarlig",
     ]
     assert settings["targeting"]["profile_defaults"]["profile_snapshot_id"] == "profile_snapshot:default"
-    assert settings["integrations"]["jobsync"]["status"] == "ready"
     assert settings["integrations"]["reactive_resume"]["status"] == "ready"
     assert settings["integrations"]["document_workspace"]["status"] == "ready"
     assert settings["integrations"]["document_workspace"]["base_url"] == "https://docs.example.test/workspace"
@@ -647,7 +645,6 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
     assert settings["integrations"]["gmail"]["lead_flow"] == "pre_triage_lead_connector"
     assert settings["integrations"]["gmail"]["status_flow"] == "application_state_updates"
     assert settings["secrets"]["openai_api_key_present"] is True
-    assert settings["secrets"]["jobsync_sync_token_present"] is True
     assert settings["paths"]["data_root"] == str(tmp_path)
     assert settings["paths"]["profile_layer_state"] == str(tmp_path / "reports" / "profile_layer_state.json")
     assert (tmp_path / "reports" / "profile_layer_state.json").exists()

@@ -27,7 +27,6 @@ MODULE_COMMANDS = {
     "build-authoring-context": "jobpipe.authoring.smoke_cli",
     "drain-queue": "jobpipe.cli.drain_queue",
     "export-dashboard": "jobpipe.cli.export_dashboard",
-    "export-jobsync": "jobpipe.cli.export_jobsync",
     "export-reactive-resume-plan": "jobpipe.cli.export_reactive_resume_plan",
     "gap-analysis": "jobpipe.cli.gap_analysis_report",
     "generate-cover-letter": "jobpipe.cli.generate_cover_letter",
@@ -40,7 +39,6 @@ MODULE_COMMANDS = {
     "pull-sheets": "jobpipe.cli.pull_sheets_csv",
     "pull-suggested": "jobpipe.cli.pull_suggested",
     "record-feedback": "jobpipe.cli.record_feedback",
-    "record-jobsync-event": "jobpipe.cli.record_jobsync_event",
     "record-reactive-resume-document": "jobpipe.cli.record_reactive_resume_document",
     "refresh-runtime-state": "jobpipe.cli.refresh_runtime_state",
     "reset-runtime": "jobpipe.cli.reset_runtime",
@@ -315,7 +313,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         )
 
     if args.dry_run:
-        print("[1/4] local dry-run queue ...")
+        print("[1/3] local dry-run queue ...")
         _process_local_delta_for_dry_run(
             delta_path,
             candidate_id=candidate_id,
@@ -325,7 +323,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             max_jobs=max_jobs,
         )
     else:
-        print("[1/4] drain-queue ...")
+        print("[1/3] drain-queue ...")
         drain_argv = [
             "--env-file", str(env_file),
             "--candidate-id", candidate_id,
@@ -342,7 +340,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         _run_module("jobpipe.cli.drain_queue", drain_argv)
 
     print()
-    print("[2/4] sync-evaluations ...")
+    print("[2/3] sync-evaluations ...")
     _run_module(
         "jobpipe.cli.sync_evaluations",
         [
@@ -355,24 +353,12 @@ def _run_main_flow(args: argparse.Namespace) -> None:
     )
 
     print()
-    print("[3/4] export-dashboard ...")
+    print("[3/3] export-dashboard ...")
     _run_module(
         "jobpipe.cli.export_dashboard",
         [
             "--out-runs", str(artifacts_dir),
             "--out", str(dashboard_path),
-            "--db", str(db_path),
-            "--candidate-id", candidate_id,
-        ],
-    )
-
-    print()
-    print("[4/4] export-jobsync ...")
-    _run_module(
-        "jobpipe.cli.export_jobsync",
-        [
-            "--out", str(reports_dir / "jobsync_cases.json"),
-            "--artifacts", str(artifacts_dir),
             "--db", str(db_path),
             "--candidate-id", candidate_id,
         ],

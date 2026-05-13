@@ -38,10 +38,6 @@ def _blank_state() -> Dict[str, Any]:
             "domain_focus_text": "",
         },
         "integrations": {
-            "jobsync": {
-                "enabled": False,
-                "base_url": "",
-            },
             "reactive_resume": {
                 "enabled": False,
                 "base_url": "http://localhost:3000",
@@ -71,15 +67,10 @@ def _sanitize_state(raw: Dict[str, Any]) -> Dict[str, Any]:
         "geography_text": _clean_text(targeting.get("geography_text")),
         "domain_focus_text": _clean_text(targeting.get("domain_focus_text")),
     }
-    jobsync = integrations.get("jobsync", {}) if isinstance(integrations.get("jobsync"), dict) else {}
     reactive_resume = integrations.get("reactive_resume", {}) if isinstance(integrations.get("reactive_resume"), dict) else {}
     document_workspace = integrations.get("document_workspace", {}) if isinstance(integrations.get("document_workspace"), dict) else {}
     gmail = integrations.get("gmail", {}) if isinstance(integrations.get("gmail"), dict) else {}
     state["integrations"] = {
-        "jobsync": {
-            "enabled": _clean_bool(jobsync.get("enabled")),
-            "base_url": _clean_text(jobsync.get("base_url")),
-        },
         "reactive_resume": {
             "enabled": _clean_bool(reactive_resume.get("enabled")),
             "base_url": _clean_text(reactive_resume.get("base_url")) or "http://localhost:3000",
@@ -111,7 +102,6 @@ def load_settings_state(path: Path) -> Dict[str, Any]:
 def persist_settings_state(path: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
     current = load_settings_state(path)
     incoming_integrations = payload.get("integrations", {}) if isinstance(payload.get("integrations"), dict) else {}
-    incoming_jobsync = incoming_integrations.get("jobsync", {}) if isinstance(incoming_integrations.get("jobsync"), dict) else {}
     incoming_reactive = incoming_integrations.get("reactive_resume", {}) if isinstance(incoming_integrations.get("reactive_resume"), dict) else {}
     incoming_document_workspace = incoming_integrations.get("document_workspace", {}) if isinstance(incoming_integrations.get("document_workspace"), dict) else {}
     incoming_gmail = incoming_integrations.get("gmail", {}) if isinstance(incoming_integrations.get("gmail"), dict) else {}
@@ -123,10 +113,6 @@ def persist_settings_state(path: Path, payload: Dict[str, Any]) -> Dict[str, Any
             **(payload.get("targeting", {}) if isinstance(payload.get("targeting"), dict) else {}),
         },
         "integrations": {
-            "jobsync": {
-                **((current.get("integrations", {}) or {}).get("jobsync", {})),
-                **incoming_jobsync,
-            },
             "reactive_resume": {
                 **((current.get("integrations", {}) or {}).get("reactive_resume", {})),
                 **incoming_reactive,
@@ -230,14 +216,6 @@ def build_settings_payload(
     gmail_credentials_present = paths.gmail_credentials_path.exists()
     gmail_token_present = paths.gmail_token_path.exists()
     openai_present = bool(env.get("OPENAI_API_KEY"))
-    jobsync_token_present = bool(env.get("JOBSYNC_SYNC_TOKEN"))
-    jobsync_env_url = env.get("JOBSYNC_BASE_URL", "").strip()
-
-    jobsync_state = state["integrations"]["jobsync"]
-    jobsync_base_url = jobsync_state["base_url"] or jobsync_env_url
-    jobsync_enabled = bool(jobsync_state["enabled"])
-    jobsync_ready = bool(jobsync_enabled and jobsync_base_url and jobsync_token_present)
-    jobsync_partial = bool(jobsync_enabled and (jobsync_base_url or jobsync_token_present))
 
     reactive_state = state["integrations"]["reactive_resume"]
     reactive_enabled = bool(reactive_state["enabled"])
@@ -267,12 +245,6 @@ def build_settings_payload(
             "profile_defaults": profile_defaults,
         },
         "integrations": {
-            "jobsync": {
-                "enabled": jobsync_enabled,
-                "base_url": jobsync_base_url,
-                "token_present": jobsync_token_present,
-                "status": _status_label(enabled=jobsync_enabled, ready=jobsync_ready, partial=jobsync_partial),
-            },
             "reactive_resume": {
                 "enabled": reactive_enabled,
                 "base_url": reactive_base_url,
@@ -303,7 +275,6 @@ def build_settings_payload(
         },
         "secrets": {
             "openai_api_key_present": openai_present,
-            "jobsync_sync_token_present": jobsync_token_present,
         },
         "paths": {
             "data_root": str(paths.data_root),

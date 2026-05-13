@@ -1,5 +1,11 @@
 # JobSane Rolling Plan
 
+> **Historical (2026-05-13).** This document predates the removal of the JobSync integration.
+> JobSync was an upstream/companion review surface that JobDesk + workspace_server have now replaced.
+> Sections referencing jobsync modules, CLIs, or schemas reflect the older architecture and are
+> kept for context only.
+
+
 ## Current Strategic Theme
 
 Persistence seam and application loop foundation — before authoring, get the data contracts and event seam right.

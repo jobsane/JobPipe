@@ -1,5 +1,11 @@
 # JobPipe external integrations
 
+> **Historical (2026-05-13).** This document predates the removal of the JobSync integration.
+> JobSync was an upstream/companion review surface that JobDesk + workspace_server have now replaced.
+> Sections referencing jobsync modules, CLIs, or schemas reflect the older architecture and are
+> kept for context only.
+
+
 **Last updated:** 2026-04-21
 
 This directory documents how JobPipe integrates with external projects. The
