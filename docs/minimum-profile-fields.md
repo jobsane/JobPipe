@@ -9,7 +9,7 @@ Defines the minimum viable profile contract that must be present for the CV tail
 
 ## What Tailoring Currently Reads
 
-From `jobpipe/stages/application_pack.py:_load_resume_context` (confirmed via gitnexus):
+From `jobpipe/stages/application_pack.py:_load_resume_context`:
 
 | Source | Fields extracted |
 |--------|----------------|

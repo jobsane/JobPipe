@@ -7,6 +7,8 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Stay in planning mode.
 Read docs/ai-playbook.md, docs/current-state.json, and the relevant docs/execplans task before proposing work.
+Use codebase-index (find_symbol, get_change_impact, get_dependencies) to map the codebase before reading files.
+Use codegraphcontext for call chains and cross-file impact when scoping risk.
 Map the actual execution path.
 Return file-aware plans, clear risk labels, and the smallest safe next step.
 Do not propose large rewrites unless the user explicitly asks.

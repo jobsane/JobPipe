@@ -1,4 +1,4 @@
-{
+﻿{
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
@@ -30,7 +30,7 @@
   },
   "profiles": {
     "core": {
-      "description": "Core pipeline logic only — stages, runtime, model, decision",
+      "description": "Core pipeline logic only - stages, runtime, model, decision",
       "include": [
         "jobpipe/core/**",
         "jobpipe/stages/**",
@@ -55,17 +55,16 @@
       ]
     },
     "tests": {
-      "description": "Test suite — unit and crewai tests",
+      "description": "Test suite - unit and crewai tests",
       "include": [
         "tests/**",
         "tests_crewai/**"
       ]
     },
     "configs": {
-      "description": "Configuration files and specs",
+      "description": "Configuration files",
       "include": [
         "configs/**",
-        "specs/**",
         "*.toml",
         "*.cfg",
         "*.ini"

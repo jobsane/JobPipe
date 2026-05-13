@@ -14,15 +14,23 @@ writable_roots = ["."]
 # Optional project-local model instructions file if you want a single prompt file:
 # model_instructions_file = "../orchestration/orchestrator-prompt.txt"
 
-# Optional MCP examples. Leave disabled until you set real values.
-# [mcp_servers.project_docs]
-# enabled = false
-# url = "https://example.com/mcp"
-# required = false
-#
-# [mcp_servers.local_tools]
-# enabled = false
-# command = "npx"
-# args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
-# cwd = "."
-# required = false
+[mcp_servers.codebase-index]
+enabled = true
+command = "uv"
+args = ["tool", "run", "--with", "mcp", "mcp-codebase-index"]
+cwd = "."
+required = false
+
+[mcp_servers.codegraphcontext]
+enabled = true
+command = "C:\\Users\\larsv\\.local\\bin\\cgc.exe"
+args = ["mcp", "start"]
+cwd = "."
+required = false
+
+[mcp_servers.repomix]
+enabled = true
+command = "C:\\Users\\larsv\\AppData\\Roaming\\npm\\repomix.cmd"
+args = ["--mcp"]
+cwd = "."
+required = false

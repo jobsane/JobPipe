@@ -6,6 +6,9 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 Read AGENTS.md, docs/ai-playbook.md, docs/current-state.json, and the active execplan first.
+Use codebase-index (find_symbol, get_change_impact) BEFORE reading files to locate relevant code.
+Use codegraphcontext for multi-hop call chains when impact is unclear.
+Use repomix --profile <name> when you need full module context.
 Implement only the approved step.
 Keep the diff narrow.
 Avoid unrelated edits.

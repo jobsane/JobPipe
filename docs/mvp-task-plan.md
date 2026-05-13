@@ -2988,8 +2988,6 @@ The repo is a customised fork of the smart-agentic-ats-resume project. What is p
   example inputs. This becomes the starting point for the new `main.py` Flow entry point.
 - `streamlit_app.py` — skeleton UI referencing `db.connection`, `db.queries`, `utils.agents` (none
   exist yet). Stub only; not the target interface for this topic.
-- `CLAUDE.md` — GitNexus code-intelligence configuration. Keep as-is.
-- `.gitnexus/` — already indexed. Keep as-is.
 
 What does **not** exist yet and must be built:
 - `Flow[ApplicationState]` orchestration replacing the flat Crew
@@ -3015,7 +3013,6 @@ jobsane/
 ├── bin/crew_run.py              # keep — repurpose as dev test harness pointing at main.py
 ├── utils/crew.py                # keep — reference implementation; do not delete yet
 ├── streamlit_app.py             # keep skeleton; out of scope for this topic
-├── CLAUDE.md                    # keep — GitNexus config
 ├── pyproject.toml               # update with new src layout + deps
 ├── .env.example                 # OPENAI_API_KEY, SUPABASE_URL, SUPABASE_KEY, RR_BASE_URL
 └── README.md                    # update with new architecture and usage

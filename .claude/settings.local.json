@@ -4,10 +4,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(axon analyze *)",
       "Bash(gh project *)",
       "Bash(python3 -c ' *)",
-      "mcp__axon__axon_context",
       "Read(//c/Users/larsv/JobpipeData/reports/**)",
       "Bash(.venv/Scripts/python.exe *)",
       "Bash(gh pr *)",
@@ -23,7 +21,5 @@
     ]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "axon"
-  ]
+  "enabledMcpjsonServers": []
 }

@@ -68,7 +68,7 @@ commit_msg.txt
 pipeline_error.json
 .jobpipe_tmp/
 
-# Axon code intelligence index
+# codegraphcontext (cgc) index
 .axon/
 
 # Repomix output files

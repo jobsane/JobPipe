@@ -436,16 +436,30 @@ Pipeline runs are currently manual. After each run:
 
 ---
 
-## Axon — Code Intelligence
+## Code Intelligence
 
-Axon is the local code-intelligence MCP (`axon serve --watch`). Re-index manually:
+Three tools are available. Full reference in `docs/agent-codebase-tools.md`.
 
-```powershell
-axon analyze .
-```
+### `codebase-index` (MCP) -- structural navigation (Python)
+Use for symbol lookup, dependency graphs, and change-impact analysis without reading files.
 
-Index lives in `.axon/` (gitignored). Use these MCP tools:
+    find_symbol("JobStage")                  # where is this defined?
+    get_change_impact("run_pipeline")        # what breaks if I change this?
+    get_function_source("JobStage.execute")  # source without reading the file
+    search_codebase("connector")             # regex search across repo
 
-- `mcp__axon__axon_query` — find code by concept or keyword
-- `mcp__axon__axon_context` — full context for a symbol (callers, callees)
-- `mcp__axon__axon_file_context` — context for a specific file
+Run `reindex` if results seem stale. Cache: `.codebase-index-cache.pkl` (gitignored).
+
+### `codegraphcontext` (MCP) -- graph-based navigation (Python)
+Use for multi-hop call chains and cross-file relationship graphs.
+Pre-indexed. Re-index with: `cgc index .`  Index: `.axon/` (gitignored).
+
+### repomix -- context packing (all languages)
+Use to pack a module into context when you need full file content.
+Always use a named profile. Never run bare.
+
+    repomix --profile core      # stages, runtime, model, decision
+    repomix --profile crewai    # CrewAI crews and orchestration
+    repomix --profile cli       # CLI, connectors, integrations
+    repomix --profile tests     # test suite
+    repomix --profile docs      # documentation

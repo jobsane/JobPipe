@@ -9,16 +9,15 @@ It is discovery work for
 
 ## Discovery Sources
 
-Verified through GitNexus:
+Verified through codebase analysis:
 
 - Indexed repository: `Jobpipe`
-- GitNexus path: `/workspace/Jobpipe`
 - Remote: `https://github.com/larsvaerland/Jobpipe`
 - Indexed at: `2026-04-30T17:11:17.371Z`
 - Indexed commit: `ed30bf48adde42a9616b431a2fd88f6563f2f417`
 - Indexed shape: 238 files, 4903 symbols, 8201 edges, 256 processes
 
-GitNexus symbol context was checked for:
+Symbol context was checked for:
 
 - `jobpipe/core/primary_db.py:connect_primary_db`
 - `jobpipe/authoring/persist.py:persist_generated_package`

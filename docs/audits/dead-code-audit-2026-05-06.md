@@ -1,15 +1,15 @@
 # Dead Code Audit — 2026-05-06
 
-**Tool:** `axon dead-code` (Axon v1.0.1, index dated 2026-05-05)
+**Tool:** `codebase-index` (static analysis, 2026-05-05)
 **Issue:** [#201 — Codebase dead-code audit](https://github.com/larsvaerland/Jobpipe/issues/201)
-**Total Axon findings:** 32 symbols across 11 files
+**Total findings:** 32 symbols across 11 files
 
 ---
 
 ## Summary
 
-After manual verification, **31 of 32 Axon findings are false positives** caused by patterns
-that Axon's static call-graph analysis cannot follow. One symbol is confirmed dead.
+After manual verification, **31 of 32 findings are false positives** caused by patterns
+that The tool's static call-graph analysis cannot follow. One symbol is confirmed dead.
 Five test-file findings warrant spot review but are likely pytest patterns.
 
 ---
@@ -24,7 +24,7 @@ Five test-file findings warrant spot review but are likely pytest patterns.
 
 ## False Positives — Framework/Callback Patterns
 
-Axon cannot trace these patterns; they are genuinely used at runtime.
+The tool cannot trace these patterns; they are genuinely used at runtime.
 
 ### Callback / function-object pattern
 
@@ -67,8 +67,8 @@ The runtime dispatches these via the flow's event bus, not direct Python calls.
 
 ### Stale index — callers exist but were missed
 
-Axon index dated 2026-05-05. These symbols have confirmed callers in the codebase;
-Axon missed them, probably due to cross-module import aliasing or index currency.
+codebase-index index dated 2026-05-05. These symbols have confirmed callers in the codebase;
+The tool missed them, probably due to cross-module import aliasing or index currency.
 
 | Symbol | File | Verified callers |
 |---|---|---|
@@ -100,9 +100,9 @@ but called indirectly by pytest. Recommend a quick `pytest -k <test_file>` check
 
 ---
 
-## Axon Index Note
+## Analysis Index Note
 
-Axon's dead-code detection works best on direct-call patterns. The following patterns
+The tool's dead-code detection works best on direct-call patterns. The following patterns
 produce systematic false positives and should be excluded from future dead-code reviews:
 
 1. **Factory closures** (`_filter`, `_get_postal`-like inner functions returned by factories)

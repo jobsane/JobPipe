@@ -68,12 +68,34 @@ Be extra careful around pipeline stages, decision logic, config keys, runtime
 paths, report/dashboard generation, Gmail integration, DB schema, and state
 writes.
 
-## Axon — Code Intelligence
+## Code Intelligence
 
-Use the Axon MCP tools to explore and navigate the codebase:
+Two tools are available for navigating the codebase. Full reference in `docs/agent-codebase-tools.md`.
 
-- `mcp__axon__axon_query` — find code by concept or keyword
-- `mcp__axon__axon_context` — full context for a symbol (callers, callees)
-- `mcp__axon__axon_file_context` — context for a specific file
+### `codebase-index` (MCP) -- structural navigation
 
-Re-index with `axon analyze .` if results seem stale. Index lives in `.axon/`.
+Use for Python symbol lookup, dependency graphs, and change-impact analysis without reading files.
+
+    find_symbol("JobStage")                  # where is this defined?
+    get_change_impact("run_pipeline")        # what breaks if I change this?
+    get_function_source("JobStage.execute")  # source without reading the file
+    search_codebase("connector")             # regex search across repo
+
+Run the `reindex` tool if results seem stale. Cache lives in `.codebase-index-cache.pkl` (gitignored).
+
+### `codegraphcontext` (MCP) -- graph-based navigation
+
+Use for multi-hop call chains and cross-file relationship graphs.
+Pre-indexed for Jobpipe. Re-index with: `cgc index .`
+Index lives in `.axon/` (gitignored).
+
+### repomix -- context packing
+
+Use to pack a module into context when you need full file content.
+Always use a named profile. Never run bare.
+
+    repomix --profile core      # stages, runtime, model, decision
+    repomix --profile crewai    # CrewAI crews and orchestration
+    repomix --profile cli       # CLI, connectors, integrations
+    repomix --profile tests     # test suite
+    repomix --profile docs      # documentation
