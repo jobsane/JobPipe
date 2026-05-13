@@ -49,16 +49,25 @@ class Recommendation(StrEnum):
 
 
 class ApplicationStatus(StrEnum):
+    """Narrowed to match JobDesk's canonical 9-value set (audit D-C, 2026-05-13).
+
+    The hub used to expose a 10-value set including ``ready_to_apply``,
+    ``waiting``, ``follow_up_needed``, ``interview``, ``offer``, ``closed``.
+    Those values were lossy-translated by ``http-jobdesk-api.ts`` and the
+    extras were unused. ``case_state.json`` (Slice C) already validates
+    against this narrower set, so the hub is the only consumer that needed
+    catching up.
+    """
+
     DRAFTING = "drafting"
-    READY_TO_APPLY = "ready_to_apply"
+    READY = "ready"
     APPLIED = "applied"
-    WAITING = "waiting"
-    FOLLOW_UP_NEEDED = "follow_up_needed"
-    INTERVIEW = "interview"
-    OFFER = "offer"
+    INTERVIEWING = "interviewing"
+    OFFERED = "offered"
+    ACCEPTED = "accepted"
     REJECTED = "rejected"
     WITHDRAWN = "withdrawn"
-    CLOSED = "closed"
+    GHOSTED = "ghosted"
 
 
 class DecisionSignalKey(StrEnum):
@@ -201,6 +210,152 @@ class CaseListItem:
         return _asdict(self)
 
 
+class ClaimStatus(StrEnum):
+    """Validation status of a claim made in the tailored materials."""
+
+    VERIFIED = "verified"
+    WEAK = "weak"
+    UNSUPPORTED = "unsupported"
+
+
+class TailoringPlanSource(StrEnum):
+    """Where a TailoringPlanReadModel originated.
+
+    ``pipeline`` — projected from JobPipe's ``ApplicationPackOut`` on disk.
+    ``jobsane``  — written back by a JobSane ``/tailor`` run.
+    ``merged``   — pipeline-seeded then refined by JobSane (write-back path).
+    """
+
+    PIPELINE = "pipeline"
+    JOBSANE = "jobsane"
+    MERGED = "merged"
+
+
+@dataclass(frozen=True)
+class BulletChange:
+    """Single CV bullet swap: which section, what was there, what JobSane proposes."""
+
+    id: str
+    section: str  # e.g. "summary", "headline", "work:Acme:Engineer", "skills"
+    original: str
+    proposed: str
+    rationale: str
+    confidence: str = "unknown"
+    provenance: list[ProvenanceRef] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        _validate_safe_identifier("id", self.id)
+        _validate_safe_identifier("section", self.section)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
+@dataclass(frozen=True)
+class KeywordCoverage:
+    """Whether a job-posting keyword is present in the candidate's materials."""
+
+    keyword: str
+    present: bool
+    suggested_placement: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
+@dataclass(frozen=True)
+class ClaimValidation:
+    """A claim from the cover letter / value prop, validated against evidence."""
+
+    id: str
+    claim: str
+    status: ClaimStatus
+    evidence_ids: list[str] = field(default_factory=list)
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_safe_identifier("id", self.id)
+        for evidence_id in self.evidence_ids:
+            _validate_safe_identifier("evidence_id", evidence_id)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
+@dataclass(frozen=True)
+class ValuePropositionReadModel:
+    """Projected value proposition — message pillars, proof, gaps.
+
+    Fed by JobPipe's ``ApplicationPackOut`` (positioning_headline,
+    top_value_props, evidence_map, gap_mitigations, cover_letter_angle) and
+    optionally refined by JobSane on write-back.
+    """
+
+    positioning_angle: str
+    employer_problem: str = ""
+    applicant_advantage: str = ""
+    message_pillars: list[str] = field(default_factory=list)
+    proof_points: list[str] = field(default_factory=list)
+    gap_mitigations: list[str] = field(default_factory=list)
+    provenance: list[ProvenanceRef] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
+@dataclass(frozen=True)
+class CoverLetterDraftReadModel:
+    """Editable cover letter draft + the language the pipeline produced it in.
+
+    Tiptap in JobDesk seeds from this. ``text`` carries the actual prose;
+    JobDesk renders it as a paragraph-structured rich-text doc.
+    """
+
+    text: str
+    language: str = ""  # e.g. "nb" (Norwegian bokmål), "en" — pipeline-authoritative
+    angle: str = ""  # the strategic angle / recruiter hook
+    word_count: int = 0
+    provenance: list[ProvenanceRef] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.word_count < 0:
+            raise WorkspaceContractError("word_count must be non-negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
+@dataclass(frozen=True)
+class TailoringPlanReadModel:
+    """Full tailoring plan for one case — resume + value prop + cover letter.
+
+    This is the single payload returned by ``GET /cases/:id/tailoring_plan``
+    and accepted by ``POST /cases/:id/tailoring_plan``. It deliberately
+    aggregates three concerns (resume bullets, value pillars, cover letter
+    draft) because JobDesk's review screens treat them as one tailoring unit
+    and JobSane writes them back as one atomic record.
+    """
+
+    case_id: str
+    source: TailoringPlanSource
+    positioning_angle: str
+    section_strategy: list[str] = field(default_factory=list)
+    bullet_changes: list[BulletChange] = field(default_factory=list)
+    keyword_coverage: list[KeywordCoverage] = field(default_factory=list)
+    claim_warnings: list[ClaimValidation] = field(default_factory=list)
+    value_proposition: ValuePropositionReadModel | None = None
+    cover_letter: CoverLetterDraftReadModel | None = None
+    reactive_resume_url: str = ""
+    updated_at: str = ""
+    provenance: list[ProvenanceRef] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        _validate_safe_identifier("case_id", self.case_id)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asdict(self)
+
+
 @dataclass(frozen=True)
 class ApplicationCaseReadModel:
     """Full read-only case model for cases.get(case_id)."""
@@ -258,13 +413,21 @@ __all__ = [
     "ApplicationCaseReadModel",
     "ApplicationStatus",
     "ArtifactRef",
+    "BulletChange",
     "CaseListItem",
+    "ClaimStatus",
+    "ClaimValidation",
+    "CoverLetterDraftReadModel",
     "DecisionSignal",
     "DecisionSignalKey",
     "EvidenceRef",
+    "KeywordCoverage",
     "ProvenanceRef",
     "Recommendation",
     "TailoringEffort",
+    "TailoringPlanReadModel",
+    "TailoringPlanSource",
+    "ValuePropositionReadModel",
     "WorkMode",
     "WorkspaceContractError",
 ]

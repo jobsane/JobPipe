@@ -11,19 +11,47 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from jobpipe.workspace import ArtifactRunSource, ArtifactWorkspaceHub
-from jobpipe.workspace.contracts import ApplicationCaseReadModel, CaseListItem, WorkspaceContractError
+from jobpipe.workspace.contracts import (
+    ApplicationCaseReadModel,
+    CaseListItem,
+    WorkspaceContractError,
+)
 
 
 LIST_SCHEMA_VERSION = "jobpipe.workspace.cases.list.v1"
 GET_SCHEMA_VERSION = "jobpipe.workspace.cases.get.v1"
 MATERIALS_SCHEMA_VERSION = "jobpipe.workspace.materials.v1"
 HEALTH_SCHEMA_VERSION = "jobpipe.workspace.health.v1"
+STATE_SCHEMA_VERSION = "jobpipe.workspace.case_state.v1"
+TAILORING_PLAN_SCHEMA_VERSION = "jobpipe.workspace.tailoring_plan.v1"
+
+# Cap the write-back payload — a tailoring plan with cover letter + bullets
+# fits comfortably under 64KB. Reject anything larger as a malformed request.
+_TAILORING_PLAN_MAX_BYTES = 64_000
+
+VALID_DECISION_STATUSES = frozenset(
+    {"to_review", "decided_apply", "decided_skip"}
+)
+VALID_APPLICATION_STATUSES = frozenset(
+    {
+        "drafting",
+        "ready",
+        "applied",
+        "interviewing",
+        "offered",
+        "accepted",
+        "rejected",
+        "withdrawn",
+        "ghosted",
+    }
+)
 
 
 @dataclass(frozen=True)
 class WorkspaceServerConfig:
     out_root: Path
     default_run_id: str = ""
+    state_root: Path | None = None
 
 
 def build_server(
@@ -32,16 +60,30 @@ def build_server(
     run_id: str = "",
     host: str = "127.0.0.1",
     port: int = 8765,
+    state_root: str | Path | None = None,
 ) -> ThreadingHTTPServer:
-    """Create a local read-only workspace cases HTTP server."""
+    """Create a local workspace cases HTTP server.
 
-    config = WorkspaceServerConfig(out_root=Path(out_root), default_run_id=run_id)
+    Read-only for case artifacts (under ``out_root``). Read+write for user
+    decision state (under ``state_root``), with per-case JSON records keyed
+    by case id. State is global to the user — independent of which pipeline
+    run surfaced the case.
+    """
+
+    config = WorkspaceServerConfig(
+        out_root=Path(out_root),
+        default_run_id=run_id,
+        state_root=Path(state_root) if state_root else None,
+    )
 
     class WorkspaceCasesHandler(BaseHTTPRequestHandler):
-        server_version = "JobPipeWorkspaceCases/0.1"
+        server_version = "JobPipeWorkspaceCases/0.2"
 
         def do_GET(self) -> None:  # noqa: N802
             _handle_get(self, config)
+
+        def do_POST(self) -> None:  # noqa: N802
+            _handle_post(self, config)
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), format % args))
@@ -63,6 +105,39 @@ def _handle_get(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) 
                 handler,
                 HTTPStatus.OK,
                 {"schemaVersion": LIST_SCHEMA_VERSION, "runId": run_id, "cases": cases},
+            )
+            return
+
+        if parsed.path == "/case_state":
+            state = _load_state(config)
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": STATE_SCHEMA_VERSION,
+                    "state": state,
+                    "count": len(state),
+                },
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/tailoring_plan"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/tailoring_plan")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.NOT_FOUND, "case_not_found", "Case not found.")
+                return
+            run_id, hub = _resolve_hub(config, parse_qs(parsed.query))
+            plan_payload = _resolve_tailoring_plan(config, hub, case_id)
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": TAILORING_PLAN_SCHEMA_VERSION,
+                    "runId": run_id,
+                    "caseId": case_id,
+                    "plan": plan_payload,
+                },
             )
             return
 
@@ -305,6 +380,377 @@ def _truncate(value: str, *, limit: int = 160) -> str:
     return text[: limit - 1].rstrip() + "..."
 
 
+def _handle_post(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) -> None:
+    parsed = urlparse(handler.path)
+    try:
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/tailoring_plan"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/tailoring_plan")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+
+            body = _read_post_body(handler, max_bytes=_TAILORING_PLAN_MAX_BYTES)
+            if body is None:
+                return
+
+            action = body.get("action", "set")
+            if action == "clear":
+                _clear_tailoring_override(config, case_id)
+                # After clearing, re-derive from pipeline so the caller sees what
+                # JobDesk will see on its next read.
+                run_id, hub = _resolve_hub(config, parse_qs(parsed.query))
+                plan_payload = _resolve_tailoring_plan(config, hub, case_id)
+                _write_json(
+                    handler,
+                    HTTPStatus.OK,
+                    {
+                        "schemaVersion": TAILORING_PLAN_SCHEMA_VERSION,
+                        "runId": run_id,
+                        "caseId": case_id,
+                        "cleared": True,
+                        "plan": plan_payload,
+                    },
+                )
+                return
+
+            try:
+                _validate_tailoring_override(body)
+            except ValueError as exc:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_plan", str(exc))
+                return
+
+            _save_tailoring_override(config, case_id, body)
+            run_id, hub = _resolve_hub(config, parse_qs(parsed.query))
+            plan_payload = _resolve_tailoring_plan(config, hub, case_id)
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": TAILORING_PLAN_SCHEMA_VERSION,
+                    "runId": run_id,
+                    "caseId": case_id,
+                    "plan": plan_payload,
+                },
+            )
+            return
+
+        if parsed.path.startswith("/case_state/"):
+            raw_case_id = parsed.path.removeprefix("/case_state/")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+
+            body = _read_post_body(handler, max_bytes=64_000)
+            if body is None:
+                return
+
+            action = body.get("action", "set")
+            if action == "clear":
+                state = _load_state(config)
+                if case_id in state:
+                    del state[case_id]
+                    _save_state(config, state)
+                _write_json(
+                    handler,
+                    HTTPStatus.OK,
+                    {"schemaVersion": STATE_SCHEMA_VERSION, "caseId": case_id, "cleared": True},
+                )
+                return
+
+            decision_status = body.get("decisionStatus")
+            if decision_status not in VALID_DECISION_STATUSES:
+                _write_error(
+                    handler,
+                    HTTPStatus.BAD_REQUEST,
+                    "invalid_decision",
+                    f"decisionStatus must be one of {sorted(VALID_DECISION_STATUSES)}.",
+                )
+                return
+
+            application_status = body.get("applicationStatus")
+            if application_status is not None and application_status not in VALID_APPLICATION_STATUSES:
+                _write_error(
+                    handler,
+                    HTTPStatus.BAD_REQUEST,
+                    "invalid_application_status",
+                    f"applicationStatus must be one of {sorted(VALID_APPLICATION_STATUSES)} or null.",
+                )
+                return
+
+            skip_reason = body.get("skipReason")
+            if skip_reason is not None and not isinstance(skip_reason, str):
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_skip_reason", "skipReason must be a string or null.")
+                return
+
+            from datetime import datetime, timezone
+            entry = {
+                "caseId": case_id,
+                "decisionStatus": decision_status,
+                "applicationStatus": (
+                    application_status if decision_status == "decided_apply" else None
+                ),
+                "skipReason": (
+                    skip_reason if decision_status == "decided_skip" else None
+                ),
+                "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            }
+            state = _load_state(config)
+            state[case_id] = entry
+            _save_state(config, state)
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {"schemaVersion": STATE_SCHEMA_VERSION, "caseId": case_id, "entry": entry},
+            )
+            return
+
+        _write_error(handler, HTTPStatus.NOT_FOUND, "endpoint_unknown", "POST endpoint not found.")
+    except OSError:
+        _write_error(handler, HTTPStatus.INTERNAL_SERVER_ERROR, "storage_unavailable", "State storage unavailable.")
+    except Exception:  # pragma: no cover
+        _write_error(handler, HTTPStatus.INTERNAL_SERVER_ERROR, "internal_error", "Internal server error.")
+
+
+def _read_post_body(
+    handler: BaseHTTPRequestHandler, *, max_bytes: int
+) -> dict[str, Any] | None:
+    """Read + parse a JSON request body, writing an error and returning ``None`` on failure.
+
+    Shared between ``/case_state`` and ``/cases/.../tailoring_plan`` POSTs so
+    body-size + JSON validation logic stays in one place.
+    """
+
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError:
+        length = 0
+    if length <= 0 or length > max_bytes:
+        _write_error(
+            handler,
+            HTTPStatus.BAD_REQUEST,
+            "invalid_body",
+            f"Body required and must be < {max_bytes // 1000}KB.",
+        )
+        return None
+    try:
+        raw = handler.rfile.read(length).decode("utf-8")
+        body = json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_json", "Request body must be valid JSON.")
+        return None
+    if not isinstance(body, dict):
+        _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_body", "Request body must be a JSON object.")
+        return None
+    return body
+
+
+# ----- tailoring plan storage + projection ---------------------------------
+
+
+def _resolve_tailoring_plan(
+    config: WorkspaceServerConfig,
+    hub: "ArtifactWorkspaceHub",
+    case_id: str,
+) -> dict[str, Any] | None:
+    """Return the merged tailoring-plan payload for ``case_id``.
+
+    Pipeline projection forms the base; a JobSane-written override (if any)
+    is merged on top via shallow-merge so partial refinements work. Returns
+    ``None`` when neither layer has content (i.e. case has no application_pack
+    AND no JobSane write-back yet).
+    """
+
+    pipeline = hub.tailoring.get(case_id)
+    pipeline_dict = pipeline.to_dict() if pipeline is not None else None
+    override = _load_tailoring_override(config, case_id)
+
+    if pipeline_dict is None and override is None:
+        return None
+    if override is None:
+        # Pipeline-only — pipeline_dict is snake_case from to_dict(), camelize.
+        return _wire_format(pipeline_dict or {})
+    if pipeline_dict is None:
+        # JobSane wrote a plan for a case that doesn't have a pipeline pack
+        # — surface it as-is (override is already camelCase wire-shape).
+        merged = dict(override)
+        merged.setdefault("caseId", case_id)
+        merged["source"] = "jobsane"
+        return merged
+
+    # Merge: override fields (already camelCase) win over pipeline (snake_case
+    # → camelize first) where present.
+    base = _wire_format(pipeline_dict)
+    merged = dict(base)
+    merged.update({k: v for k, v in override.items() if v is not None})
+    # Source becomes "merged" when both layers contributed.
+    merged["source"] = "merged"
+    return merged
+
+
+def _wire_format(payload: dict[str, Any]) -> dict[str, Any]:
+    """Convert snake_case dataclass output to camelCase wire format.
+
+    Mirrors the convention used by ``_case_summary`` and ``_case_detail`` so
+    JobDesk consumes one consistent style across all endpoints.
+    """
+
+    return _camelize(payload)
+
+
+def _camelize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {_to_camel(key): _camelize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_camelize(item) for item in value]
+    return value
+
+
+def _to_camel(key: str) -> str:
+    parts = str(key).split("_")
+    if len(parts) == 1:
+        return parts[0]
+    return parts[0] + "".join(part.title() for part in parts[1:])
+
+
+def _validate_tailoring_override(body: dict[str, Any]) -> None:
+    """Validate a JobSane write-back payload.
+
+    Accepts the camelCase wire shape we emit on GET; rejects unknown top-level
+    keys to keep the contract narrow. Raises ``ValueError`` on rejection.
+    """
+
+    allowed_keys = {
+        "caseId",
+        "source",
+        "positioningAngle",
+        "sectionStrategy",
+        "bulletChanges",
+        "keywordCoverage",
+        "claimWarnings",
+        "valueProposition",
+        "coverLetter",
+        "reactiveResumeUrl",
+        "updatedAt",
+        "provenance",
+    }
+    unknown = set(body.keys()) - allowed_keys - {"action"}
+    if unknown:
+        raise ValueError(f"Unknown fields in tailoring plan body: {sorted(unknown)}")
+
+    for list_field in ("sectionStrategy", "bulletChanges", "keywordCoverage", "claimWarnings"):
+        if list_field in body and not isinstance(body[list_field], list):
+            raise ValueError(f"{list_field} must be a list")
+
+    for str_field in ("positioningAngle", "reactiveResumeUrl"):
+        if str_field in body and not isinstance(body[str_field], str):
+            raise ValueError(f"{str_field} must be a string")
+
+    if "valueProposition" in body and not isinstance(body["valueProposition"], (dict, type(None))):
+        raise ValueError("valueProposition must be an object or null")
+    if "coverLetter" in body and not isinstance(body["coverLetter"], (dict, type(None))):
+        raise ValueError("coverLetter must be an object or null")
+
+
+def _tailoring_dir(config: WorkspaceServerConfig) -> Path:
+    """Return the per-case tailoring override directory, creating it lazily."""
+
+    root = config.state_root or (config.out_root.parent / "case_state")
+    target = root / "case_tailoring"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _tailoring_path(config: WorkspaceServerConfig, case_id: str) -> Path:
+    safe = "".join(ch for ch in case_id if ch.isalnum() or ch in {"-", "_"})
+    if not safe:
+        raise ValueError("case_id must contain at least one alphanumeric character")
+    return _tailoring_dir(config) / f"{safe}.json"
+
+
+def _load_tailoring_override(
+    config: WorkspaceServerConfig, case_id: str
+) -> dict[str, Any] | None:
+    try:
+        path = _tailoring_path(config, case_id)
+    except ValueError:
+        return None
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _save_tailoring_override(
+    config: WorkspaceServerConfig, case_id: str, body: dict[str, Any]
+) -> None:
+    path = _tailoring_path(config, case_id)
+    # Stamp the write so consumers can tell pipeline-projected (from artifact
+    # mtime) apart from JobSane-written. We don't trust client-supplied
+    # updatedAt — server time is authoritative.
+    from datetime import datetime, timezone
+
+    payload = dict(body)
+    payload.pop("action", None)
+    payload["updatedAt"] = (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    )
+    payload.setdefault("caseId", case_id)
+    payload.setdefault("source", "jobsane")
+
+    tmp = path.with_suffix(".json.tmp")
+    blob = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+    with tmp.open("wb") as fh:
+        fh.write(blob)
+    tmp.replace(path)
+
+
+def _clear_tailoring_override(config: WorkspaceServerConfig, case_id: str) -> None:
+    try:
+        path = _tailoring_path(config, case_id)
+    except ValueError:
+        return
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _state_path(config: WorkspaceServerConfig) -> Path:
+    root = config.state_root or (config.out_root.parent / "case_state")
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "case_state.json"
+
+
+def _load_state(config: WorkspaceServerConfig) -> dict[str, dict[str, Any]]:
+    path = _state_path(config)
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def _save_state(config: WorkspaceServerConfig, state: dict[str, dict[str, Any]]) -> None:
+    path = _state_path(config)
+    tmp = path.with_suffix(".json.tmp")
+    blob = json.dumps(state, indent=2, ensure_ascii=False).encode("utf-8")
+    with tmp.open("wb") as fh:
+        fh.write(blob)
+    tmp.replace(path)
+
+
 def _write_json(handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict[str, Any]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status.value)
@@ -319,17 +765,28 @@ def _write_error(handler: BaseHTTPRequestHandler, status: HTTPStatus, code: str,
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Serve read-only ApplicationWorkspaceHub cases over local HTTP.")
+    parser = argparse.ArgumentParser(description="Serve ApplicationWorkspaceHub cases and case-decision state over local HTTP.")
     parser.add_argument("--out-root", required=True, help="Root containing JobPipe run directories.")
     parser.add_argument("--run-id", default="", help="Default opaque run directory ID. Defaults to newest valid run.")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=8765, help="Port to bind (default: 8765).")
+    parser.add_argument(
+        "--state-root",
+        default="",
+        help="Directory for user decision state (case_state.json). Defaults to <out-root>/../case_state.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
-    server = build_server(out_root=args.out_root, run_id=args.run_id, host=args.host, port=args.port)
+    server = build_server(
+        out_root=args.out_root,
+        run_id=args.run_id,
+        host=args.host,
+        port=args.port,
+        state_root=args.state_root or None,
+    )
     host, port = server.server_address[:2]
     print(f"Serving workspace cases on http://{host}:{port}", flush=True)
     try:

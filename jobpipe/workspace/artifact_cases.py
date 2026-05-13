@@ -132,6 +132,14 @@ class ArtifactWorkspaceHub:
     def cases(self) -> ArtifactCasesCapability:
         return ArtifactCasesCapability(self.run_dir)
 
+    @property
+    def tailoring(self) -> "ArtifactTailoringCapability":
+        # Lazy import to keep workspace package import-light and to avoid a
+        # circular dependency if artifact_tailoring grows to need cases data.
+        from .artifact_tailoring import ArtifactTailoringCapability
+
+        return ArtifactTailoringCapability(self.run_dir)
+
 
 def build_artifact_workspace_hub(run_dir: str | Path) -> ArtifactWorkspaceHub:
     """Create a read-only workspace hub over one JobPipe artifact run."""
