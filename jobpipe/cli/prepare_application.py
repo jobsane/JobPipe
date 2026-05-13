@@ -190,20 +190,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     except Exception as _e:
         print(f"  Provenance: skipped ({_e})")
 
-    # Push to Reactive Resume if configured (best-effort)
-    _settings_path = runtime.data_root / "reports" / "settings_state.json"
-    try:
-        _settings = load_settings_state(_settings_path)
-        _rr = (_settings.get("integrations", {}) or {}).get("reactive_resume", {}) or {}
-        _rr_base = (_rr.get("base_url") or "").rstrip("/")
-        _rr_token = _rr.get("token") or ""
-        if _rr_base and _rr.get("enabled"):
-            from jobpipe.integrations.reactive_resume_client import get_resume_url, push_resume_to_rr
-            _created = push_resume_to_rr(_rr_base, patched, token=_rr_token)
-            _rr_id = _created.get("id") or (_created.get("data") or {}).get("id", "")
-            print(f"  RR push:    {get_resume_url(_rr_base, _rr_id)}")
-    except Exception as _e:
-        print(f"  RR push:    skipped ({_e})")
+    # RR push lives in JobSane now — it owns the MCP transport per the
+    # locked spec at JobpipeData/prototypes/specs/01_rr_mcp_contract.md.
+    # JobPipe's job stops at producing the patched JSON + tailoring plan;
+    # JobSane (called via POST /tailor with {case_id}) handles
+    # duplicate → patch against the live RR instance.
+    print("  RR push:    deferred to JobSane MCP (POST /tailor with case_id)")
 
     # Step 3: generate cover letter with CV context
     print()
