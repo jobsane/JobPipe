@@ -18,6 +18,15 @@ from jobpipe.workspace.contracts import (
     WorkspaceContractError,
 )
 
+from jobpipe.workspace.supabase_cases import hub_from_env as _supabase_hub_from_env
+
+
+# Canonical-migration: workspace_server always reads cases from Supabase
+# (jobs ⨝ triage_decisions). The legacy artifact-backed code path remains
+# in the repo for debug-dump consumers but is never selected at runtime.
+# Run-id pinning is gone — there's only "current state".
+_SUPABASE_VIRTUAL_RUN_ID = "supabase"
+
 
 LIST_SCHEMA_VERSION = "jobpipe.workspace.cases.list.v1"
 GET_SCHEMA_VERSION = "jobpipe.workspace.cases.get.v1"
@@ -231,7 +240,19 @@ def _handle_get(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) 
 def _resolve_hub(
     config: WorkspaceServerConfig,
     query: dict[str, list[str]],
-) -> tuple[str, ArtifactWorkspaceHub]:
+) -> tuple[str, Any]:
+    # Canonical path: Supabase. When JOBPIPE_SUPABASE_URL/KEY are set (the
+    # production default), every read goes to v_actionable_cases — current
+    # state for current user. No run_id pinning, no per-request file walks.
+    hub = _supabase_hub_from_env()
+    if hub is not None:
+        return _SUPABASE_VIRTUAL_RUN_ID, hub
+
+    # Fallback: artifact-backed path. Kept for tests, debug runs, and any
+    # pre-migration environment where Supabase env vars aren't configured.
+    # Will be removed once the canonical migration has lived in production
+    # for a release cycle (tracked in Phase 4 of the stitch plan —
+    # docs/canonical-state-stitch-plan.md in JobDesk).
     if not config.out_root.exists() or not config.out_root.is_dir():
         raise ValueError("Configured out_root is not a directory.")
 
@@ -257,7 +278,7 @@ class RunNotFoundError(Exception):
 
 
 def _case_summary(item: CaseListItem, case: ApplicationCaseReadModel | None = None) -> dict[str, Any]:
-    return {
+    base: dict[str, Any] = {
         "id": item.id,
         "company": item.company,
         "role": item.role,
@@ -271,9 +292,50 @@ def _case_summary(item: CaseListItem, case: ApplicationCaseReadModel | None = No
         "mainGap": _truncate(item.main_gap),
         "tailoringEffort": item.tailoring_effort.value,
         "nextAction": item.next_action,
+        "decidedAt": item.decided_at,
+        "jobUpdatedAt": item.job_updated_at,
+        "jobPostedAt": item.job_posted_at,
+        "sourceUrl": case.source_url if case else "",
+        "applicationUrl": case.application_url if case else "",
         "decisionSignalKeys": [signal.key.value for signal in case.decision_signals] if case else [],
         "artifactRefCount": len(case.artifacts) if case else 0,
     }
+    if case is not None:
+        # Ship rich fields in the list response too — the shortlist drawer
+        # opens from list data and needs dimensions/strengths/gaps/atsKeywords/
+        # summary without a second round-trip. Cost: ~3KB extra per row, ~130KB
+        # total at 44 cases — fine.
+        base.update({
+            "summary": _truncate(case.summary, limit=500),
+            "atsKeywords": case.ats_keywords,
+            "decisionSignals": [
+                {
+                    "key": signal.key.value,
+                    "label": signal.label,
+                    "score": signal.score,
+                    "band": signal.band,
+                    "rationale": _truncate(signal.rationale, limit=240),
+                    "confidence": signal.confidence,
+                    "evidenceIds": signal.evidence_ids,
+                    "supportingPoints": [_truncate(value) for value in signal.supporting_points[:4]],
+                    "riskPoints": [_truncate(value) for value in signal.risk_points[:4]],
+                }
+                for signal in case.decision_signals
+            ],
+            "strengths": [_truncate(value) for value in case.strengths[:6]],
+            "gaps": [_truncate(value) for value in case.gaps[:6]],
+            "evidence": [
+                {
+                    "id": ref.id,
+                    "label": ref.label,
+                    "source": ref.source,
+                    "quote": _truncate(ref.quote),
+                    "confidence": ref.confidence,
+                }
+                for ref in case.evidence
+            ],
+        })
+    return base
 
 
 def _case_detail(case: ApplicationCaseReadModel) -> dict[str, Any]:
@@ -291,6 +353,11 @@ def _case_detail(case: ApplicationCaseReadModel) -> dict[str, Any]:
         "applicationStatus": case.application_status.value,
         "tailoringEffort": case.tailoring_effort.value,
         "nextAction": case.next_action,
+        "decidedAt": case.decided_at,
+        "jobUpdatedAt": case.job_updated_at,
+        "jobPostedAt": case.job_posted_at,
+        "sourceUrl": case.source_url,
+        "applicationUrl": case.application_url,
         "decisionSignals": [
             {
                 "key": signal.key.value,
@@ -795,13 +862,18 @@ def _write_json(handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: di
 
 
 def _write_error(handler: BaseHTTPRequestHandler, status: HTTPStatus, code: str, message: str) -> None:
-    _write_json(handler, status, {"error": {"code": code, "message": message}})
+    try:
+        _write_json(handler, status, {"error": {"code": code, "message": message}})
+    except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+        # Client already gave up (e.g. Next.js fetch cancelled). Don't take
+        # the server down for a corpse client — just drop the response.
+        pass
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Serve ApplicationWorkspaceHub cases and case-decision state over local HTTP.")
-    parser.add_argument("--out-root", required=True, help="Root containing JobPipe run directories.")
-    parser.add_argument("--run-id", default="", help="Default opaque run directory ID. Defaults to newest valid run.")
+    parser.add_argument("--out-root", required=True, help="Root containing JobPipe run directories. Used for case_state file path and as the artifact-backed fallback when JOBPIPE_SUPABASE_URL/KEY are not set (e.g. tests).")
+    parser.add_argument("--run-id", default="", help="Default opaque run directory ID for the artifact-backed fallback. Ignored when Supabase env is configured (cases then come from current Supabase state, not a pinned run).")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=8765, help="Port to bind (default: 8765).")
     parser.add_argument(
@@ -814,6 +886,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
+
+    # Auto-load JobPipe env so JOBPIPE_SUPABASE_URL/KEY are set even when the
+    # workspace_server is spawned by an orchestrator that doesn't pre-populate
+    # env. After the canonical migration these are required for /cases.
+    try:
+        from jobpipe.core.io import load_env_file
+        # Derive from --out-root: env file sits beside the data root that
+        # contains out_runs/. Resilient to whatever JOBPIPE_DATA_DIR is set to.
+        env_file = Path(args.out_root).resolve().parent / ".env"
+        if env_file.exists():
+            load_env_file(str(env_file))
+    except Exception:
+        pass  # best-effort; env may already be set externally
+
     try:
         server = build_server(
             out_root=args.out_root,

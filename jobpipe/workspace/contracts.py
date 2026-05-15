@@ -199,6 +199,17 @@ class CaseListItem:
     main_gap: str = ""
     tailoring_effort: TailoringEffort = TailoringEffort.MEDIUM
     next_action: str = "Open review"
+    # ISO 8601 timestamp from triage_decisions.decided_at — when this case
+    # entered the user's actionable shortlist. Used as the "freshness" signal
+    # in the UI ("Today", "2d ago", etc.).
+    decided_at: str = ""
+    # ISO 8601 timestamp from jobs.updated_at — when the employer-side ad
+    # was last touched on NAV (post / edit / status change). Distinct from
+    # decided_at (= when JobPipe surfaced this case to the user).
+    job_updated_at: str = ""
+    # ISO 8601 timestamp from jobs.published_at — when the employer first
+    # posted the ad on NAV. Used as the "posted" date in the UI.
+    job_posted_at: str = ""
     provenance: list[ProvenanceRef] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -366,6 +377,10 @@ class ApplicationCaseReadModel:
     location: str
     work_mode: WorkMode
     deadline: str = ""
+    # Canonical URL where a human reads the ad in its original location.
+    # For NAV-sourced jobs that's the arbeidsplassen.nav.no listing; for
+    # finn.no / LinkedIn / employer-page sources it's the original posting.
+    # Distinct from `application_url` (where the user submits).
     source_url: str = ""
     application_url: str = ""
     summary: str = ""
@@ -380,6 +395,15 @@ class ApplicationCaseReadModel:
     evidence: list[EvidenceRef] = field(default_factory=list)
     artifacts: list[ArtifactRef] = field(default_factory=list)
     next_action: str = "Open review"
+    # ISO 8601 timestamp — when JobPipe wrote this decision (= when the case
+    # became visible in the user's shortlist). Used as the freshness signal.
+    decided_at: str = ""
+    # ISO 8601 timestamp from jobs.updated_at — when the employer-side ad
+    # was last touched on NAV. Distinct from `decided_at`.
+    job_updated_at: str = ""
+    # ISO 8601 timestamp from jobs.published_at — when the employer first
+    # posted the ad on NAV.
+    job_posted_at: str = ""
     provenance: list[ProvenanceRef] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -402,6 +426,9 @@ class ApplicationCaseReadModel:
             main_gap=self.gaps[0] if self.gaps else "",
             tailoring_effort=self.tailoring_effort,
             next_action=self.next_action,
+            decided_at=self.decided_at,
+            job_updated_at=self.job_updated_at,
+            job_posted_at=self.job_posted_at,
             provenance=self.provenance,
         )
 

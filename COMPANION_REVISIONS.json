@@ -1,0 +1,58 @@
+{
+  "schema_version": "jobpipe.companion-revisions.v2",
+  "recorded_at": "2026-05-16",
+  "policy": {
+    "mode": "polyrepo",
+    "purpose": "Record the sibling-repo revisions aligned with this JobPipe checkpoint without vendoring companion code.",
+    "rules": [
+      "Keep companions in their own repos.",
+      "Record sibling commit SHAs here when a JobPipe checkpoint depends on them.",
+      "Checkpoint local-only sibling changes in the sibling repo itself instead of copying that code into JobPipe.",
+      "Do not push sibling-only local checkpoints upstream unless they are intentionally prepared for that repo."
+    ]
+  },
+  "companions": [
+    {
+      "id": "jobdata",
+      "path": "../JobData",
+      "remote": "https://github.com/jobsane/JobData.git",
+      "branch": "main",
+      "commit": "1fc522dfe40efe97dc76f74ce262045dfe9194b1",
+      "sync_role": "Supabase canonical schema — jobs / triage_decisions / v_actionable_cases / candidate_profile / applications / cv_versions / cover_letters / edge functions",
+      "status": "upstream_clean"
+    },
+    {
+      "id": "jobsane",
+      "path": "../jobsane",
+      "remote": "https://github.com/jobsane/JobSane.git",
+      "branch": "main",
+      "commit": "733d622600735ff5ed88bfd42ede0bc9647384c3",
+      "sync_role": "CrewAI authoring service on :8766 — receives case context from this hub, returns CV patches + cover letter via hub POSTs and RR MCP",
+      "status": "upstream_clean"
+    },
+    {
+      "id": "jobdesk",
+      "path": "../JobDesk",
+      "remote": "https://github.com/jobsane/JobDesk.git",
+      "branch": "main",
+      "commit": "c2ace4f0c1e912520964d868dad9c7b0427ceb46",
+      "sync_role": "Next.js operator cockpit on :3001 — consumes this hub via integration gateway; canonical-state migration tracked in docs/canonical-state-stitch-plan.md",
+      "status": "upstream_clean"
+    },
+    {
+      "id": "reactive-resume",
+      "path": "../Reactive-Resume",
+      "remote": "https://github.com/AmruthPillai/Reactive-Resume.git",
+      "branch": "main",
+      "commit": "7df9b1e4b5496dc29889481370f61fea60a4b967",
+      "sync_role": "Final CV editor/export surface. Reached via MCP from JobSane; never imported into JobPipe.",
+      "status": "upstream_clean_baseline"
+    }
+  ],
+  "notes": {
+    "removed_companions": [
+      "jobsync — integration surface removed 2026-05-13 in commit 28f3c41 (replaced by Supabase NAV intake via JobData edge function import-nav-jobs)"
+    ],
+    "principle": "All durable state lives in Supabase (jobsane/JobData). JobPipe is the only service that touches Supabase directly. Every other companion uses this hub (workspace_server :8765) as its only connector. See JobDesk docs/canonical-state-stitch-plan.md for the architectural rationale."
+  }
+}

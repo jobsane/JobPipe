@@ -8,6 +8,38 @@ from jobpipe.core.io import ensure_dir, write_json, append_jsonl
 from jobpipe.core.schema import JobContext
 from jobpipe.core.stage_cache import read_artifact_cache_key, write_artifact_cache_key
 
+try:
+    from jobpipe.core.decision_sink import get_profile_version, upsert_decision
+    from jobpipe.core.paths import get_jobpipe_paths
+    _DECISION_SINK_AVAILABLE = True
+except ImportError:
+    _DECISION_SINK_AVAILABLE = False
+
+
+def _debug_dump_enabled() -> bool:
+    """Per-case JSON artifact + index.jsonl writes.
+
+    After the canonical-state migration these are debug-only IF Supabase is
+    available — the upsert via decision_sink is the durable record. When
+    Supabase is NOT configured (tests, local fallback), the file artifacts
+    ARE the durable record, so writes must stay on.
+
+    Order of precedence:
+      1. JOBPIPE_DEBUG_DUMP=1 forces writes on (debug parity with Supabase).
+      2. JOBPIPE_DEBUG_DUMP=0 forces writes off.
+      3. Otherwise: writes off when JOBPIPE_SUPABASE_URL/KEY are set
+         (Supabase is the durable record); writes on otherwise.
+    """
+    explicit = os.environ.get("JOBPIPE_DEBUG_DUMP")
+    if explicit == "1":
+        return True
+    if explicit == "0":
+        return False
+    supabase_configured = bool(
+        os.environ.get("JOBPIPE_SUPABASE_URL") and os.environ.get("JOBPIPE_SUPABASE_KEY")
+    )
+    return not supabase_configured
+
 StageFn = Callable[[JobContext, str], JobContext]
 
 
@@ -30,10 +62,11 @@ class PipelineRunner:
         self.stages = stages
 
     def run_job(self, ctx: JobContext, job_dir: str, overwrite: bool = False) -> JobContext:
+        debug_dump = _debug_dump_enabled()
         ensure_dir(job_dir)
-        # save raw input once
+        # save raw input once (debug-only after canonical migration)
         input_path = os.path.join(job_dir, "00_input.json")
-        if overwrite or (not os.path.exists(input_path)):
+        if debug_dump and (overwrite or (not os.path.exists(input_path))):
             write_json(input_path, ctx.job)
 
         for idx, stage in enumerate(self.stages, start=1):
@@ -84,11 +117,21 @@ class PipelineRunner:
                 # some stages (e.g. moderate) may write ctx.moderator but stage.name is "moderate"
                 out_obj = ctx.snapshot_summary()
 
-            write_json(artifact_path, out_obj)
-            if cache_key is not None:
-                write_artifact_cache_key(artifact_path, cache_key)
+            if debug_dump:
+                write_json(artifact_path, out_obj)
+                if cache_key is not None:
+                    write_artifact_cache_key(artifact_path, cache_key)
 
         return ctx
 
     def append_index(self, run_dir: str, ctx: JobContext) -> None:
-        append_jsonl(os.path.join(run_dir, "index.jsonl"), ctx.snapshot_summary())
+        summary = ctx.snapshot_summary()
+        # Canonical: Supabase. The file index.jsonl is now debug-only.
+        if _debug_dump_enabled():
+            append_jsonl(os.path.join(run_dir, "index.jsonl"), summary)
+        if _DECISION_SINK_AVAILABLE:
+            try:
+                paths = get_jobpipe_paths()
+                upsert_decision(summary, profile_version=get_profile_version(paths.profile_pack_path))
+            except Exception:
+                pass  # never let a sink failure break the runner

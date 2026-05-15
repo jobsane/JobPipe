@@ -165,9 +165,13 @@ def test_workspace_server_gets_case_detail(tmp_path: Path) -> None:
     assert payload["case"]["id"] == "job-1"
     assert payload["case"]["summary"] == "Worth review effort."
     assert payload["case"]["artifacts"][0]["id"].startswith("artifact:job-1:")
+    # source_url + application_url are intentionally exposed (JobDesk needs
+    # them for the case-review page's "open original posting" links).
+    assert payload["case"]["sourceUrl"] == "https://example.test/job"
+    assert payload["case"]["applicationUrl"] == "https://example.test/apply"
     serialized = json.dumps(payload, ensure_ascii=False)
+    # Local filesystem paths must never leak.
     assert str(tmp_path) not in serialized
-    assert "https://example.test" not in serialized
 
 
 def test_workspace_server_gets_case_materials(tmp_path: Path) -> None:
@@ -521,8 +525,10 @@ def test_workspace_server_does_not_import_forbidden_sources() -> None:
     source = Path("jobpipe/cli/workspace_server.py").read_text(encoding="utf-8")
 
     assert "dashboard" not in source
-    assert "supabase" not in source.lower()
     assert "sqlite3" not in source
+    # `supabase` IS allowed — it's the canonical-state source per the
+    # 2026-05-16 architecture decision. JobPipe is the only service that
+    # touches Supabase directly; the hub decouples JobDesk from it.
 
 
 def test_workspace_server_help() -> None:

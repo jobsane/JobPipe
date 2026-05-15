@@ -278,6 +278,22 @@ def main(argv: Optional[list[str]] = None) -> None:
     if args.skip_processed:
         print(f"[drain_queue] ledger filter ON: {len(processed_ids)} job_ids already in {ledger_path}")
 
+        # Canonical-migration: also skip jobs already decided in Supabase under the
+        # current profile_version. Stale decisions (older profile) are NOT in this
+        # set so they get re-triaged. Best-effort: missing config = no-op.
+        try:
+            from jobpipe.core.decision_sink import get_profile_version, load_decided_job_ids
+            profile_version = get_profile_version(paths.profile_pack_path)
+            supabase_decided = load_decided_job_ids(profile_version=profile_version)
+            new_ids = supabase_decided - processed_ids
+            processed_ids |= supabase_decided
+            print(
+                f"[drain_queue] supabase decisions filter: +{len(new_ids)} new "
+                f"({len(supabase_decided)} total) under profile_version={profile_version}"
+            )
+        except Exception as exc:
+            print(f"[drain_queue] supabase decisions query skipped: {exc}")
+
     loops = 0
     total_rows_processed = 0
     total_batches = 0
