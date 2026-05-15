@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from jobpipe.workspace import ArtifactRunSource, ArtifactWorkspaceHub
@@ -19,6 +19,8 @@ from jobpipe.workspace.contracts import (
 )
 
 from jobpipe.workspace.supabase_cases import hub_from_env as _supabase_hub_from_env
+from jobpipe.workspace.supabase_applications import from_env as _supabase_applications_from_env
+from jobpipe.workspace.supabase_cover_letters import from_env as _supabase_cover_letters_from_env
 
 
 # Canonical-migration: workspace_server always reads cases from Supabase
@@ -549,10 +551,7 @@ def _handle_post(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig)
 
             action = body.get("action", "set")
             if action == "clear":
-                state = _load_state(config)
-                if case_id in state:
-                    del state[case_id]
-                    _save_state(config, state)
+                _clear_case_state(config, case_id)
                 _write_json(
                     handler,
                     HTTPStatus.OK,
@@ -586,20 +585,26 @@ def _handle_post(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig)
                 return
 
             from datetime import datetime, timezone
+            effective_app_status = (
+                application_status if decision_status == "decided_apply" else None
+            )
+            effective_skip_reason = (
+                skip_reason if decision_status == "decided_skip" else None
+            )
+            _persist_case_state(
+                config,
+                case_id,
+                decision_status=decision_status,
+                application_status=effective_app_status,
+                skip_reason=effective_skip_reason,
+            )
             entry = {
                 "caseId": case_id,
                 "decisionStatus": decision_status,
-                "applicationStatus": (
-                    application_status if decision_status == "decided_apply" else None
-                ),
-                "skipReason": (
-                    skip_reason if decision_status == "decided_skip" else None
-                ),
+                "applicationStatus": effective_app_status,
+                "skipReason": effective_skip_reason,
                 "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             }
-            state = _load_state(config)
-            state[case_id] = entry
-            _save_state(config, state)
             _write_json(
                 handler,
                 HTTPStatus.OK,
@@ -804,6 +809,21 @@ def _save_tailoring_override(
     payload.setdefault("caseId", case_id)
     payload.setdefault("source", "jobsane")
 
+    # Canonical write: when the override includes a coverLetter, persist its
+    # content to Supabase `cover_letters` table. This is the durable record
+    # JobDesk's tracker reads. The file write below is kept as a debug copy
+    # and as the disk fallback when Supabase isn't configured.
+    cover_letter = payload.get("coverLetter")
+    if isinstance(cover_letter, dict) and isinstance(cover_letter.get("text"), str):
+        clcap = _supabase_cover_letters_from_env()
+        if clcap is not None:
+            clcap.upsert_content(
+                case_id,
+                content=cover_letter["text"],
+                language=cover_letter.get("language") if isinstance(cover_letter.get("language"), str) else None,
+                angle=cover_letter.get("angle") if isinstance(cover_letter.get("angle"), str) else None,
+            )
+
     tmp = path.with_suffix(".json.tmp")
     blob = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
     with tmp.open("wb") as fh:
@@ -830,6 +850,12 @@ def _state_path(config: WorkspaceServerConfig) -> Path:
 
 
 def _load_state(config: WorkspaceServerConfig) -> dict[str, dict[str, Any]]:
+    # Canonical: Supabase applications table. Disk fallback for tests / pre-
+    # migration. See docs/canonical-state-stitch-plan.md in JobDesk.
+    apps = _supabase_applications_from_env()
+    if apps is not None:
+        return apps.list_state()
+
     path = _state_path(config)
     if not path.exists():
         return {}
@@ -844,12 +870,63 @@ def _load_state(config: WorkspaceServerConfig) -> dict[str, dict[str, Any]]:
 
 
 def _save_state(config: WorkspaceServerConfig, state: dict[str, dict[str, Any]]) -> None:
+    # File-write path. Kept as a fallback when Supabase isn't configured.
+    # When Supabase IS configured, callers should use _persist_case_state
+    # for per-case upserts instead — _save_state is only invoked by the
+    # bulk-clear branch which is fine to keep file-only for now since
+    # full-state clears are operational/debug-only.
     path = _state_path(config)
     tmp = path.with_suffix(".json.tmp")
     blob = json.dumps(state, indent=2, ensure_ascii=False).encode("utf-8")
     with tmp.open("wb") as fh:
         fh.write(blob)
     tmp.replace(path)
+
+
+def _persist_case_state(
+    config: WorkspaceServerConfig,
+    case_id: str,
+    *,
+    decision_status: str,
+    application_status: Optional[str],
+    skip_reason: Optional[str] = None,
+) -> None:
+    """Upsert one case's state.
+
+    Canonical: writes to Supabase `applications` when env is set; falls
+    back to merging into the disk state JSON when not. Each branch keeps
+    the same external behavior — GET /case_state returns the same shape.
+    """
+    apps = _supabase_applications_from_env()
+    if apps is not None:
+        apps.upsert_state(
+            case_id,
+            decision_status=decision_status,
+            application_status=application_status,
+            notes=skip_reason if decision_status == "decided_skip" else None,
+        )
+        return
+
+    # Disk fallback (tests / pre-migration ops).
+    state = _load_state(config)
+    entry: dict[str, Any] = {"decisionStatus": decision_status}
+    if application_status is not None:
+        entry["applicationStatus"] = application_status
+    if skip_reason is not None and decision_status == "decided_skip":
+        entry["skipReason"] = skip_reason
+    state[case_id] = entry
+    _save_state(config, state)
+
+
+def _clear_case_state(config: WorkspaceServerConfig, case_id: str) -> None:
+    apps = _supabase_applications_from_env()
+    if apps is not None:
+        apps.clear_state(case_id)
+        return
+    state = _load_state(config)
+    if case_id in state:
+        del state[case_id]
+        _save_state(config, state)
 
 
 def _write_json(handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict[str, Any]) -> None:
