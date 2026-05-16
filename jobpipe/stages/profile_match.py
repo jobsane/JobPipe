@@ -48,12 +48,43 @@ Avrund til nærmeste heltall. Trekk fra 10 for hvert hard_blocker.
 - weak: fit_score < 50
 
 ## overlaps
-Konkrete, spesifikke treff — IKKE generiske fraser som "digitalisering" eller "prosjektledelse" alene.
-Skriv "ITSM-forvaltning med ServiceNow" ikke bare "ITSM".
-Maks 6 punkter.
+Du skal trekke ut de viktigste overlaps mellom jobbannonsen og profile_match_context.
+
+Definisjon:
+Overlaps = konkrete krav, arbeidsoppgaver, teknologier, domener, metoder, verktøy, sertifiseringer eller erfaringer fra jobbannonsen som er tydelig dekket i profile_match_context.
+
+Regler:
+- Bruk kun informasjon som finnes i jobbannonsen og profile_match_context.
+- Ikke gjett eller overtolk.
+- Skriv korte noun phrases, ikke hele setninger.
+- Vær spesifikk: skriv "ITSM-forvaltning med ServiceNow", ikke bare "ITSM".
+- Unngå generiske enkeltord som "digitalisering", "prosjektledelse", "kommunikasjon" eller "samarbeid" med mindre de er konkretisert.
+- Slå sammen overlappende punkter som handler om samme kompetanse.
+- Prioriter harde krav, sentrale arbeidsoppgaver, teknologier, bransjeerfaring og tydelige kvalifikasjoner.
+- Ta med alle vesentlige overlaps, men ikke fyll på med svake eller generiske treff.
+- Normalt 3-8 punkter, men færre hvis det er få sterke overlaps.
+- Output skal være på samme språk som jobbannonsen.
 
 ## gaps
-Krav stillingen stiller som kandidaten mangler (basert på profile_match_context). Vær konkret.
+Du skal trekke ut de viktigste gaps mellom jobbannonsen og profile_match_context.
+
+Definisjon:
+Gaps = konkrete krav, arbeidsoppgaver, teknologier, domener, metoder, verktøy eller erfaringer fra jobbannonsen som ikke er tydelig dekket i profile_match_context.
+
+Regler:
+- Bruk kun krav og forventninger som faktisk finnes i jobbannonsen.
+- Ikke lag gaps basert på ting som ikke står i annonsen.
+- Ikke skriv negative formuleringer.
+- Skriv korte noun phrases, ikke hele setninger.
+- Skriv "Bachelorutdanning innen IKT", ikke "Mangler bachelorutdanning innen IKT".
+- Skriv "Drift av nettverk og infrastruktur", ikke "Erfaring med drift og vedlikehold av nettverk og infrastruktur mangler".
+- Vær spesifikk: skriv "Azure DevOps-pipelines", ikke bare "DevOps".
+- Slå sammen like eller overlappende gaps.
+- Prioriter etter alvorlighetsgrad: må-krav først, deretter sentrale arbeidsoppgaver, teknologi, domene og ønskede kvalifikasjoner.
+- Ikke ta med gaps som er svakt antydet eller lite viktige.
+- Ta med alle vesentlige gaps, men ikke fyll opp til et bestemt antall.
+- Normalt 2-8 punkter, men 0-1 er riktig hvis profilen dekker det meste.
+- Output skal være på samme språk som jobbannonsen.
 
 ## hard_blockers
 Kun eksplisitte, ikke-overkommelige krav: sikkerhetsklarering, fagautorisasjon, lisens,

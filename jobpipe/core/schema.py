@@ -364,6 +364,21 @@ class JobContext(BaseModel):
             # workspace read model uses these to render concrete strengths,
             # gaps, and per-dimension rationales instead of tag-translations.
             # All optional — drop into signals JSONB only when the stage ran.
+            #
+            # parse-stage projections drive the Job context summary and ATS
+            # keywords list in JobDesk. parsed_role_summary replaces the
+            # truncated raw ad description as the case summary. parsed_domain_tags
+            # + parsed_tools_tech replace the occupation-taxonomy fallback for
+            # ATS keywords with real ad-extracted terms.
+            "parsed_role_summary": (
+                self.parsed.role_summary if self.parsed else ""
+            ),
+            "parsed_domain_tags": (
+                list(self.parsed.domain_tags) if self.parsed else []
+            ),
+            "parsed_tools_tech": (
+                list(self.parsed.tools_tech) if self.parsed else []
+            ),
             "profile_match_overlaps": (
                 list(self.profile_match.overlaps) if self.profile_match else []
             ),

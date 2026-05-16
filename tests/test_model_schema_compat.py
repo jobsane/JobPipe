@@ -41,6 +41,9 @@ def test_job_context_snapshot_summary_uses_model_schema() -> None:
         "narrative_positioning_angle": None,
         "narrative_brand_frame": None,
         # rich list/prose projections (consumed by workspace read model)
+        "parsed_role_summary": "",
+        "parsed_domain_tags": [],
+        "parsed_tools_tech": [],
         "profile_match_overlaps": [],
         "profile_match_gaps": [],
         "profile_match_level": None,

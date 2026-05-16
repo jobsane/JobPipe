@@ -77,7 +77,10 @@ def _signals_payload(summary: Dict[str, Any]) -> Dict[str, Any]:
         "narrative_brand_frame",
         "pivot_score",
         "confidence",
-        # rich deterministic outputs from profile_match / pivot / advantage_v3
+        # rich deterministic outputs from parse / profile_match / pivot / advantage_v3
+        "parsed_role_summary",
+        "parsed_domain_tags",
+        "parsed_tools_tech",
         "profile_match_overlaps",
         "profile_match_gaps",
         "profile_match_level",

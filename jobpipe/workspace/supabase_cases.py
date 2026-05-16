@@ -262,11 +262,36 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
 
 
 def _extract_ats_keywords(row: dict[str, Any], signals: dict[str, Any]) -> list[str]:
-    """Best-available ATS keyword set: occupation taxonomy + weak-keyword hints
-    from triage. Pipeline doesn't yet do dedicated ATS extraction, so this
-    surfaces what we have without LLM cost."""
+    """Best-available ATS keyword set.
+
+    Preference order:
+      1. parsed_domain_tags + parsed_tools_tech — concrete terms extracted by
+         the parse stage from the ad itself (e.g. "Nettverk", "ServiceNow",
+         "Skole", "Digital eksamen"). These are real ATS-relevant keywords
+         that the resume and value proposition should hit.
+      2. Legacy fallback for rows decided before the parse projection landed:
+         occupation_level1/2 (broad taxonomy) + wk:* weak-keyword triage
+         signals (terms the ad mentions but the profile barely covers).
+    """
     out: list[str] = []
     seen: set[str] = set()
+
+    parsed_domain = signals.get("parsed_domain_tags") or []
+    parsed_tools = signals.get("parsed_tools_tech") or []
+    parsed_keywords = [
+        kw.strip()
+        for kw in [*parsed_domain, *parsed_tools]
+        if isinstance(kw, str) and kw.strip()
+    ]
+    if parsed_keywords:
+        for kw in parsed_keywords:
+            key = kw.lower()
+            if key not in seen:
+                seen.add(key)
+                out.append(kw)
+        return out[:12]
+
+    # Legacy fallback path
     for v in (row.get("occupation_level1"), row.get("occupation_level2")):
         if isinstance(v, str) and v.strip():
             key = v.strip().lower()
@@ -278,7 +303,7 @@ def _extract_ats_keywords(row: dict[str, Any], signals: dict[str, Any]) -> list[
         if key not in seen and len(kw) > 1:
             seen.add(key)
             out.append(kw)
-    return out[:12]  # cap
+    return out[:12]
 
 
 def _build_strengths_gaps(signals: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -290,10 +315,14 @@ def _build_strengths_gaps(signals: dict[str, Any]) -> tuple[list[str], list[str]
     candidate strengths, so they don't get dressed up as strengths. When
     profile_match data is missing (legacy rows, failed run), both lists
     return empty and the UI shows the honest empty state.
+
+    No truncation cap — the profile_match prompt enforces "Normalt 2-8
+    punkter, men 0-1 er riktig hvis profilen dekker det meste". Trust the
+    prompt; surface the realistic list to the user.
     """
     overlaps = _filter_human_strings(signals.get("profile_match_overlaps"))
     real_gaps = _filter_human_strings(signals.get("profile_match_gaps"))
-    return overlaps[:8], real_gaps[:4]
+    return overlaps, real_gaps
 
 
 def _resolve_source_url(row: dict[str, Any]) -> str:
@@ -327,13 +356,16 @@ def _row_to_read_model(row: dict[str, Any]) -> ApplicationCaseReadModel:
     if not isinstance(raw_signals, dict):
         raw_signals = {}
 
-    # narrative_strategy_v3 produced template strings (not LLM prose) for every
-    # advantage type — see jobpipe/stages/narrative_strategy_v3.py and the
-    # disable commit db545d2 (2026-05-16). Legacy rows still carry those
-    # templates in signals.narrative_positioning_angle; skip them and derive
-    # the summary from the raw ad description (HTML → plain text). Real prose
-    # positioning happens JIT in the editor at B7, not here.
-    summary = html_to_text(str(row.get("description") or ""), max_chars=500)
+    # Preference order for the Job context summary:
+    #   1. parse-stage role_summary — concise factual 2-sentence description
+    #      crafted from the ad's structured fields. The right answer.
+    #   2. raw ad description, HTML-stripped — fallback for legacy rows
+    #      decided before the parse projection landed (no parsed_role_summary
+    #      in their signals).
+    # narrative_strategy_v3.positioning_angle was templated text (not LLM
+    # prose) and is now disabled — see commit db545d2.
+    role_summary = str(raw_signals.get("parsed_role_summary") or "").strip()
+    summary = role_summary or html_to_text(str(row.get("description") or ""), max_chars=500)
 
     strengths, gaps = _build_strengths_gaps(raw_signals)
     dimensions = _build_dimensions(raw_signals, score)
