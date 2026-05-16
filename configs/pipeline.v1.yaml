@@ -23,7 +23,14 @@ stages:
   - triage_decision_v3     # deterministic: weighted aggregate -> discard/review/shortlist
   - triage_ambiguity_v3    # deterministic: conditional ambiguity resolution (skipped if not needed)
   - advantage_assessment_v3  # deterministic: advantage type, recruiter hook, review priority
-  - narrative_strategy_v3    # deterministic: Norwegian positioning angle + cover letter strategy
+  # - narrative_strategy_v3  # DISABLED 2026-05-16 — duplicated tiptap motivation extraction.
+                             # Cover letter / value proposition authoring now runs at B7 in
+                             # JobDesk's editor via /api/jobsane/extract-motivation →
+                             # plan-draft → generate-draft → critique-draft. Running this
+                             # stage eagerly produced a positioning_angle for every survivor
+                             # (~75% of which the user never opens) AND fought tiptap's
+                             # motivation analysis at authoring time. See
+                             # MEMORY/north_star.md "just-in-time generation" principle.
   - moderate
   - application_pack
   # - writer
