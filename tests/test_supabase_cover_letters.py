@@ -151,3 +151,109 @@ def test_upsert_content_soft_fails_on_http_error() -> None:
 
     with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
         assert cap.upsert_content("job-xyz", content="x") is False
+
+
+def test_upsert_editor_session_creates_row_when_no_v1_exists() -> None:
+    cap = _cap()
+    calls: list[Any] = []
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        calls.append({"method": req.get_method(), "body": _bytes_to_obj(req.data) if req.data else None})
+        if req.get_method() == "GET":
+            return _FakeResp(status=200, body=[])
+        return _FakeResp(status=201, body=None)
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        ok = cap.upsert_editor_session("job-xyz", {"target": "App letter", "motivation": None})
+
+    assert ok is True
+    # GET to find existing → none → POST to create with editor_session
+    assert calls[0]["method"] == "GET"
+    assert calls[1]["method"] == "POST"
+    assert calls[1]["body"]["editor_session"]["target"] == "App letter"
+    assert calls[1]["body"]["content"] == ""  # empty placeholder
+    assert calls[1]["body"]["application_id"] == 42
+
+
+def test_upsert_editor_session_patches_existing_row() -> None:
+    cap = _cap()
+    calls: list[Any] = []
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        calls.append({"method": req.get_method(), "url": req.full_url, "body": _bytes_to_obj(req.data) if req.data else None})
+        if req.get_method() == "GET":
+            return _FakeResp(status=200, body=[{"id": 7}])
+        return _FakeResp(status=204, body=None)
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        ok = cap.upsert_editor_session("job-xyz", {"target": "App", "plan": {}})
+
+    assert ok is True
+    assert calls[1]["method"] == "PATCH"
+    assert "id=eq.7" in calls[1]["url"]
+    # PATCH only sets editor_session — doesn't overwrite content
+    assert "content" not in calls[1]["body"]
+    assert calls[1]["body"]["editor_session"]["target"] == "App"
+
+
+def test_read_editor_session_returns_jsonb_value() -> None:
+    cap = _cap()
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        return _FakeResp(
+            status=200,
+            body=[
+                {
+                    "content": "letter text",
+                    "status": "draft",
+                    "version": 1,
+                    "updated_at": "",
+                    "editor_session": {"target": "X", "plan": {"section_count": 3}},
+                }
+            ],
+        )
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        session = cap.read_editor_session("job-xyz")
+
+    assert session == {"target": "X", "plan": {"section_count": 3}}
+
+
+def test_read_editor_session_returns_none_when_jsonb_is_null() -> None:
+    cap = _cap()
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        return _FakeResp(
+            status=200,
+            body=[{"content": "x", "status": "draft", "version": 1, "updated_at": "", "editor_session": None}],
+        )
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        assert cap.read_editor_session("job-xyz") is None
+
+
+def test_clear_editor_session_patches_null() -> None:
+    cap = _cap()
+    body_sent: dict[str, Any] = {}
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        if req.get_method() == "GET":
+            return _FakeResp(status=200, body=[{"id": 7}])
+        body_sent.update(_bytes_to_obj(req.data) if req.data else {})
+        return _FakeResp(status=204, body=None)
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        ok = cap.clear_editor_session("job-xyz")
+
+    assert ok is True
+    assert body_sent["editor_session"] is None
+
+
+def test_clear_editor_session_idempotent_when_no_row() -> None:
+    cap = _cap()
+
+    def fake_urlopen(req, timeout: int = 0):  # noqa: ARG001
+        return _FakeResp(status=200, body=[])
+
+    with patch("jobpipe.workspace.supabase_cover_letters.urlopen", fake_urlopen):
+        assert cap.clear_editor_session("job-nope") is True

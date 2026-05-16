@@ -21,6 +21,8 @@ from jobpipe.workspace.contracts import (
 from jobpipe.workspace.supabase_cases import hub_from_env as _supabase_hub_from_env
 from jobpipe.workspace.supabase_applications import from_env as _supabase_applications_from_env
 from jobpipe.workspace.supabase_cover_letters import from_env as _supabase_cover_letters_from_env
+from jobpipe.workspace.supabase_cv_versions import from_env as _supabase_cv_versions_from_env
+from jobpipe.workspace.supabase_profile import from_env as _supabase_profile_from_env
 
 
 # Canonical-migration: workspace_server always reads cases from Supabase
@@ -36,6 +38,9 @@ MATERIALS_SCHEMA_VERSION = "jobpipe.workspace.materials.v1"
 HEALTH_SCHEMA_VERSION = "jobpipe.workspace.health.v1"
 STATE_SCHEMA_VERSION = "jobpipe.workspace.case_state.v1"
 TAILORING_PLAN_SCHEMA_VERSION = "jobpipe.workspace.tailoring_plan.v1"
+VALUE_DRAFT_SCHEMA_VERSION = "jobpipe.workspace.value_draft.v1"
+EDITOR_SESSION_SCHEMA_VERSION = "jobpipe.workspace.editor_session.v1"
+PROFILE_SCHEMA_VERSION = "jobpipe.workspace.profile.v1"
 
 # Cap the write-back payload — a tailoring plan with cover letter + bullets
 # fits comfortably under 64KB. Reject anything larger as a malformed request.
@@ -162,6 +167,71 @@ def _handle_get(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) 
                     "schemaVersion": STATE_SCHEMA_VERSION,
                     "state": state,
                     "count": len(state),
+                },
+            )
+            return
+
+        if parsed.path == "/profile":
+            # Canonical: Supabase candidate_profile. No disk fallback —
+            # the profile is per-user identity, not local working state.
+            profile_cap = _supabase_profile_from_env()
+            if profile_cap is None:
+                _write_error(
+                    handler,
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "supabase_not_configured",
+                    "JOBPIPE_SUPABASE_URL/KEY must be set to read /profile.",
+                )
+                return
+            profile = profile_cap.read_profile()
+            if profile is None:
+                _write_json(
+                    handler,
+                    HTTPStatus.OK,
+                    {"schemaVersion": PROFILE_SCHEMA_VERSION, "profile": None},
+                )
+                return
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {"schemaVersion": PROFILE_SCHEMA_VERSION, "profile": profile},
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/value-draft"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/value-draft")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+            cv_cap = _supabase_cv_versions_from_env()
+            draft = cv_cap.read_latest(case_id) if cv_cap is not None else None
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": VALUE_DRAFT_SCHEMA_VERSION,
+                    "caseId": case_id,
+                    "valueDraft": draft,
+                },
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/editor-session"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/editor-session")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+            cl_cap = _supabase_cover_letters_from_env()
+            session = cl_cap.read_editor_session(case_id) if cl_cap is not None else None
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": EDITOR_SESSION_SCHEMA_VERSION,
+                    "caseId": case_id,
+                    "editorSession": session,
                 },
             )
             return
@@ -535,6 +605,121 @@ def _handle_post(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig)
                     "caseId": case_id,
                     "plan": plan_payload,
                 },
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/value-draft"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/value-draft")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+            body = _read_post_body(handler, max_bytes=256_000)
+            if body is None:
+                return
+
+            action = body.get("action", "save")
+            cv_cap = _supabase_cv_versions_from_env()
+            if cv_cap is None:
+                _write_error(
+                    handler,
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "supabase_not_configured",
+                    "JOBPIPE_SUPABASE_URL/KEY must be set to persist value drafts.",
+                )
+                return
+
+            if action == "accept":
+                patch = body.get("patch")
+                if not isinstance(patch, dict):
+                    _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_patch", "Body must include a 'patch' object.")
+                    return
+                ok = cv_cap.accept_patch(case_id, patch)
+                _write_json(
+                    handler,
+                    HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"schemaVersion": VALUE_DRAFT_SCHEMA_VERSION, "caseId": case_id, "accepted": ok},
+                )
+                return
+
+            if action == "reject":
+                patch_id = body.get("patchId")
+                if not isinstance(patch_id, str):
+                    _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_patch_id", "Body must include a 'patchId' string.")
+                    return
+                ok = cv_cap.reject_patch(case_id, patch_id)
+                _write_json(
+                    handler,
+                    HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"schemaVersion": VALUE_DRAFT_SCHEMA_VERSION, "caseId": case_id, "rejected": ok},
+                )
+                return
+
+            # default: save (upsert patches + optional accepted_patches)
+            patches = body.get("patches")
+            if not isinstance(patches, list):
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_patches", "Body must include a 'patches' array.")
+                return
+            accepted_patches = body.get("acceptedPatches")
+            if accepted_patches is not None and not isinstance(accepted_patches, list):
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_accepted_patches", "'acceptedPatches' must be an array or null.")
+                return
+            status_value = body.get("status", "draft")
+            if status_value not in ("draft", "reviewed", "exported"):
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_status", "'status' must be draft / reviewed / exported.")
+                return
+            ok = cv_cap.upsert_patches(
+                case_id,
+                patches=patches,
+                accepted_patches=accepted_patches,
+                status=status_value,
+            )
+            _write_json(
+                handler,
+                HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"schemaVersion": VALUE_DRAFT_SCHEMA_VERSION, "caseId": case_id, "saved": ok},
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/editor-session"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/editor-session")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_case_id", "Case id missing or invalid.")
+                return
+            body = _read_post_body(handler, max_bytes=512_000)
+            if body is None:
+                return
+
+            cl_cap = _supabase_cover_letters_from_env()
+            if cl_cap is None:
+                _write_error(
+                    handler,
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "supabase_not_configured",
+                    "JOBPIPE_SUPABASE_URL/KEY must be set to persist editor sessions.",
+                )
+                return
+
+            action = body.get("action", "save")
+            if action == "clear":
+                ok = cl_cap.clear_editor_session(case_id)
+                _write_json(
+                    handler,
+                    HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"schemaVersion": EDITOR_SESSION_SCHEMA_VERSION, "caseId": case_id, "cleared": ok},
+                )
+                return
+
+            session = body.get("session")
+            if not isinstance(session, dict):
+                _write_error(handler, HTTPStatus.BAD_REQUEST, "invalid_session", "Body must include a 'session' object.")
+                return
+            ok = cl_cap.upsert_editor_session(case_id, session)
+            _write_json(
+                handler,
+                HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"schemaVersion": EDITOR_SESSION_SCHEMA_VERSION, "caseId": case_id, "saved": ok},
             )
             return
 

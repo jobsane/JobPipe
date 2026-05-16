@@ -131,8 +131,8 @@ class SupabaseCoverLettersCapability:
             return None
 
     def read_latest(self, job_id: str) -> Optional[dict[str, Any]]:
-        """Return {content, status, version, updated_at} for the latest
-        cover_letter for job_id, or None."""
+        """Return {content, status, version, updated_at, editor_session} for
+        the latest cover_letter for job_id, or None."""
         app_id = self.applications.get_application_id(job_id)
         if app_id is None:
             return None
@@ -163,7 +163,90 @@ class SupabaseCoverLettersCapability:
             "status": row.get("status") or "draft",
             "version": int(row.get("version") or 1),
             "updated_at": row.get("updated_at") or "",
+            "editor_session": row.get("editor_session"),
         }
+
+    def upsert_editor_session(self, job_id: str, session: dict[str, Any]) -> bool:
+        """Persist the JobsaneEditor in-flight session for job_id.
+
+        Stores the JSON in `cover_letters.editor_session` (JSONB) on the
+        v1 row for the application. If no v1 row exists yet, creates one
+        with empty content so we have somewhere to hang the session.
+        Replaces the localStorage-backed src/lib/jobsane-editor/draft-store.ts
+        scratch state with canonical Supabase state.
+        """
+        app_id = self.applications.get_application_id(job_id)
+        if app_id is None:
+            return False
+
+        headers = {
+            "apikey": self.supabase_key,
+            "Authorization": f"Bearer {self.supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        existing_id = self._existing_row_id(app_id, version=1)
+        if existing_id is not None:
+            endpoint = (
+                f"{self.supabase_url.rstrip('/')}/rest/v1/cover_letters"
+                f"?id=eq.{existing_id}"
+            )
+            payload = {"editor_session": session}
+            req = Request(
+                endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="PATCH"
+            )
+        else:
+            # No row yet — create one with empty content + the session.
+            endpoint = f"{self.supabase_url.rstrip('/')}/rest/v1/cover_letters"
+            payload = {
+                "application_id": app_id,
+                "version": 1,
+                "content": "",
+                "status": "draft",
+                "editor_session": session,
+            }
+            req = Request(
+                endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+            )
+
+        try:
+            with urlopen(req, timeout=self.timeout_sec) as resp:
+                return 200 <= resp.status < 300
+        except (HTTPError, URLError, TimeoutError, OSError):
+            return False
+
+    def read_editor_session(self, job_id: str) -> Optional[dict[str, Any]]:
+        """Read the in-flight editor session for job_id, or None."""
+        latest = self.read_latest(job_id)
+        if not latest:
+            return None
+        return latest.get("editor_session") or None
+
+    def clear_editor_session(self, job_id: str) -> bool:
+        """Wipe the editor session JSON for job_id (sets column to NULL)."""
+        app_id = self.applications.get_application_id(job_id)
+        if app_id is None:
+            return False
+        existing_id = self._existing_row_id(app_id, version=1)
+        if existing_id is None:
+            return True  # no row, nothing to clear — idempotent success
+        endpoint = (
+            f"{self.supabase_url.rstrip('/')}/rest/v1/cover_letters"
+            f"?id=eq.{existing_id}"
+        )
+        headers = {
+            "apikey": self.supabase_key,
+            "Authorization": f"Bearer {self.supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        body = json.dumps({"editor_session": None}).encode("utf-8")
+        req = Request(endpoint, data=body, headers=headers, method="PATCH")
+        try:
+            with urlopen(req, timeout=self.timeout_sec) as resp:
+                return 200 <= resp.status < 300
+        except (HTTPError, URLError, TimeoutError, OSError):
+            return False
 
 
 def from_env() -> Optional[SupabaseCoverLettersCapability]:
